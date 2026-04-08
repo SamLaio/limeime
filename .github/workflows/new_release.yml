@@ -1,0 +1,43 @@
+name: New Release
+
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from build.gradle
+        id: version
+        run: |
+          ver=$(grep "versionName" LimeStudio/app/build.gradle | sed "s/.*'\(.*\)'.*/\1/" | tr -d '[:space:]')
+          code=$(grep "versionCode" LimeStudio/app/build.gradle | grep -v applicationId | sed 's/.*versionCode[[:space:]]*//' | tr -d '[:space:]')
+          apk="LIMEHD${code}-${ver}.apk"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "tag=v$ver" >> "$GITHUB_OUTPUT"
+          echo "apkPath=LimeStudio/app/release/${apk}" >> "$GITHUB_OUTPUT"
+
+      - name: Read release notes from RELEASE_DRAFT.md
+        id: notes
+        run: |
+          {
+            echo 'body<<RELEASE_EOF'
+            cat docs/RELEASE_DRAFT.md
+            echo 'RELEASE_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: LIME ${{ steps.version.outputs.tag }}
+          body: ${{ steps.notes.outputs.body }}
+          files: ${{ steps.version.outputs.apkPath }}
