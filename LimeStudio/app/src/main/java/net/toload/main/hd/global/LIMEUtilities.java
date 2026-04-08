@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -24,7 +24,7 @@
 
 package net.toload.main.hd.global;
 
-import android.annotation.TargetApi;
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.ComponentName;
 import android.content.Context;
@@ -34,25 +34,29 @@ import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
-import android.support.v4.app.NotificationCompat;
+import androidx.core.app.NotificationCompat;
 import android.util.Log;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 
+import net.lingala.zip4j.ZipFile;
+import net.lingala.zip4j.model.FileHeader;
 import net.toload.main.hd.LIMEService;
 import net.toload.main.hd.R;
 
-import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 //
@@ -76,8 +80,6 @@ public class LIMEUtilities {
 
 	/**
 	 * Return the filepath if the file not exist in the target path
-	 * @param filepath
-	 * @return
 	 */
 	public static File isFileNotExist(String filepath){
 		
@@ -98,7 +100,7 @@ public class LIMEUtilities {
 	}
 
 	/*
-*   Zip singl file into single zip.
+*   Zip single file into single zip.
 *   sourceFile should be assigned with absolute path.
 *
  */
@@ -125,7 +127,7 @@ public class LIMEUtilities {
 		zip(zipFilePath, sourceFiles, "", OverWrite);
 	}
 	/*
-	*   Zip multile files into single zip.
+	*   Zip multiple files into single zip.
 	*   sourceFiles is specify relative to the baseFolderPath.
 	*   sourceFiles should be assigned with absolute path if baseFolderPath is null of empty
 	*
@@ -133,10 +135,10 @@ public class LIMEUtilities {
 	public static void zip(String zipFilePath, List<String> sourceFiles, String baseFolderPath, Boolean OverWrite) 	throws Exception {
 		File zipFile = new File(zipFilePath);
 		if( zipFile.exists() && !OverWrite) return;
-		else if(zipFile.exists() && OverWrite) zipFile.delete();
+		else if(zipFile.exists() && OverWrite && !zipFile.delete()) Log.w(TAG,"Failed to delete existing zip file");
 
-		ZipOutputStream zos = null;
-		FileOutputStream outStream = null;
+		ZipOutputStream zos;
+		FileOutputStream outStream;
 		outStream = new FileOutputStream(zipFile);
 		zos = new ZipOutputStream(outStream);
 
@@ -145,7 +147,7 @@ public class LIMEUtilities {
 		for(String item : sourceFiles) {
 			String itemName = (item.startsWith(File.separator) || baseFolderPath.endsWith(File.separator) )?item:(File.separator + item) ;
 
-			if(baseFolderPath.equals("")) //absolute path
+			if(baseFolderPath.isEmpty()) //absolute path
 				addFileToZip(baseFolderPath + itemName, zos);
 			else  //relative path
 				addFileToZip(baseFolderPath + itemName, baseFolderPath, zos);
@@ -167,31 +169,39 @@ public class LIMEUtilities {
 	private static void addFileToZip(String sourceFolderPath, String sourceFilePath, String baseFolderPath, ZipOutputStream zos) throws Exception {
 
 		File item = new File(sourceFilePath);
-		if( item==null || !item.exists()) return; //skip if the file is not exist
+        //if( item==null || !item.exists()) return; //skip if the file is not exist
 		if (isSymLink(item)) return ; // do nothing to symbolic links.
 
 		if(baseFolderPath == null) baseFolderPath = "";
 
 		if (item.isDirectory()) {
-			for (String subItem : item.list()) {
+			for (String subItem : Objects.requireNonNull(item.list())) {
 				addFileToZip(sourceFolderPath + File.separator + item.getName(), sourceFilePath + File.separator  + subItem, baseFolderPath, zos);
 			}
 		} else {
-			byte[] buf = new byte[102400]; //100k buffer
+			byte[] buf = new byte[LIME.BUFFER_SIZE_64KB];
 			int len;
-			FileInputStream inStream = new FileInputStream(sourceFilePath);
-			if(baseFolderPath.equals(""))  //sourceFiles in absolute path, zip the file with absolute path
-				zos.putNextEntry(new ZipEntry(sourceFilePath));
-			else {//relative path
-				String relativePath = sourceFilePath.substring(baseFolderPath.length() );
-				zos.putNextEntry(new ZipEntry(relativePath));
-			}
+            try (FileInputStream inStream = new FileInputStream(sourceFilePath)) {
 
-			while ((len = inStream.read(buf)) > 0) {
-				zos.write(buf, 0, len);
-			}
+                String entryPath;
+                if (baseFolderPath.isEmpty()) {
+                    entryPath = sourceFilePath;
+                } else {
+                    entryPath = sourceFilePath.substring(baseFolderPath.length());
+                }
 
-		}
+                if (entryPath.startsWith(File.separator)) {
+                    entryPath = entryPath.substring(1);
+                }
+
+                zos.putNextEntry(new ZipEntry(entryPath));
+
+                while ((len = inStream.read(buf)) > 0) {
+                    zos.write(buf, 0, len);
+                }
+            }
+
+        }
 	}
 
 	public static boolean isSymLink(File filePath) throws IOException {
@@ -201,7 +211,7 @@ public class LIMEUtilities {
 		if (filePath.getParent() == null) {
 			canonical = filePath;
 		} else {
-			File canonDir = filePath.getParentFile().getCanonicalFile();
+			File canonDir = Objects.requireNonNull(filePath.getParentFile()).getCanonicalFile();
 			canonical = new File(canonDir, filePath.getName());
 		}
 		return !canonical.getCanonicalFile().equals(canonical.getAbsoluteFile());
@@ -211,57 +221,89 @@ public class LIMEUtilities {
 		return unzip(new File(zipFilePath), new File(targetFolder), OverWrite);
 	}
 
-	public static List<String> unzip(File zipFile, File targetDirectory, Boolean OverWrite) throws IOException {
-		ZipInputStream zis = new ZipInputStream(
-				new BufferedInputStream(new FileInputStream(zipFile)));
-		List<String> returnFilePaths = new ArrayList<>();
-		try {
-			ZipEntry ze;
-			int count;
-			byte[] buffer = new byte[102400];
-			while ((ze = zis.getNextEntry()) != null) {
-				String itemName = ze.getName();
-				File targetFile = null;
+    public static List<String> unzip(File zipFile,
+                                     File targetDirectory,
+                                     boolean overWrite) throws IOException {
+        List<String> returnFilePaths = new ArrayList<>();
 
-				if(itemName.startsWith("/sdcard/") || itemName.startsWith(String.valueOf(Environment.getExternalStorageDirectory())+File.separator)){
-					targetFile = new File(ze.getName());  //target is zipped with absolute path on /sdcard
-				}
-				else if(itemName.startsWith("/data/") || itemName.startsWith(String.valueOf(Environment.getDataDirectory())+File.separator)){
-					//target is zipped with absolute path on /data, we need to confirm the targetfolder is within our package.
-					String packageRoot = LIME.getLimeDataRootFolder();
-					if(!itemName.startsWith(packageRoot))  //skip if the target path is not under our package root
-						continue;
-					targetFile = new File(ze.getName());  //target is zipped with absolute path on /sdcard
-				}
-				else {
-					targetFile = new File(targetDirectory, ze.getName());
-				}
+        if (!targetDirectory.exists() && !targetDirectory.mkdirs()) {
+            throw new IOException("Failed to create target dir: " + targetDirectory.getAbsolutePath());
+        }
 
-				File dir = ze.isDirectory() ? targetFile : targetFile.getParentFile();
-				if (!dir.isDirectory() && !dir.mkdirs())
-					throw new FileNotFoundException("Failed to ensure target directory: " +	dir.getAbsolutePath());
-				if (ze.isDirectory())
-					continue;
-				if(targetFile.exists() && OverWrite)
-					targetFile.delete();
-				FileOutputStream outStream = new FileOutputStream(targetFile);
-				try {
-					while ((count = zis.read(buffer)) != -1)
-						outStream.write(buffer, 0, count);
-				} catch (IOException e){
-					e.printStackTrace();
-				} finally {
-					outStream.close();
-				}
+        try (ZipFile zip4jFile = new ZipFile(zipFile)) {
+            List<FileHeader> fileHeaders = zip4jFile.getFileHeaders();
 
-				returnFilePaths.add(targetFile.getAbsolutePath());
-			}
-		} finally {
-			zis.close();
-		}
-		return returnFilePaths;
-	}
-	public static boolean copyFile(String sourceFilePath, String targetFilePath, Boolean overWrite) {
+            for (FileHeader fileHeader : fileHeaders) {
+                String itemName = fileHeader.getFileName();
+
+                if (itemName == null || itemName.isEmpty()) {
+                    continue;
+                }
+
+                File targetFile;
+
+                // Handle absolute /data/ paths: only restore into our package root
+                if (itemName.startsWith("/data/")
+                        || itemName.startsWith(Environment.getDataDirectory() + File.separator)) {
+
+                    String packageRoot = LIME.getLimeDataRootFolder(); // e.g. /data/user/0/your.pkg
+                    File abs = new File(itemName).getCanonicalFile();
+                    String root = new File(packageRoot).getCanonicalPath() + File.separator;
+
+                    // Skip if not under our package root
+                    if (!abs.getPath().startsWith(root)) {
+                        continue;
+                    }
+
+                    targetFile = abs;
+                } else {
+                    // Normal relative entry under targetDirectory
+                    File out = new File(targetDirectory, itemName).getCanonicalFile();
+                    String destRoot = targetDirectory.getCanonicalPath() + File.separator;
+
+                    // Zip‑Slip guard: keep inside targetDirectory
+                    if (!out.getPath().startsWith(destRoot)) {
+                        continue;
+                    }
+
+                    targetFile = out;
+                }
+
+                // Create parent directories if they don't exist
+                File parentDir = targetFile.getParentFile();
+                if (parentDir != null && !parentDir.isDirectory() && !parentDir.mkdirs()) {
+                    throw new IOException("Failed to ensure parent directory: " + parentDir.getAbsolutePath());
+                }
+
+                if (fileHeader.isDirectory()) {
+                    if (!targetFile.isDirectory() && !targetFile.mkdirs()) {
+                        throw new IOException("Failed to create directory: " + targetFile.getAbsolutePath());
+                    }
+                    returnFilePaths.add(targetFile.getAbsolutePath());
+                    continue;
+                }
+
+                if (targetFile.exists()) {
+                    if (!overWrite) {
+                        returnFilePaths.add(targetFile.getAbsolutePath());
+                        continue;
+                    }
+                    if (!targetFile.delete()) {
+                        throw new IOException("Failed to delete existing file: " + targetFile);
+                    }
+                }
+
+                // Extract the file using Zip4j
+                zip4jFile.extractFile(fileHeader, targetDirectory.getAbsolutePath());
+                returnFilePaths.add(targetFile.getAbsolutePath());
+            }
+        }
+
+        return returnFilePaths;
+    }
+
+
+    public static boolean copyFile(String sourceFilePath, String targetFilePath, Boolean overWrite) {
 		File sourceFile = isFileExist(sourceFilePath);
 		if(sourceFilePath == null || sourceFile == null || targetFilePath == null) return false;
 		File targetFile = isFileExist(targetFilePath);
@@ -273,7 +315,8 @@ public class LIMEUtilities {
 			copyRAWFile(inStream, outSteram);
 			return true;
 		}
-		catch(Exception ignored){
+		catch(Exception e){
+			Log.e(TAG, "Error copying file", e);
 			return false;
 		}
 
@@ -285,24 +328,24 @@ public class LIMEUtilities {
 			fs.close();
 		}
 		catch(Exception e){      
-    		e.printStackTrace();   
+    		Log.e(TAG, "Error copying raw file to new file", e);
            }   
 	}
 	public static void copyRAWFile(InputStream	inStream, FileOutputStream outStream){
 	    	try{
-	    		int bytesum=0, byteread=0;
+	    		int bytesum=0, byteread;
 
-	            byte[] buffer  = new byte[102400]; //100k buffer
-	            while((byteread = inStream.read(buffer))!=-1){   
-	               	   bytesum     +=     byteread;
-	                   System.out.println(bytesum);
-	                   outStream.write(buffer, 0, byteread);   
-	             	}   
-	            inStream.close();
+	            byte[] buffer  = new byte[LIME.BUFFER_SIZE_64KB];
+	            while((byteread = inStream.read(buffer))!=-1) {
+                    bytesum += byteread;
+                    if (DEBUG) Log.d(TAG, "bytesum: " + bytesum);
+                    outStream.write(buffer, 0, byteread);
+                }
+                inStream.close();
 				outStream.close();
 	        	}   
 	    	catch(Exception e){      
-	    		e.printStackTrace();   
+	    		Log.e(TAG, "Error copying raw file", e);
 	           }   
 	     }
 
@@ -310,47 +353,44 @@ public class LIMEUtilities {
 	/** Add by Jeremy '12,4,23 Show notification with notification builder in compatibility package replacing the deprecated alert dialog creation 
 
 	 */
-	@TargetApi(Build.VERSION_CODES.JELLY_BEAN)
+
 	public static void showNotification(Context context, Boolean autoCancel,  CharSequence title, CharSequence message, Intent intent){
 
-		//Intent resultIntent = new Intent(context, MainActivity.class);
-		//PendingIntent pi = PendingIntent.getActivity(context, 0, resultIntent, 0);
+		NotificationManager mNotificationManager =
+				(NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+
+		String channelId = "lime_notification_channel";
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+			NotificationChannel channel = new NotificationChannel(
+					channelId,
+					"LIME Notifications",
+					NotificationManager.IMPORTANCE_DEFAULT);
+			mNotificationManager.createNotificationChannel(channel);
+		}
 
 		NotificationCompat.Builder mBuilder =
-				new NotificationCompat.Builder(context)
+				new NotificationCompat.Builder(context, channelId) // Pass channel ID here
 						.setLargeIcon(getNotificationIconBitmap(context))
 						.setContentTitle(title)
 						.setAutoCancel(autoCancel)
 						.setTicker(message)
 						.setContentText(message);
 
-		boolean lollipop = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP;
-		if(lollipop){
-			mBuilder.setSmallIcon(R.drawable.logobw);
-		}else{
-			mBuilder.setSmallIcon(R.drawable.logo);
-		}
 
-		NotificationManager mNotificationManager =
-						(NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        mBuilder.setSmallIcon(R.drawable.logobw);
+
 
 		mNotificationManager.notify(501, mBuilder.build());
 	}
 
 	private static int getNotificationIcon() {
-		boolean whiteIcon = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP;
-		return whiteIcon ? R.drawable.logobw : R.drawable.logo;
+		//boolean whiteIcon = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP;
+		return R.drawable.logobw ;
 	}
 
 	private static Bitmap getNotificationIconBitmap(Context context) {
-		boolean whiteIcon = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP;
-		Bitmap bm = null;
-		if(whiteIcon){
-			bm = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo);
-		}else{
-			bm = BitmapFactory.decodeResource(context.getResources(), R.drawable.logo);
-		}
-		return bm;
+
+		return BitmapFactory.decodeResource(context.getResources(), R.drawable.logo);
 	}
 
 	
@@ -408,9 +448,9 @@ public class LIMEUtilities {
 	
 	public static String getVoiceSearchIMId(Context context){
 		ComponentName voiceInputComponent = 
-				new ComponentName("com.google.android.voicesearch", "com.google.android.voicesearch.ime.VoceInputMethdServce");
+				new ComponentName("com.google.android.voiceSearch", "com.google.android.voicesearch.ime.VoceInputMethdServce");
 		if(DEBUG)
-			Log.i(TAG, "getVoiceSearchIMId(), Comonent name = " 
+			Log.i(TAG, "getVoiceSearchIMId(), Comment name = "
 					+ voiceInputComponent.flattenToString() + ", id = " 
 					+ voiceInputComponent.flattenToShortString());
 		return voiceInputComponent.flattenToShortString();
@@ -424,7 +464,137 @@ public class LIMEUtilities {
 	public static void showInputMethodPicker(Context context){
 		((InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE)).showInputMethodPicker();
 	}
-	
-	
+
+    File getDbFolder(Context ctx)
+    {
+        return ctx.getDatabasePath(LIME.DATABASE_NAME).getParentFile();
+    }
+
+	/**
+	 * Progress callback interface for download operations
+	 */
+	public interface DownloadProgressCallback {
+		/**
+		 * Called when download progress updates
+		 * @param percent Progress percentage (0-100)
+		 */
+		void onProgress(int percent);
+	}
+
+	/**
+	 * Abort flag supplier interface for download operations (API 21+ compatible)
+	 * Replaces java.util.function.Supplier&lt;Boolean&gt; which requires API 24+
+	 */
+	public interface AbortFlagSupplier {
+		/**
+		 * Gets the current abort flag state
+		 * @return true if download should be aborted, false otherwise
+		 */
+		boolean get();
+	}
+
+	/**
+	 * Shared method to download a remote file.
+	 * Supports both temporary file creation (for cache) and specific file creation (for persistent storage).
+	 * 
+	 * @param url The URL to download from
+	 * @param targetFile The target file to write to (if null, creates temp file in cacheDir)
+	 * @param cacheDir Context cache directory (required if targetFile is null)
+	 * @param progressCallback Optional progress callback (can be null)
+	 * @param abortFlagSupplier Optional supplier function that returns abort flag state (can be null)
+	 * @return The downloaded file, or null if download failed
+	 */
+	public static File downloadRemoteFile(String url, File targetFile, File cacheDir, 
+			DownloadProgressCallback progressCallback, AbortFlagSupplier abortFlagSupplier) {
+		if(DEBUG)
+			Log.i(TAG, "downloadRemoteFile() Starting: " + url);
+
+		try {
+			URL downloadUrl = new URL(url);
+			URLConnection conn = downloadUrl.openConnection();
+			conn.connect();
+			InputStream is = conn.getInputStream();
+			long remoteFileSize = conn.getContentLength();
+			long downloadedSize = 0;
+
+			if(DEBUG)
+				Log.i(TAG, "downloadRemoteFile() contentLength: " + remoteFileSize);
+
+			if(is == null){
+				throw new RuntimeException("stream is null");
+			}
+
+			File downloadedFile;
+			if (targetFile != null) {
+				// Use specific target file
+				File downloadFolder = targetFile.getParentFile();
+				if (downloadFolder != null && !downloadFolder.exists()) {
+					if (!downloadFolder.mkdirs()) {
+						Log.w(TAG, "Failed to create target folder: " + downloadFolder.getAbsolutePath());
+					}
+				}
+				downloadedFile = targetFile;
+				if(downloadedFile.exists() && !downloadedFile.delete()) {
+					Log.w(TAG, "Failed to delete existing downloadedFile");
+				}
+			} else {
+				// Create temp file in cache directory
+				if (cacheDir == null) {
+					throw new IllegalArgumentException("cacheDir cannot be null when targetFile is null");
+				}
+				downloadedFile = File.createTempFile(LIME.DATABASE_IM_TEMP, LIME.DATABASE_IM_TEMP_EXT, cacheDir);
+				downloadedFile.deleteOnExit();
+			}
+
+			// Use try-with-resources to ensure streams are closed even if exceptions occur
+			try (FileOutputStream fos = new FileOutputStream(downloadedFile);
+			     InputStream inputStream = is) {
+				// Use 128KB buffer for better performance on modern devices
+				byte[] buf = new byte[LIME.BUFFER_SIZE_64KB];
+				do{
+					// Check abort flag if provided
+					if (abortFlagSupplier != null && abortFlagSupplier.get()) {
+						if(DEBUG)
+							Log.i(TAG, "downloadRemoteFile() aborted by user");
+						break;
+					}
+
+					// InputStream.read() is already blocking and will wait for data
+					int numread = inputStream.read(buf);
+					if(numread <= 0) {
+						break;
+					}
+
+					fos.write(buf, 0, numread);
+					downloadedSize += numread; // Track actual bytes downloaded
+
+					// Update progress if callback provided and size is known
+					if (progressCallback != null && remoteFileSize > 0) {
+						float percent = ((float)downloadedSize / (float)remoteFileSize) * 100;
+						progressCallback.onProgress((int)percent);
+					}
+
+					if(DEBUG)
+						Log.i(TAG, "downloadRemoteFile(), contentLength: " + remoteFileSize 
+								+ ", downloadedSize: " + downloadedSize);
+				} while(true);
+			}
+
+			return downloadedFile;
+
+		} catch (FileNotFoundException e) {
+			Log.e(TAG, "downloadRemoteFile() FileNotFoundException: can't open file for writing.", e);
+		} catch (MalformedURLException e) {
+			Log.e(TAG, "downloadRemoteFile() MalformedURLException: " + url, e);
+		} catch (IOException e){
+			Log.e(TAG, "downloadRemoteFile() IOException: " + e.getMessage(), e);
+		} catch (Exception e){
+			Log.e(TAG, "downloadRemoteFile() Exception: " + e.getMessage(), e);
+		}
+		if(DEBUG)
+			Log.i(TAG, "downloadRemoteFile() failed.");
+		return null;
+	}
+
 
 }

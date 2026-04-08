@@ -3,7 +3,7 @@
 <!--
   ~ /*
   ~  *
-  ~  **    Copyright 2015, The LimeIME Open Source Project
+  ~  **    Copyright 2025, The LimeIME Open Source Project
   ~  **
   ~  **    Project Url: http://github.com/lime-ime/limeime/
   ~  **                 http://android.toload.net/
@@ -72,12 +72,6 @@
 				<TableRow android:layout_height="wrap_content" android:layout_width="match_parent" android:id="@+id/tableRow8">
                		<Button android:layout_width="fill_parent" android:layout_weight="1" android:layout_margin="5dp" android:layout_height="wrap_content" android:id="@+id/btnCloudBackupDB" android:text="@string/l3_initial_cloud_backup_database" android:padding="5dp"></Button>
 					<Button android:layout_width="fill_parent" android:layout_weight="1" android:layout_margin="5dp" android:layout_height="wrap_content" android:id="@+id/btnCloudRestoreDB" android:text="@string/l3_initial_cloud_restore_database" android:padding="5dp"></Button>
-				</TableRow>
-			</TableLayout>
-			<TableLayout android:layout_width="match_parent" android:id="@+id/tableLayout7" android:layout_height="wrap_content">
-				<TableRow android:layout_height="wrap_content" android:layout_width="match_parent" android:id="@+id/tableRow9">
-               		<Button android:layout_width="fill_parent" android:layout_weight="1" android:layout_margin="5dp" android:layout_height="wrap_content" android:id="@+id/btnDropboxBackupDB" android:text="@string/l3_initial_dropbox_backup_database" android:padding="5dp"></Button>
-					<Button android:layout_width="fill_parent" android:layout_weight="1" android:layout_margin="5dp" android:layout_height="wrap_content" android:id="@+id/btnDropboxRestoreDB" android:text="@string/l3_initial_dropbox_restore_database" android:padding="5dp"></Button>
 				</TableRow>
 			</TableLayout>
 			

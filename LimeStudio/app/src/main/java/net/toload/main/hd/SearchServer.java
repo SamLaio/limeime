@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -24,6 +24,7 @@
 
 package net.toload.main.hd;
 
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.os.RemoteException;
@@ -31,15 +32,19 @@ import android.util.Log;
 import android.util.Pair;
 import android.widget.Toast;
 
-import net.toload.main.hd.data.ImObj;
-import net.toload.main.hd.data.KeyboardObj;
+import net.toload.main.hd.data.ImConfig;
+import net.toload.main.hd.data.Keyboard;
 import net.toload.main.hd.data.Mapping;
+import net.toload.main.hd.data.Record;
+import net.toload.main.hd.data.Related;
 import net.toload.main.hd.global.LIME;
 import net.toload.main.hd.global.LIMEPreferenceManager;
 import net.toload.main.hd.global.LIMEUtilities;
 import net.toload.main.hd.limedb.LimeDB;
+import net.toload.main.hd.ui.MainActivity;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -48,11 +53,29 @@ import java.util.Locale;
 import java.util.Stack;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * SearchServer is the central engine for handling input method queries and candidate suggestions.
+ * <p>
+ * It acts as an intermediary between the IME service and the database {@link LimeDB}, providing:
+ * <ul>
+ *     <li>Efficient database querying for character mapping and phrase retrieval.</li>
+ *     <li>Multi-level caching mechanics (code, English words, emojis) to optimize performance.</li>
+ *     <li>Runtime suggestion generation for dynamic phrase building.</li>
+ *     <li>Handling of different keyboard types (phonetic, physical) and their mapping logic.</li>
+ *     <li>Support for related phrase lookups and Han character conversion.</li>
+ * </ul>
+ */
 public class SearchServer {
 
-    private static boolean DEBUG = false;
-    private static final String TAG = "LIME.SearchServer";
+    private static final boolean DEBUG = false;
+    private static final String TAG = "SearchServer";
     private static LimeDB dbadapter = null;
+    
+    // Score Thresholds
+    private static final int MIN_SCORE_THRESHOLD = 120; // Minimum score threshold for search results
+    private static final int MAX_SCORE_THRESHOLD = 200; // Maximum score threshold for search results
+    private static final int SCORE_ADJUSTMENT_INCREMENT = 50; // Score adjustment increment
+    private static final int CODE_LENGTH_BONUS_MULTIPLIER = 30; // Multiplier for code length bonus calculation
 
     //Jeremy '12,5,1 shared single LIMEDB object
     //Jeremy '12,4,6 Combine updatedb and quierydb into db,
@@ -61,15 +84,12 @@ public class SearchServer {
     //Jeremy '12,6,9 make run-time suggestion phrase
     private static final boolean doRunTimeSuggestion = true;
 
-    private static List<Mapping> scorelist = null;
+    private static List<Mapping> scorelist = Collections.synchronizedList(new ArrayList<>());
 
     //Jeremy '15,6,2 preserve the exact match mapping with the code user typed.
-    private static List<List<Pair<Mapping, String>>> suggestionLoL;
-    private static Stack<Pair<Mapping, String>> bestSuggestionStack;
-    private static String lastCode; // preserved the last code queried from LIMEService
-
-    private static String confirmedBestSuggestion = null;
-    private static String lastConfirmedBestSuggestion = null;
+    protected static List<List<Pair<Mapping, String>>> suggestionLoL;
+    protected static Stack<Pair<Mapping, String>> bestSuggestionStack;
+    protected static String lastCode; // preserved the last code queried from LIMEService
 
     //Jeremy '15,6,21
     private static int maxCodeLength = 4;
@@ -89,7 +109,7 @@ public class SearchServer {
     private static boolean hasSymbolMapping;
 
     //Jeremy '11,6,6
-    private HashMap<String, String> selKeyMap = new HashMap<>();
+    private final HashMap<String, String> selKeyMap = new HashMap<>();
 
     private static ConcurrentHashMap<String, List<Mapping>> cache = null;
     private static ConcurrentHashMap<String, List<Mapping>> engcache = null;
@@ -100,40 +120,82 @@ public class SearchServer {
      */
     private static ConcurrentHashMap<String, List<String>> coderemapcache = null;
 
-    private Context mContext = null;
+    private final Context mContext;
 
     // deprecated and using exact match stack to get real code length now. Jerey '15,6,2
     //private static List<Pair<Integer, Integer>> codeLengthMap = new LinkedList<>();
 
+    /**
+     * Constructs a new SearchServer instance.
+     *
+     * @param context The application context, used for database access and preference loading.
+     */
     public SearchServer(Context context) {
 
 
         this.mContext = context;
 
-        mLIMEPref = new LIMEPreferenceManager(mContext.getApplicationContext());
-        if (dbadapter == null) dbadapter = new LimeDB(mContext);
+        // Handle null context gracefully (e.g., in tests) by using a dummy context
+        // This prevents NullPointerException during object construction
+        if (mContext != null) {
+            mLIMEPref = new LIMEPreferenceManager(mContext.getApplicationContext());
+            if (dbadapter == null) dbadapter = new LimeDB(mContext);
+        } else {
+            // For null context (test scenarios), create a minimal preference manager
+            // This allows the object to be constructed without crashing
+            mLIMEPref = null; // Will be handled by null checks in methods that use it
+        }
         initialCache();
 
 
     }
 
+    /**
+     * Signals whether the cache should be reset on the next operation.
+     *
+     * @param resetCache true to trigger a cache reset.
+     */
     public static void resetCache(boolean resetCache) {
         mResetCache = resetCache;
     }
 
+    /**
+     * Converts a string using the Han character conversion settings (e.g., Traditional to Simplified).
+     *
+     * @param input The input string to convert.
+     * @return The converted string.
+     */
     public String hanConvert(String input) {
         return dbadapter.hanConvert(input, mLIMEPref.getHanCovertOption());
     }
 
+    /**
+     * Gets the current database table name.
+     *
+     * @return The name of the current table.
+     */
     public String getTablename() {
         return tablename;
     }
 
-    public void setTablename(String table, boolean numberMapping, boolean symbolMapping) {
+    /**
+     * Sets the current active database table (IME method).
+     * <p>
+     * This updates the database adapter and optionally triggers a cache prefetch for better performance.
+     *
+     * @param table         The name of the table to switch to (e.g., Phonetic, CJ).
+     * @param numberMapping Whether the table supports number mapping.
+     * @param symbolMapping Whether the table supports symbol mapping.
+     */
+    public void setTableName(String table, boolean numberMapping, boolean symbolMapping) {
         if (DEBUG)
             Log.i(TAG, "SearchService.setTablename()");
-
-        dbadapter.setTablename(table);
+        // Validate table name before setting
+        if (!isValidTableName(table)) {
+            Log.e(TAG, "setTableName(): Invalid table name: " + table);
+            throw new IllegalArgumentException("Invalid table name: " + table);
+        }
+        dbadapter.setTableName(table);
         tablename = table;
         hasNumberMapping = numberMapping;
         hasSymbolMapping = symbolMapping;
@@ -144,23 +206,31 @@ public class SearchServer {
         }
 
         //Jeremy '15,6,21 set max code length
-        if (tablename.startsWith("cj")) {
+        if (tablename.startsWith(LIME.DB_TABLE_CJ)) {
             maxCodeLength = 5;
         }
     }
 
     private static Thread prefetchThread;
 
+    /**
+     * Prefetches common mappings into the cache to improve initial response time.
+     * <p>
+     * Runs in a background thread.
+     *
+     * @param numberMapping Whether to prefetch number mappings.
+     * @param symbolMapping Whether to prefetch symbol mappings.
+     */
     private void prefetchCache(boolean numberMapping, boolean symbolMapping) {
         if(DEBUG)
             Log.i(TAG, "prefetchCache() on table :" + tablename);
 
-        String keys = "abcdefghijklmnoprstuvwxyz";
+        StringBuilder keysBuilder = new StringBuilder("abcdefghijklmnoprstuvwxyz");
         if (numberMapping)
-            keys += "01234567890";
+            keysBuilder.append("01234567890");
         if (symbolMapping)
-            keys += ",./;";
-        final String finalKeys = keys;
+            keysBuilder.append(",./;");
+        final String finalKeys = keysBuilder.toString();
 
         if (prefetchThread != null && prefetchThread.isAlive()) return;
 
@@ -173,7 +243,7 @@ public class SearchServer {
                         //bypass run-time suggestion for prefetch queries
                         getMappingByCode(key, true, false, true);
                     } catch (RemoteException e) {
-                        e.printStackTrace();
+                        Log.e(TAG, "Error in search operation", e);
                     }
                 }
                 Log.i(TAG, "prefetchCache() on table :" + tablename + " finished.  Elapsed time = "
@@ -186,16 +256,34 @@ public class SearchServer {
 
 
     //TODO: Should cache related phrase 15,6,8 Jeremy
-    public List<Mapping> getRelatedPhrase(String word, boolean getAllRecords) throws RemoteException {
+    /**
+     * Gets related phrase suggestions for a parent word.
+     * 
+     * <p>This method delegates to LimeDB.getRelatedPhrase() to retrieve related phrase
+     * candidates that can follow the given parent word.
+     * 
+     * @param word The parent word to get related phrases for
+     * @param getAllRecords If true, returns up to FINAL_RESULT_LIMIT; if false, returns up to INITIAL_RESULT_LIMIT
+     * @return List of Mapping objects containing related phrase suggestions
+     * @throws RemoteException if database error occurs
+     */
+    public List<Mapping> getRelatedByWord(String word, boolean getAllRecords) throws RemoteException {
 
         return dbadapter.getRelatedPhrase(word, getAllRecords);
     }
 
     //Add by jeremy '10, 4,1
-    public void getCodeListStringFromWord(final String word) throws RemoteException {
+    /**
+     * Retrieves the list of input codes for a given word and displays it.
+     * <p>
+     * Used for reverse lookup features.
+     *
+     * @param word The word to look up.
+     */
+    public void getCodeListStringFromWord(final String word) {
 
         String result = dbadapter.getCodeListStringByWord(word);
-        if (result != null && !result.equals("")) {
+        if (result != null && !result.isEmpty()) {
             LIMEUtilities.showNotification(
                     mContext, true, mContext.getText(R.string.ime_setting), result, new Intent(mContext, MainActivity.class));
 
@@ -206,42 +294,73 @@ public class SearchServer {
 
     }
 
+    /**
+     * Generates a unique cache key for a given code.
+     * <p>
+     * The key depends on the keyboard type (physical/virtual) and table name to avoid collisions.
+     *
+     * @param code The input code.
+     * @return A unique string key for the cache.
+     */
     private String cacheKey(String code) {
         String key;
-
-        //Jeremy '11,6,17 Seperate physical keyboard cache with keybaordtype
+        if(mLIMEPref==null || dbadapter==null){
+            Log.e(TAG, "cacheKey() mLIMEPref or dbadapter is null");
+            return "";
+        }
+        //Jeremy '11,6,17 Separate physical keyboard cache with keyboardtype
         if (isPhysicalKeyboardPressed) {
-            if (tablename.equals("phonetic")) {
-                key = mLIMEPref.getPhysicalKeyboardType() + dbadapter.getTablename()
+            if (tablename.equals(LIME.DB_TABLE_PHONETIC)) {
+
+                key = mLIMEPref.getPhysicalKeyboardType() + dbadapter.getTableName()
                         + mLIMEPref.getPhoneticKeyboardType() + code;
             } else {
-                key = mLIMEPref.getPhysicalKeyboardType() + dbadapter.getTablename() + code;
+                key = mLIMEPref.getPhysicalKeyboardType() + dbadapter.getTableName() + code;
             }
         } else {
-            if (tablename.equals("phonetic"))
-                key = dbadapter.getTablename() + mLIMEPref.getPhoneticKeyboardType() + code;
+            if (tablename.equals(LIME.DB_TABLE_PHONETIC))
+                key = dbadapter.getTableName() + mLIMEPref.getPhoneticKeyboardType() + code;
             else
-                key = dbadapter.getTablename() + code;
+                key = dbadapter.getTableName() + code;
         }
         return key;
     }
 
 
-    private void clearRunTimeSuggestion(boolean abandonSuggestion)
+    /**
+     * Clears the runtime suggestion history.
+     *
+     * @param abandonSuggestion true if the suggestion process should be abandoned.
+     */
+    protected void clearRunTimeSuggestion(boolean abandonSuggestion)
     {
         for (List<Pair<Mapping, String>> suggestList : suggestionLoL) {
             suggestList.clear();
         }
         suggestionLoL.clear();
         if (bestSuggestionStack != null) bestSuggestionStack.clear();
-        confirmedBestSuggestion = null;
-        lastConfirmedBestSuggestion = null;
+        String lastConfirmedBestSuggestion = null;
         abandonPhraseSuggestion =abandonSuggestion;
     }
 
-    private static boolean dumpRunTimeSuggestion = false;
+    private static final boolean dumpRunTimeSuggestion = false;
 
-    private synchronized void makeRunTimeSuggestion(String code, List<Mapping> completeCodeResultList) {
+    /**
+     * Generates runtime phrase suggestions based on the current input code.
+     * <p>
+     * This method analyzes the input code and the list of exact matches to dynamically construct
+     * phrase suggestions. It handles incremental updates, maintaining a history of suggestions
+     * in {@code suggestionLoL} to support efficient updates when new characters are added or removed
+     * (backspace).
+     * <p>
+     * It attempts to combine previous best suggestions with new exact matches for the remaining
+     * code segment to form longer phrases, validating them against the related words table and
+     * calculating scores to prioritize the most likely candidates.
+     *
+     * @param code                   The current full input code sequence.
+     * @param completeCodeResultList A list of mappings that exactly match the current code (or parts of it).
+     */
+    protected synchronized void makeRunTimeSuggestion(String code, List<Mapping> completeCodeResultList) {
 
         long startTime=0;
         if (DEBUG || dumpRunTimeSuggestion) {
@@ -265,6 +384,10 @@ public class SearchServer {
                 if (bestSuggestionStack != null && !bestSuggestionStack.isEmpty() && bestSuggestionStack.lastElement().second.equals(lastCode)) {
                     bestSuggestionStack.pop();
                 }
+                // If nothing remains at the current depth, clear runtime state to avoid stale suggestions
+                if (suggestionLoL.stream().allMatch(List::isEmpty) && bestSuggestionStack != null) {
+                    bestSuggestionStack.clear();
+                }
             }
 
         }
@@ -283,18 +406,18 @@ public class SearchServer {
             do {
                 exactMatchMapping = completeCodeResultList.get(k);
                 int score = exactMatchMapping.getBasescore();
-                if (score < 120) {
-                    score = 120;
-                } else if (score > 200) {
-                    score = 200;
+                if (score < MIN_SCORE_THRESHOLD) {
+                    score = MIN_SCORE_THRESHOLD;
+                } else if (score > MAX_SCORE_THRESHOLD) {
+                    score = MAX_SCORE_THRESHOLD;
                 }
-                int codeLenBonus = exactMatchMapping.getCode().length() / exactMatchMapping.getWord().length() * 30;
+                int codeLenBonus = exactMatchMapping.getCode().length() / exactMatchMapping.getWord().length() * CODE_LENGTH_BONUS_MULTIPLIER;
                 int newScore = score + codeLenBonus;
 
                 exactMatchMapping.setBasescore(newScore * exactMatchMapping.getWord().length());
 
                 if (DEBUG || dumpRunTimeSuggestion)
-                    Log.i(TAG, "makeRunTimeSuggestion() complete code = " + code + "" +
+                    Log.i(TAG, "makeRunTimeSuggestion() complete code = " + code +
                             ", got exact match  = " + exactMatchMapping.getWord()
                             + " score =" + exactMatchMapping.getScore() + ", bases core=" + exactMatchMapping.getBasescore()
                             +", time elapsed  =" +(System.currentTimeMillis() - startTime));
@@ -358,138 +481,126 @@ public class SearchServer {
 
             }
 
-        } else if (!suggestionLoL.isEmpty()) {  // no exact match recoreds found. search remaining code
+        } else {
+            assert suggestionLoL != null;
+            if (!suggestionLoL.isEmpty()) {  // no exact match recoreds found. search remaining code
 
-            if (DEBUG || dumpRunTimeSuggestion)
-                Log.i(TAG, "makeRunTimeSuggestion() no exact match on complete code = " + code + ", time elapsed = " + (System.currentTimeMillis() - startTime));
+                if (DEBUG || dumpRunTimeSuggestion)
+                    Log.i(TAG, "makeRunTimeSuggestion() no exact match on complete code = " + code + ", time elapsed = " + (System.currentTimeMillis() - startTime));
 
-            /*
-            // if confirmed best suggestion found and contains last confirmed best suggestion (double confirm) remove all other list not start with last confirmed best suggestion
-            if( lastConfirmedBestSuggestion!=null && confirmedBestSuggestion!=null
-                    &&lastConfirmedBestSuggestion.length()>1 && confirmedBestSuggestion.startsWith(lastConfirmedBestSuggestion)){
-                Iterator<List<Pair<Mapping,String>>> it = suggestionLoL.iterator();
-                while (it.hasNext()) {
-                     List<Pair<Mapping,String>> item = it.next();
-                    if(item.isEmpty()|| !item.get(item.size()-1).first.getWord().startsWith(lastConfirmedBestSuggestion)){
-                        it.remove();
-                    }
-                }
-            }
-            */
+                int highestScore = 0, highestRelatedScore = 0, i = 0, highestScoreIndex = 0;
+                //iterate all previous exact match mapping and check for exact match on remaining code.
+                List<List<Pair<Mapping, String>>> suggestionLoLSnapShot = new LinkedList<>(suggestionLoL);
+                for (List<Pair<Mapping, String>> suggestionList : suggestionLoLSnapShot) {
+                    List<Pair<Mapping, String>> seedSuggestionList = suggestionLoL.remove(0);
+                    if (highestScoreIndex > 0) highestScoreIndex--;
+                    int lolSize = suggestionLoL.size();
 
-
-            int highestScore = 0, highestRelatedScore = 0, i = 0, highestScoreIndex = 0;
-            //iterate all previous exact match mapping and check for exact match on remaining code.
-            List<List<Pair<Mapping, String>>> suggestionLoLSnapShot = new LinkedList<>(suggestionLoL);
-            for (List<Pair<Mapping, String>> suggestionList : suggestionLoLSnapShot) {
-                List<Pair<Mapping, String>> seedSuggestionList = suggestionLoL.remove(0);
-                if (highestScoreIndex > 0) highestScoreIndex--;
-                int lolSize = suggestionLoL.size();
-
-                for (Pair<Mapping, String> p : suggestionList) {
-                    String pCode = p.second;
-                    if (pCode.length() < code.length() && code.startsWith(pCode) && code.length() - pCode.length() <= maxCodeLength) {
-                        String remainingCode = code.substring(pCode.length(), code.length());
-                        if (DEBUG || dumpRunTimeSuggestion)
-                            Log.i(TAG, "makeRunTimeSuggestion() working on previous exact match item = " + p.first.getWord() +
-                                    " with base score = " + p.first.getBasescore() + ", average score = " + p.first.getBasescore() / p.first.getWord().length() +
-                                    ", remainingCode =" + remainingCode + " , highestScoreIndex = " + highestScoreIndex + ", time elapsed =" + (System.currentTimeMillis() - startTime));
+                    for (Pair<Mapping, String> p : suggestionList) {
+                        String pCode = p.second;
+                        if (pCode.length() < code.length() && code.startsWith(pCode) && code.length() - pCode.length() <= maxCodeLength) {
+                            String remainingCode = code.substring(pCode.length());
+                            if (DEBUG || dumpRunTimeSuggestion)
+                                Log.i(TAG, "makeRunTimeSuggestion() working on previous exact match item = " + p.first.getWord() +
+                                        " with base score = " + p.first.getBasescore() + ", average score = " + p.first.getBasescore() / p.first.getWord().length() +
+                                        ", remainingCode =" + remainingCode + " , highestScoreIndex = " + highestScoreIndex + ", time elapsed =" + (System.currentTimeMillis() - startTime));
 
 
-                        List<Mapping> resultList =  //do remaining code query
-                                getMappingByCodeFromCacheOrDB(remainingCode, false);
-                        if (resultList == null) continue;
-
-                        if (DEBUG || dumpRunTimeSuggestion)
-                            Log.i(TAG, "makeRunTimeSuggestion() finish query on previous exact match item = " + p.first.getWord() +
-                                    " , time elapsed =" + (System.currentTimeMillis() - startTime));
-
-                        if (resultList.size() > 0
-                                && resultList.get(0).isExactMatchToCodeRecord()) {  //remaining code search got exact match
-                            Mapping remainingCodeExactMatchMapping = resultList.get(0);
-                            Mapping previousMapping = p.first;
-                            String phrase = previousMapping.getWord() + remainingCodeExactMatchMapping.getWord();
-                            int phraseLen = phrase.length();
-                            if (phraseLen < 2 || remainingCodeExactMatchMapping.getBasescore() < 2)
-                                continue;
-                            int remainingScore = remainingCodeExactMatchMapping.getBasescore();
-                            int codeLenBonus = remainingCodeExactMatchMapping.getCode().length() /
-                                    remainingCodeExactMatchMapping.getWord().length() * 30;
-                            if (remainingScore > 120) remainingScore = 120;
-                            remainingScore = remainingScore / remainingCodeExactMatchMapping.getWord().length() + codeLenBonus;
-
-                            int previousScore = previousMapping.getBasescore() / previousMapping.getWord().length();
-                            int averageScore = (previousScore + remainingScore) / 2;
+                            List<Mapping> resultList =  //do remaining code query
+                                    getMappingByCodeFromCacheOrDB(remainingCode, false);
+                            if (resultList == null) continue;
 
                             if (DEBUG || dumpRunTimeSuggestion)
-                                Log.i(TAG, "makeRunTimeSuggestion() remaining code = " + remainingCode + "" +
-                                        ", got exact match  = " + remainingCodeExactMatchMapping.getWord() + " with base score = "
-                                        + remainingScore + " average score =" + averageScore + " , highestScoreIndex = " + highestScoreIndex + ", time elapsed =" + (System.currentTimeMillis() - startTime));
+                                Log.i(TAG, "makeRunTimeSuggestion() finish query on previous exact match item = " + p.first.getWord() +
+                                        " , time elapsed =" + (System.currentTimeMillis() - startTime));
 
-                            //verify if the new phrase is in related table.
-                            // check up to four characters phrase 1-3, 1-2 , 1-1
-                            Mapping relatedMapping = null;
-                            for (int k = ((phraseLen < 4) ? phraseLen - 1 : 3); k > 0; k--) {
-                                String pword = phrase.substring(phraseLen - k - 1, phraseLen - k);
-                                String cword = phrase.substring(phraseLen - k, phraseLen);
-                                relatedMapping = dbadapter.isRelatedPhraseExist(pword, cword);
-                                if (relatedMapping != null) break;
-                            }
-                            if (relatedMapping != null
-                                    && relatedMapping.getBasescore() >= highestRelatedScore
-                                    && (averageScore + 50) > highestScore
-                                    ) {
-                                Mapping suggestMapping = new Mapping();
-                                suggestMapping.setRuntimeBuiltPhraseRecord();
-                                suggestMapping.setCode(code);
-                                suggestMapping.setWord(phrase);
-                                highestRelatedScore = relatedMapping.getBasescore();
-                                suggestMapping.setScore(highestRelatedScore);
-                                highestScore = (averageScore + 50);
-                                suggestMapping.setBasescore(highestScore * phraseLen);
-                                List<Pair<Mapping, String>> newSuggestionList = new LinkedList<>(seedSuggestionList);
-                                newSuggestionList.add(new Pair<>(suggestMapping, code));
-                                suggestionLoL.add(newSuggestionList);
-                                highestScoreIndex = suggestionLoL.size() - 1;
-                                if (DEBUG || dumpRunTimeSuggestion)
-                                    Log.i(TAG, "makeRunTimeSuggestion()  run-time suggest phrase verified from related table ="
-                                            + phrase + ", basescore from related table = " + highestRelatedScore + " " +
-                                            ", new average score = " + highestScore + " , highestScoreIndex = " + highestScoreIndex+ ", time elapsed =" + (System.currentTimeMillis() - startTime));
-                            } else if (//highestRelatedScore == 0 &&// no mapping is verified from related table
-                                    averageScore > highestScore) {
-                                Mapping suggestMapping = new Mapping();
-                                suggestMapping.setRuntimeBuiltPhraseRecord();
-                                suggestMapping.setCode(code);
-                                suggestMapping.setWord(phrase);
-                                highestScore = averageScore;
-                                suggestMapping.setBasescore(highestScore * phraseLen);
+                            if (!resultList.isEmpty()
+                                    && resultList.get(0).isExactMatchToCodeRecord()) {  //remaining code search got exact match
+                                Mapping remainingCodeExactMatchMapping = resultList.get(0);
+                                Mapping previousMapping = p.first;
+                                String phrase = previousMapping.getWord() + remainingCodeExactMatchMapping.getWord();
+                                int phraseLen = phrase.length();
+                                if (phraseLen < 2 || remainingCodeExactMatchMapping.getBasescore() < 2)
+                                    continue;
+                                int remainingScore = remainingCodeExactMatchMapping.getBasescore();
+                                int codeLenBonus = remainingCodeExactMatchMapping.getCode().length() /
+                                        remainingCodeExactMatchMapping.getWord().length() * CODE_LENGTH_BONUS_MULTIPLIER;
+                                if (remainingScore > MIN_SCORE_THRESHOLD) remainingScore = MIN_SCORE_THRESHOLD;
+                                remainingScore = remainingScore / remainingCodeExactMatchMapping.getWord().length() + codeLenBonus;
 
-                                List<Pair<Mapping, String>> newSuggestionList = new LinkedList<>(seedSuggestionList);
-                                newSuggestionList.add(new Pair<>(suggestMapping, code));
-                                suggestionLoL.add(newSuggestionList);
-                                highestScoreIndex = suggestionLoL.size() - 1;
+                                int previousScore = previousMapping.getBasescore() / previousMapping.getWord().length();
+                                int averageScore = (previousScore + remainingScore) / 2;
 
                                 if (DEBUG || dumpRunTimeSuggestion)
-                                    Log.i(TAG, "makeRunTimeSuggestion()  run-time suggest phrase =" + phrase
-                                            + ", new average score = " + highestScore + " , highestScoreIndex = " + highestScoreIndex+ ", time elapsed =" + (System.currentTimeMillis() - startTime));
+                                    Log.i(TAG, "makeRunTimeSuggestion() remaining code = " + remainingCode +
+                                            ", got exact match  = " + remainingCodeExactMatchMapping.getWord() + " with base score = "
+                                            + remainingScore + " average score =" + averageScore + " , highestScoreIndex = " + highestScoreIndex + ", time elapsed =" + (System.currentTimeMillis() - startTime));
+
+                                //verify if the new phrase is in related table.
+                                // check up to four characters phrase 1-3, 1-2 , 1-1
+                                Mapping relatedMapping = null;
+                                for (int k = ((phraseLen < 4) ? phraseLen - 1 : 3); k > 0; k--) {
+                                    String pword = phrase.substring(phraseLen - k - 1, phraseLen - k);
+                                    String cword = phrase.substring(phraseLen - k, phraseLen);
+                                    relatedMapping = dbadapter.isRelatedPhraseExist(pword, cword);
+                                    if (relatedMapping != null) break;
+                                }
+                                if (relatedMapping != null
+                                        && relatedMapping.getBasescore() >= highestRelatedScore
+                                        && (averageScore + SCORE_ADJUSTMENT_INCREMENT) > highestScore
+                                        ) {
+                                    Mapping suggestMapping = new Mapping();
+                                    suggestMapping.setRuntimeBuiltPhraseRecord();
+                                    suggestMapping.setCode(code);
+                                    suggestMapping.setWord(phrase);
+                                    highestRelatedScore = relatedMapping.getBasescore();
+                                    suggestMapping.setScore(highestRelatedScore);
+                                    highestScore = (averageScore + SCORE_ADJUSTMENT_INCREMENT);
+                                    suggestMapping.setBasescore(highestScore * phraseLen);
+                                    List<Pair<Mapping, String>> newSuggestionList = new LinkedList<>(seedSuggestionList);
+                                    newSuggestionList.add(new Pair<>(suggestMapping, code));
+                                    suggestionLoL.add(newSuggestionList);
+                                    highestScoreIndex = suggestionLoL.size() - 1;
+                                    if (DEBUG || dumpRunTimeSuggestion)
+                                        Log.i(TAG, "makeRunTimeSuggestion()  run-time suggest phrase verified from related table ="
+                                                + phrase + ", basescore from related table = " + highestRelatedScore + " " +
+                                                ", new average score = " + highestScore + " , highestScoreIndex = " + highestScoreIndex+ ", time elapsed =" + (System.currentTimeMillis() - startTime));
+                                } else if (//highestRelatedScore == 0 &&// no mapping is verified from related table
+                                        averageScore > highestScore) {
+                                    Mapping suggestMapping = new Mapping();
+                                    suggestMapping.setRuntimeBuiltPhraseRecord();
+                                    suggestMapping.setCode(code);
+                                    suggestMapping.setWord(phrase);
+                                    highestScore = averageScore;
+                                    suggestMapping.setBasescore(highestScore * phraseLen);
+
+                                    List<Pair<Mapping, String>> newSuggestionList = new LinkedList<>(seedSuggestionList);
+                                    newSuggestionList.add(new Pair<>(suggestMapping, code));
+                                    suggestionLoL.add(newSuggestionList);
+                                    highestScoreIndex = suggestionLoL.size() - 1;
+
+                                    if (DEBUG || dumpRunTimeSuggestion)
+                                        Log.i(TAG, "makeRunTimeSuggestion()  run-time suggest phrase =" + phrase
+                                                + ", new average score = " + highestScore + " , highestScoreIndex = " + highestScoreIndex+ ", time elapsed =" + (System.currentTimeMillis() - startTime));
+                                }
                             }
                         }
                     }
-                }
-                if (lolSize == suggestionLoL.size()) {
-                    suggestionLoL.add(seedSuggestionList);
+                    if (lolSize == suggestionLoL.size()) {
+                        suggestionLoL.add(seedSuggestionList);
+                        if (DEBUG || dumpRunTimeSuggestion)
+                            Log.i(TAG, "makeRunTimeSuggestion()  no new suggestion list. add back the seed suggestion list to location 0 because of last run.");
+                    }
+                    i++;
                     if (DEBUG || dumpRunTimeSuggestion)
-                        Log.i(TAG, "makeRunTimeSuggestion()  no new suggestion list. add back the seed suggestion list to location 0 because of last run.");
+                        Log.i(TAG, "makeRunTimeSuggestion() : remaing cod search +" + i +"th run.  time elapsed = " + (System.currentTimeMillis()-startTime));
                 }
-                i++;
-                if (DEBUG || dumpRunTimeSuggestion)
-                    Log.i(TAG, "makeRunTimeSuggestion() : remaing cod search +" + i +"th run.  time elapsed = " + (System.currentTimeMillis()-startTime));
-            }
-            if (!suggestionLoL.isEmpty() && highestScoreIndex != suggestionLoL.size() - 1) {//move bestSuggestionList to the last element
-                List<Pair<Mapping, String>> bestSuggestionList = suggestionLoL.remove(highestScoreIndex);
-                suggestionLoL.add(bestSuggestionList);
-            }
+                if (!suggestionLoL.isEmpty() && highestScoreIndex != suggestionLoL.size() - 1) {//move bestSuggestionList to the last element
+                    List<Pair<Mapping, String>> bestSuggestionList = suggestionLoL.remove(highestScoreIndex);
+                    suggestionLoL.add(bestSuggestionList);
+                }
 
+            }
         }
 
         //push best suggestion to stack
@@ -537,29 +648,35 @@ public class SearchServer {
         */
 
         // dump suggestion list of list
-        if ((DEBUG || dumpRunTimeSuggestion) &&
-                suggestionLoL != null && !suggestionLoL.isEmpty()) {
-            for (int i = 0; i < suggestionLoL.size(); i++) {
-                if (suggestionLoL.get(i) != null && !suggestionLoL.get(i).isEmpty()) {
-                    for (int j = 0; j < suggestionLoL.get(i).size(); j++) {
+        //if ((DEBUG || dumpRunTimeSuggestion) &&
+            //    suggestionLoL != null && !suggestionLoL.isEmpty()) {
+            //for (int i = 0; i < suggestionLoL.size(); i++) {
+                //if (suggestionLoL.get(i) != null && !suggestionLoL.get(i).isEmpty()) {
+                    //for (int j = 0; j < suggestionLoL.get(i).size(); j++) {
                         //Log.i(TAG, "makeRunTimeSuggestion() suggestionLoL(" + i + ")(" + j + "): word="
                         //        + suggestionLoL.get(i).get(j).first.getWord() + ", code=" + suggestionLoL.get(i).get(j).second
                         //        + ", base score=" + suggestionLoL.get(i).get(j).first.getBasescore()
                         //        + ", average base score=" + suggestionLoL.get(i).get(j).first.getBasescore() / suggestionLoL.get(i).get(j).first.getWord().length()
                         //        + ", score=" + suggestionLoL.get(i).get(j).first.getScore());
-                    }
-                }
-            }
+                    //}
+                //}
+           // }
 
             //Log.i(TAG,"makeRunTimeSuggestion() time elapsed = " +  (System.currentTimeMillis()- startTime ) );
-        }
+        //}
     }
 
     /*
     *   return longest common substring with recursive method.
      */
-
-    private String lcs(String a, String b) {
+    /**
+     * Computes the Longest Common Substring (LCS) of two strings.
+     *
+     * @param a First string.
+     * @param b Second string.
+     * @return The longest common substring.
+     */
+    protected String lcs(String a, String b) {
         int aLen = a.length();
         int bLen = b.length();
         if (aLen == 0 || bLen == 0) {
@@ -577,34 +694,84 @@ public class SearchServer {
     /*
     * Jeremy '15,7,12 synchronized the method called from LIMEService only
     */
+    /**
+     * Retrieves a list of candidate mappings for a given input code.
+     * <p>
+     * This is an overload for {@link #getMappingByCode(String, boolean, boolean, boolean)}.
+     *
+     * @param code          The input code to search for.
+     * @param softkeyboard  True if input is from software keyboard, false for hardware.
+     * @param getAllRecords True to retrieve all matching records, false for a limited set.
+     * @return A list of matching {@link Mapping} objects.
+     * @throws RemoteException If a database error occurs.
+     */
     public synchronized List<Mapping> getMappingByCode(String code, boolean softkeyboard, boolean getAllRecords) throws RemoteException {
         return getMappingByCode(code, softkeyboard, getAllRecords, false);
     }
 
     private static boolean  abandonPhraseSuggestion = false;
 
+    /**
+     * Converts a code to its corresponding Emoji mappings.
+     * <p>
+     * Results are cached in {@code emojicache} to optimize repeated lookups.
+     *
+     * @param code The code to convert.
+     * @param type The type of conversion (internal DB parameter).
+     * @return A list of Emoji mappings.
+     */
     public List<Mapping> emojiConvert(String code, int type){
         if(code != null){
             if(emojicache == null){
                 emojicache = new ConcurrentHashMap<>(LIME.SEARCHSRV_RESET_CACHE_SIZE);
             }
             List<Mapping> results = emojicache.get(code);
-            if(emojicache.get(code) != null){
-                return results;
-            }else{
-                //Log.i("EMOJI :" , "Run search emoji ...");
+            if (emojicache.get(code) == null) {
                 results = dbadapter.emojiConvert(code, type);
                 emojicache.put(code, results);
-                return results;
             }
+            return results;
         }
         return null;
     }
 
+    /**
+     * Core method to retrieve mappings for a code from cache or database.
+     * <p>
+     * Handles complex logic including:
+     * <ul>
+     *     <li>Cache lookup and management.</li>
+     *     <li>Runtime phrase suggestion generation.</li>
+     *     <li>English word suggestion fallback.</li>
+     *     <li>Result sorting and filtering.</li>
+     * </ul>
+     *
+     * @param code           The input code.
+     * @param softkeyboard   True if soft keyboard.
+     * @param getAllRecords  True to fetch all records.
+     * @param prefetchCache  True if this request is a background prefetch.
+     * @return List of mappings.
+     * @throws RemoteException If database fails.
+     */
     public List<Mapping> getMappingByCode(String code, boolean softkeyboard, boolean getAllRecords, boolean prefetchCache)
             throws RemoteException {
         if (DEBUG||dumpRunTimeSuggestion)
             Log.i(TAG, "getMappingByCode(): code=" + code);
+
+        // Handle null or empty code gracefully
+        if (code == null || code.isEmpty()) {
+            if (DEBUG)
+                Log.w(TAG, "getMappingByCode(): code is null or empty, returning empty list");
+            return new LinkedList<>();
+        }
+
+        // Handle null dbadapter gracefully (e.g., when SearchServer created with null context)
+        if (mLIMEPref==null || dbadapter == null) {
+            if (DEBUG)
+                Log.w(TAG, "getMappingByCode(): mLIMEPref or dbadapter is null, returning empty list");
+            return new LinkedList<>();
+        }
+
         // Check if system need to reset cache
 
         //check reset cache with local variable instead of reading from shared preference for better performance
@@ -616,156 +783,163 @@ public class SearchServer {
         //codeLengthMap.clear();//Jeremy '12,6,2 reset the codeLengthMap
 
         List<Mapping> result = new LinkedList<>();
-        if (code != null) {
-            // clear mappingidx when user switching between softkeyboard and hard keyboard. Jeremy '11,6,11
-            if (isPhysicalKeyboardPressed == softkeyboard)
-                isPhysicalKeyboardPressed = !softkeyboard;
+        // clear mappingidx when user switching between softkeyboard and hard keyboard. Jeremy '11,6,11
+        if (isPhysicalKeyboardPressed == softkeyboard)
+            isPhysicalKeyboardPressed = !softkeyboard;
 
-            // Jeremy '11,9, 3 remove cached keyname when request full records
-            if (getAllRecords && keynamecache.get(cacheKey(code)) != null)
-                keynamecache.remove(cacheKey(code));
+        // Jeremy '11,9, 3 remove cached keyname when request full records
+        if (getAllRecords && keynamecache.get(cacheKey(code)) != null)
+            keynamecache.remove(cacheKey(code));
 
-            int size = code.length();
+        int size = code.length();
 
-            //boolean hasMore = false;
-
-
-            // 12,6,4 Jeremy. Ascending a ab abc... looking up db if the cache is not exist
-            //'15,6,4 Jeremy. Do exact search only in between search mode (1 time only).
-            List<Mapping> resultList
-                    = getMappingByCodeFromCacheOrDB(code, getAllRecords);
+        //boolean hasMore = false;
 
 
-
-            //Jeremy '15,7,16 reset abandonPhraseSuggestion if code length ==1
-            if(mLIMEPref.getSmartChineseInput() && abandonPhraseSuggestion && code.length()==1){
-                clearRunTimeSuggestion(false);
-            }
-            // make run-time suggestion '15, 6, 9 Jeremy.
-            if (!abandonPhraseSuggestion && !prefetchCache && mLIMEPref.getSmartChineseInput()) {
-                makeRunTimeSuggestion(code, resultList);
-            }
-
-            // 12,6,4 Jeremy. Descending  abc ab a... Build the result candidate list.
-            //'15,6,4 Jeremy. Do exact search only in between search mode.
-            //for (int i = 0; i < ((LimeDB.getBetweenSearch()) ? 1 : size); i++) {
-            String cacheKey = cacheKey(code);
-            List<Mapping> cacheTemp = cache.get(cacheKey);
+        // 12,6,4 Jeremy. Ascending a ab abc... looking up db if the cache is not exist
+        //'15,6,4 Jeremy. Do exact search only in between search mode (1 time only).
+        List<Mapping> resultList
+                = getMappingByCodeFromCacheOrDB(code, getAllRecords);
 
 
-            if (cacheTemp != null) {
-                List<Mapping> resultlist = cacheTemp;
-
-                //if getAllRecords is true and result list or related list has has more mark in the end
-                // recall LimeDB.GetMappingByCode with getAllRecords true.
-                if (getAllRecords &&
-                        resultlist.size() > 1 && resultlist.get(resultlist.size() - 1).isHasMoreRecordsMarkRecord()) {
-                    try {
-                        cacheTemp = dbadapter.getMappingByCode(code, !isPhysicalKeyboardPressed, true);
-                        cache.remove(cacheKey);
-                        cache.put(cacheKey, cacheTemp);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-
-                }
-            }
-
-            if (cacheTemp != null) {
-                List<Mapping> resultlist = cacheTemp;
-                //List<Mapping> relatedtlist = cacheTemp.second;
-
-                if (DEBUG || dumpRunTimeSuggestion)
-                    Log.i(TAG, "getMappingByCode() code=" + code + " resultlist.size()=" + resultlist.size() + ", abandonPhraseSuggestion:" + abandonPhraseSuggestion);
-
-
-                //if (i == 0) {
-                if (resultlist.size() == 0 && code.length() > 1) {
-                    //If the result list is empty we need to go back to last result list with nonzero result list
-                    String wayBackCode = code;
-                    do {
-                        wayBackCode = wayBackCode.substring(0, wayBackCode.length() - 1);
-                        cacheTemp = cache.get(cacheKey(wayBackCode));
-                        if (cacheTemp != null)
-                            resultlist = cacheTemp;
-                    } while (resultlist.size() == 0 && wayBackCode.length() > 1);
-                }
-
-
-                Mapping self = new Mapping();
-                self.setWord(code);
-                self.setCode(code);
-                self.setComposingCodeRecord();
-                // put run-time built suggestion if it's present
-                        /*List<Pair<Mapping, String>> bestSuggestionList = null;
-                        Mapping bestSuggestion = null;
-                        if (!suggestionLoL.isEmpty()) {
-                            bestSuggestionList = suggestionLoL.get(suggestionLoL.size() - 1);
-                        }
-                        if (bestSuggestionList != null && !bestSuggestionList.isEmpty()) {
-                            bestSuggestion = bestSuggestionList.get(bestSuggestionList.size() - 1).first;
-                        }*/
-
-                //Jeremy '15,7,16 check english suggestion if code length > maxCodeLength
-                Mapping englishSuggestion = null;
-                if(code.length() > maxCodeLength) {
-                    List<Mapping> englishSuggestions = getEnglishSuggestions(code);
-                    if(englishSuggestions!=null && !englishSuggestions.isEmpty()) {
-                        englishSuggestion = englishSuggestions.get(0);
-                        englishSuggestion.setRuntimeBuiltPhraseRecord();
-                        englishSuggestion.setCode(code);
-                    }
-                }
-
-
-                Mapping bestSuggestion = null;
-                if (bestSuggestionStack != null && !bestSuggestionStack.isEmpty()) {
-                    bestSuggestion = bestSuggestionStack.lastElement().first;
-                }
-                int averageScore =(bestSuggestion==null)?0: (bestSuggestion.getBasescore()  / bestSuggestion.getWord().length());
-
-                if (bestSuggestion != null    // the last element is run-time built suggestion from remaining code query
-                        && !abandonPhraseSuggestion
-                        && !bestSuggestion.isExactMatchToCodeRecord() //will be the first item of result list, dont' add duplicated item
-                        && bestSuggestion.getWord().length() > 1
-                        && ( (englishSuggestion==null && averageScore  > 120) || (englishSuggestion!=null && averageScore > 200 ))  ) {
-                    result.add(self);
-                    result.add(bestSuggestion);
-
-                } else if( englishSuggestion!=null && averageScore <= 200){
-                    clearRunTimeSuggestion(true);
-                    result.add(self);
-                    result.add(englishSuggestion);
-                } else {
-                    // put self into the first mapping for mixed input.
-                    result.add(self);
-                }
-                // }
-
-                if (resultlist.size() > 0) {
-                    result.addAll(resultlist);
-                    /*
-                    int rsize = result.size();
-                    if (result.get(rsize - 1).isHasMoreRecordsMarkRecord()) {
-                        //do not need to touch the has more record in between search mode. Jeremy '15,6,4
-                        result.remove(rsize - 1);
-                        hasMore = true;
-
-                        }
-                        */
-                    if (DEBUG)
-                        Log.i(TAG, "getMappingByCode() code=" + code + "  result list added resultlist.size()="
-                                + resultlist.size());
-
-                }
-
-            }
-            //codeLengthMap is deprecated and replace by exact match stack scheme '15,6,3 jeremy
-            //codeLengthMap.add(new Pair<>(code.length(), result.size()));  //Jeremy 12,6,2 preserve the code length in each loop.
-            //if (DEBUG) 	Log.i(TAG, "getMappingByCode() codeLengthMap  code length = " + code.length() + ", result size = " + result.size());
-
-            code = code.substring(0, code.length() - 1);
+        //Jeremy '15,7,16 reset abandonPhraseSuggestion if code length ==1
+        // Skip for prefetch queries — they are background cache warming, not real user input,
+        // and must not disturb the phrase suggestion state.
+        if (!prefetchCache && mLIMEPref.getSmartChineseInput() && abandonPhraseSuggestion && code.length()==1){
+            clearRunTimeSuggestion(false);
         }
+        // make run-time suggestion '15, 6, 9 Jeremy.
+        if (!abandonPhraseSuggestion && !prefetchCache && mLIMEPref.getSmartChineseInput()) {
+            makeRunTimeSuggestion(code, resultList);
+        }
+
+        // 12,6,4 Jeremy. Descending  abc ab a... Build the result candidate list.
+        //'15,6,4 Jeremy. Do exact search only in between search mode.
+        //for (int i = 0; i < ((LimeDB.getBetweenSearch()) ? 1 : size); i++) {
+        String cacheKey = cacheKey(code);
+        List<Mapping> cacheTemp = cache.get(cacheKey);
+
+
+        if (cacheTemp != null) {
+            List<Mapping> resultlist = cacheTemp;
+
+            //if getAllRecords is true and result list or related list has has more mark in the end
+            // recall LimeDB.GetMappingByCode with getAllRecords true.
+            if (getAllRecords &&
+                    resultlist.size() > 1 && resultlist.get(resultlist.size() - 1).isHasMoreRecordsMarkRecord()) {
+                try {
+                    cacheTemp = dbadapter.getMappingByCode(code, !isPhysicalKeyboardPressed, true);
+                    cache.remove(cacheKey);
+                    cache.put(cacheKey, cacheTemp);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error in search operation", e);
+                }
+
+            }
+        }
+
+        if (cacheTemp != null) {
+            List<Mapping> resultlist = cacheTemp;
+            //List<Mapping> relatedtlist = cacheTemp.second;
+
+            if (DEBUG || dumpRunTimeSuggestion)
+                Log.i(TAG, "getMappingByCode() code=" + code + " resultlist.size()=" + resultlist.size() + ", abandonPhraseSuggestion:" + abandonPhraseSuggestion);
+
+
+            //if (i == 0) {
+            if (resultlist.isEmpty() && code.length() > 1) {
+                //If the result list is empty we need to go back to last result list with nonzero result list
+                String wayBackCode = code;
+                do {
+                    wayBackCode = wayBackCode.substring(0, wayBackCode.length() - 1);
+                    cacheTemp = cache.get(cacheKey(wayBackCode));
+                    if (cacheTemp != null)
+                        resultlist = cacheTemp;
+                } while (resultlist.isEmpty() && wayBackCode.length() > 1);
+            }
+
+
+            Mapping self = new Mapping();
+            self.setWord(code);
+            self.setCode(code);
+            self.setComposingCodeRecord();
+            // put run-time built suggestion if it's present
+                    /*List<Pair<Mapping, String>> bestSuggestionList = null;
+                    Mapping bestSuggestion = null;
+                    if (!suggestionLoL.isEmpty()) {
+                        bestSuggestionList = suggestionLoL.get(suggestionLoL.size() - 1);
+                    }
+                    if (bestSuggestionList != null && !bestSuggestionList.isEmpty()) {
+                        bestSuggestion = bestSuggestionList.get(bestSuggestionList.size() - 1).first;
+                    }*/
+
+            //Jeremy '15,7,16 check english suggestion if code length > maxCodeLength
+            Mapping englishSuggestion = null;
+            if(code.length() > maxCodeLength) {
+                List<Mapping> englishSuggestions = getEnglishSuggestions(code);
+                if(englishSuggestions!=null && !englishSuggestions.isEmpty()) {
+                    englishSuggestion = englishSuggestions.get(0);
+                    englishSuggestion.setRuntimeBuiltPhraseRecord();
+                    englishSuggestion.setCode(code);
+                }
+            }
+
+
+            Mapping bestSuggestion = null;
+            if (bestSuggestionStack != null && !bestSuggestionStack.isEmpty()) {
+                bestSuggestion = bestSuggestionStack.lastElement().first;
+            }
+            int averageScore = 0;
+            int bestSuggestionLength = 0;
+            if (bestSuggestion != null) {
+                String bestSuggestionWord = bestSuggestion.getWord();
+                bestSuggestionLength = (bestSuggestionWord == null) ? 0 : bestSuggestionWord.length();
+                if (bestSuggestionLength > 0) {
+                    averageScore = bestSuggestion.getBasescore() / bestSuggestionLength;
+                }
+            }
+
+            if (bestSuggestion != null    // the last element is run-time built suggestion from remaining code query
+                    && !abandonPhraseSuggestion
+                    && !bestSuggestion.isExactMatchToCodeRecord() //will be the first item of result list, dont' add duplicated item
+                    && bestSuggestionLength > 1
+                    && ( (englishSuggestion==null && averageScore  > MIN_SCORE_THRESHOLD) || (englishSuggestion!=null && averageScore > MAX_SCORE_THRESHOLD ))  ) {
+                result.add(self);
+                result.add(bestSuggestion);
+
+            } else if( englishSuggestion!=null && averageScore <= MAX_SCORE_THRESHOLD){
+                clearRunTimeSuggestion(true);
+                result.add(self);
+                result.add(englishSuggestion);
+            } else {
+                // put self into the first mapping for mixed input.
+                result.add(self);
+            }
+            // }
+
+            if (!resultlist.isEmpty()) {
+                result.addAll(resultlist);
+                /*
+                int rsize = result.size();
+                if (result.get(rsize - 1).isHasMoreRecordsMarkRecord()) {
+                    //do not need to touch the has more record in between search mode. Jeremy '15,6,4
+                    result.remove(rsize - 1);
+                    hasMore = true;
+
+                    }
+                    */
+                if (DEBUG)
+                    Log.i(TAG, "getMappingByCode() code=" + code + "  result list added resultlist.size()="
+                            + resultlist.size());
+
+            }
+
+        }
+        //codeLengthMap is deprecated and replace by exact match stack scheme '15,6,3 jeremy
+        //codeLengthMap.add(new Pair<>(code.length(), result.size()));  //Jeremy 12,6,2 preserve the code length in each loop.
+        //if (DEBUG) 	Log.i(TAG, "getMappingByCode() codeLengthMap  code length = " + code.length() + ", result size = " + result.size());
+
+        code = code.substring(0, code.length() - 1);
         if (DEBUG)
             Log.i(TAG, "getMappingByCode() code=" + code + " result.size()=" + result.size());
 
@@ -776,13 +950,19 @@ public class SearchServer {
 
 
 
-	/*
-    *   Get mapping list from cache or from db if it's not in cache. Separated from getMappingByCode() Jeremy '15,6,8
+    /**
+     * Retrieves the mapping list from cache, or queries the database if not found.
+     * <p>
+     * Separated from {@code getMappingByCode} to modularize cache/DB logic.
+     *
+     * @param queryCode     The code to look up.
+     * @param getAllRecords Whether to retrieve all matching records.
+     * @return List of mappings.
 	 */
-
     private List<Mapping> getMappingByCodeFromCacheOrDB(String queryCode, Boolean getAllRecords) {
-        String cacheKey = cacheKey(queryCode);
-        List<Mapping> cacheTemp = cache.get(cacheKey);
+        String cachedKey = cacheKey(queryCode);
+        assert cachedKey != null;
+        List<Mapping> cacheTemp = cache.get(cachedKey);
 
         if (DEBUG)
             Log.i(TAG, " getMappingByCode() check if cached exist on code = '" + queryCode + "'");
@@ -792,10 +972,10 @@ public class SearchServer {
             // Just ignore error when something wrong with the result set
             try {
                 cacheTemp = dbadapter.getMappingByCode(queryCode, !isPhysicalKeyboardPressed, getAllRecords);
-                if (cacheTemp != null) cache.put(cacheKey, cacheTemp);
+                if (cacheTemp != null) cache.put(cachedKey, cacheTemp);
                 //Jeremy '12,6,5 check if need to update code remap cache
-                if (cacheTemp != null && cacheTemp != null
-                        && cacheTemp.size() > 0 && cacheTemp.get(0) != null
+                if (cacheTemp != null
+                        && !cacheTemp.isEmpty() && cacheTemp.get(0) != null
                         && cacheTemp.get(0).isExactMatchToCodeRecord()) {
                     String remappedCode = cacheTemp.get(0).getCode();
                     if (!queryCode.equals(remappedCode)) {
@@ -823,7 +1003,7 @@ public class SearchServer {
                 }
 
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.e(TAG, "Error in search operation", e);
             }
         }
         return cacheTemp;
@@ -832,9 +1012,16 @@ public class SearchServer {
 }
 
     /**
-     * get real code length
+     * Determines the actual length of the code matched by a selected mapping.
+     * <p>
+     * Useful for separating the matched portion of the input from the remaining buffer.
+     * Also triggers learning of runtime-built phrases.
+     *
+     * @param selectedMapping The user-selected mapping.
+     * @param currentCode     The current input buffer.
+     * @return The length of the code corresponding to the selection.
      */
-    int getRealCodeLength(final Mapping selectedMapping, String currentCode) {
+    protected int getRealCodeLength(final Mapping selectedMapping, String currentCode) {
         if (DEBUG)
             Log.i(TAG, "getRealCodeLength()");
 
@@ -843,11 +1030,11 @@ public class SearchServer {
         if (LimeDB.isCodeDualMapped()) { //abandon LD support for dual mapped codes. Jeremy '15,6,5
             realCodeLen = currentCode.length();
         } else {
-            if (tablename.equals("phonetic")) {
+            if (tablename.equals(LIME.DB_TABLE_PHONETIC)) {
                 String selectedPhoneticKeyboardType =
-                        mLIMEPref.getParameterString("phonetic_keyboard_type", "standard");
+                        mLIMEPref.getParameterString("phonetic_keyboard_type", LIME.DB_TABLE_PHONETIC);
                 String lcode = currentCode;
-                if (selectedPhoneticKeyboardType.startsWith("eten")) {
+                if (selectedPhoneticKeyboardType.startsWith(LIME.IM_PHONETIC_KEYBOARD_TYPE_ETEN)) {
                     lcode = dbadapter.preProcessingRemappingCode(currentCode);
                 }
                 String noToneCode = code.replaceAll("[3467 ]", "");
@@ -885,8 +1072,7 @@ public class SearchServer {
         }
 
         // learn ld phrase if the select mapping is run-time suggestion
-        if (selectedMapping != null && selectedMapping.isRuntimeBuiltPhraseRecord() &&
-                suggestionLoL != null && !suggestionLoL.isEmpty()) {
+        if (selectedMapping.isRuntimeBuiltPhraseRecord() && suggestionLoL != null && !suggestionLoL.isEmpty()) {
 
             final List<Pair<Mapping, String>> bestSuggestionList = new LinkedList<>(suggestionLoL.get(suggestionLoL.size() - 1));
             final String selectedWord = selectedMapping.getWord();
@@ -922,14 +1108,16 @@ public class SearchServer {
     }
 
 
-    /**
-     * This method is to initial/reset the cache of im.
+     /**
+     * Initializes or resets all internal caches (mappings, English words, emojis, etc.).
+     * <p>
+     * Clears existing caches and allocates new concurrent hashmaps.
      */
     public void initialCache() {
         try {
             clear();
         } catch (RemoteException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Error in search operation", e);
         }
         cache = new ConcurrentHashMap<>(LIME.SEARCHSRV_RESET_CACHE_SIZE);
         engcache = new ConcurrentHashMap<>(LIME.SEARCHSRV_RESET_CACHE_SIZE);
@@ -944,6 +1132,11 @@ public class SearchServer {
     }
 
 
+    /**
+     * Updates the score of a cached mapping and re-sorts the cache if necessary.
+     *
+     * @param cachedMapping The mapping with the updated score.
+     */
     private void updateScoreCache(Mapping cachedMapping) {
         if (DEBUG) Log.i(TAG, "updateScoreCache(): code=" + cachedMapping.getCode());
 
@@ -991,8 +1184,15 @@ public class SearchServer {
                                         break;
                                     }
                                 }
-
                             }
+                            break;
+                        }
+                    }
+                } else {
+                    // When sorting is disabled, still record the score bump to keep cache accurate
+                    for (Mapping mapping : cachedList) {
+                        if (cachedMapping.getId().equals(mapping.getId())) {
+                            mapping.setScore(mapping.getScore() + 1);
                             break;
                         }
                     }
@@ -1015,6 +1215,18 @@ public class SearchServer {
 // '11,8,1 renamed from updateuserdict()
 List<Mapping> scorelistSnapshot = null;
 
+    /**
+     * Tasks to perform after an input session finishes.
+     * <p>
+     * Spawns a background thread to:
+     * <ul>
+     *     <li>Learn related phrases from the recent score list.</li>
+     *     <li>Update user dictionary/scores.</li>
+     *     <li>Process LD phrases if applicable.</li>
+     * </ul>
+     *
+     * @throws RemoteException If a database error occurs.
+     */
     public void postFinishInput() throws RemoteException {
 
         if (scorelistSnapshot == null) scorelistSnapshot = new LinkedList<>();
@@ -1026,8 +1238,7 @@ List<Mapping> scorelistSnapshot = null;
         Thread UpdatingThread = new Thread() {
             public void run() {
                 // for thread-safe operation, duplicate local copy of scorelist and LDphraselistarray
-                //List<Mapping> localScorelist = new LinkedList<Mapping>();
-                if (scorelist != null) {
+                synchronized (scorelist) {
                     scorelistSnapshot.addAll(scorelist);
                     scorelist.clear();
                 }
@@ -1053,6 +1264,11 @@ List<Mapping> scorelistSnapshot = null;
 
     }
 
+    /**
+     * Learns associations between consecutive words in a sentence (related phrases).
+     *
+     * @param localScorelist The list of mappings selected during the session.
+     */
     private void learnRelatedPhrase(List<Mapping> localScorelist) {
         if (localScorelist != null) {
             if (DEBUG)
@@ -1068,9 +1284,9 @@ List<Mapping> scorelistSnapshot = null;
                         if (unit2 == null) {
                             continue;
                         }
-                        if (unit.getWord() != null && !unit.getWord().equals("")
+                        if (unit.getWord() != null && !unit.getWord().isEmpty()
 
-                                && unit2.getWord() != null && !unit2.getWord().equals("")
+                                && unit2.getWord() != null && !unit2.getWord().isEmpty()
 
                                 &&
                                 (unit.isExactMatchToCodeRecord() || unit.isPartialMatchToCodeRecord()
@@ -1109,11 +1325,16 @@ List<Mapping> scorelistSnapshot = null;
      * Jeremy '12,6,9 Rewrite to support word with more than 1 characters
      */
 
+    /**
+     * Learns new phrases based on user input patterns (Learning Dictionary).
+     *
+     * @param localLDPhraseListArray The list of potential phrases to learn.
+     */
     private void learnLDPhrase(ArrayList<List<Mapping>> localLDPhraseListArray) {
         if (DEBUG)
             Log.i(TAG, "learnLDPhrase()");
 
-        if (localLDPhraseListArray != null && localLDPhraseListArray.size() > 0) {
+        if (localLDPhraseListArray != null && !localLDPhraseListArray.isEmpty()) {
             if (DEBUG)
                 Log.i(TAG, "learnLDPhrase(): LDPhrase learning, arraysize =" + localLDPhraseListArray.size());
 
@@ -1121,7 +1342,7 @@ List<Mapping> scorelistSnapshot = null;
             for (List<Mapping> phraselist : localLDPhraseListArray) {
                 if (DEBUG)
                     Log.i(TAG, "learnLDPhrase(): LDPhrase learning, current list size =" + phraselist.size());
-                if (phraselist.size() > 0 && phraselist.size() < 5) { //Jeremy '12,6,8 limit the phrase to have 4 chracters
+                if (!phraselist.isEmpty() && phraselist.size() < 5) { //Jeremy '12,6,8 limit the phrase to have 4 chracters
 
 
                     String baseCode, LDCode="", QPCode = "", baseWord;
@@ -1133,7 +1354,7 @@ List<Mapping> scorelistSnapshot = null;
                                 + ", unit1.getCode() =" + unit1.getCode()
                                 + ", unit1.getWord() =" + unit1.getWord());
 
-                    if (unit1 == null || unit1.getWord().length() == 0
+                    if (unit1 == null || unit1.getWord().isEmpty()
                             || unit1.getCode().equals(unit1.getWord())) //Jeremy '12,6,13 avoid learning mixed mode english
                     {
                         break;
@@ -1146,15 +1367,15 @@ List<Mapping> scorelistSnapshot = null;
                         if (unit1.getId() == null //Jeremy '12,6,7 break if id is null (selected from related list)
                                 || unit1.isPartialMatchToCodeRecord() //Jeremy '15,6,3 new record identification
                                 || unit1.getCode() == null //Jeremy '12,6,7 break if code is null (selected from related phrase)
-                                || unit1.getCode().length() == 0
+                                || unit1.getCode().isEmpty()
                                 || unit1.isRelatedPhraseRecord()) {
                             List<Mapping> rMappingList = dbadapter.getMappingByWord(baseWord, tablename);
-                            if (rMappingList.size() > 0)
+                            if (!rMappingList.isEmpty())
                                 baseCode = rMappingList.get(0).getCode();
                             else
                                 break; //look-up failed, abandon.
                         }
-                        if (baseCode != null && baseCode.length() > 0)
+                        if (baseCode != null && !baseCode.isEmpty())
                             QPCode += baseCode.substring(0, 1);
                         else
                             break;//abandon the phrase learning process;
@@ -1165,7 +1386,7 @@ List<Mapping> scorelistSnapshot = null;
                         for (int i = 0; i < baseWord.length(); i++) {
                             String c = baseWord.substring(i, i + 1);
                             List<Mapping> rMappingList = dbadapter.getMappingByWord(c, tablename);
-                            if (rMappingList.size() > 0) {
+                            if (!rMappingList.isEmpty()) {
                                 baseCode += rMappingList.get(0).getCode();
                                 QPCode += rMappingList.get(0).getCode().substring(0, 1);
                             } else {
@@ -1180,7 +1401,7 @@ List<Mapping> scorelistSnapshot = null;
                         if (i + 1 < phraselist.size()) {
 
                             Mapping unit2 = phraselist.get((i + 1));
-                            if (unit2 == null || unit2.getWord().length() == 0 || unit2.isComposingCodeRecord() || unit2.isEnglishSuggestionRecord()) //Jeremy 15,6,4 exclude composing code
+                            if (unit2 == null || unit2.getWord().isEmpty() || unit2.isComposingCodeRecord() || unit2.isEnglishSuggestionRecord()) //Jeremy 15,6,4 exclude composing code
                             //|| unit2.getCode().equals(unit2.getWord())) //Jeremy '12,6,13 avoid learning mixed mode english
                             {
                                 break;
@@ -1194,15 +1415,15 @@ List<Mapping> scorelistSnapshot = null;
                                 if (unit2.getId() == null //Jeremy '12,6,7 break if id is null (selected from related phrase)
                                         || unit2.isPartialMatchToCodeRecord() //Jeremy '15,6,3 new record identification
                                         || code2 == null //Jeremy '12,6,7 break if code is null (selected from relatedphrase)
-                                        || code2.length() == 0
+                                        || code2.isEmpty()
                                         || unit2.isRelatedPhraseRecord()) {
                                     List<Mapping> rMappingList = dbadapter.getMappingByWord(word2, tablename);
-                                    if (rMappingList.size() > 0)
+                                    if (!rMappingList.isEmpty())
                                         code2 = rMappingList.get(0).getCode();
                                     else
                                         break;
                                 }
-                                if (code2 != null && code2.length() > 0) {
+                                if (code2 != null && !code2.isEmpty()) {
                                     baseCode += code2;
                                     QPCode += code2.substring(0, 1);
                                 } else
@@ -1213,7 +1434,7 @@ List<Mapping> scorelistSnapshot = null;
                                 for (int j = 0; j < word2.length(); j++) {
                                     String c = word2.substring(j, j + 1);
                                     List<Mapping> rMappingList = dbadapter.getMappingByWord(c, tablename);
-                                    if (rMappingList.size() > 0) {
+                                    if (!rMappingList.isEmpty()) {
                                         baseCode += rMappingList.get(0).getCode();
                                         QPCode += rMappingList.get(0).getCode().substring(0, 1);
                                     } else //r-lookup failed. abandon the phrase learning
@@ -1233,7 +1454,7 @@ List<Mapping> scorelistSnapshot = null;
                                         + ", QPcode = '" + QPCode
                                         + "'.");
                             if (i + 1 == phraselist.size() - 1) {//only learn at the end of the phrase word '12,6,8
-                                if (tablename.equals("phonetic")) {// remove tone symbol in phonetic table
+                                if (tablename.equals(LIME.DB_TABLE_PHONETIC)) {// remove tone symbol in phonetic table
                                     LDCode = baseCode.replaceAll("[3467 ]", "").toLowerCase(Locale.US);
                                     QPCode = QPCode.toLowerCase(Locale.US);
                                     if (LDCode.length() > 1) {
@@ -1272,6 +1493,11 @@ List<Mapping> scorelistSnapshot = null;
     /**
      *
      */
+    /**
+     * Removes cached mappings for codes that have been remapped.
+     *
+     * @param code The original code.
+     */
     private void removeRemappedCodeCachedMappings(String code) {
         if (DEBUG)
             Log.i(TAG, "removeRemappedCodeCachedMappings() on code ='" + code + "' coderemapcache.size=" + coderemapcache.size());
@@ -1286,6 +1512,11 @@ List<Mapping> scorelistSnapshot = null;
             cache.remove(cacheKey(code)); //Jeremy '12,6,6 no remap. remove the code mapping from cache.
     }
 
+    /**
+     * Updates the cache for codes similar to the modified code (e.g., prefix matches).
+     *
+     * @param code The modified code.
+     */
     private void updateSimilarCodeCache(String code) {
         if (DEBUG)
             Log.i(TAG, "updateSimilarCodeCache(): code = '" + code + "'");
@@ -1306,16 +1537,24 @@ List<Mapping> scorelistSnapshot = null;
                     Log.i(TAG, "updateSimilarCodeCache(): code not in cache. update to db only on code = '" + key + "'");
                 removeRemappedCodeCachedMappings(key);
             }
-            if (code.length() == 1)// prefetch if code length ==1
-                try {
-                    getMappingByCode(code, !isPhysicalKeyboardPressed, false, true);
-                } catch (RemoteException e) {
-                    e.printStackTrace();
-                }
+        }
+        // Prefetch if code length == 1 (moved outside loop since loop doesn't execute when code.length() == 1)
+        if (code.length() == 1) {
+            try {
+                getMappingByCode(code, !isPhysicalKeyboardPressed, false, true);
+            } catch (RemoteException e) {
+                Log.e(TAG, "Error in search operation", e);
+            }
         }
     }
 
 
+    /**
+     * Converts an internal key code/string to its display name.
+     *
+     * @param code The key code.
+     * @return The display name for the key.
+     */
     public String keyToKeyname(String code) {
         //Jeremy '11,6,21 Build cache according using cachekey
 
@@ -1323,7 +1562,7 @@ List<Mapping> scorelistSnapshot = null;
         String result = keynamecache.get(cacheKey);
         if (result == null) {
             //loadDBAdapter(); openLimeDatabase();
-            result = dbadapter.keyToKeyname(code, tablename, true);
+            result = dbadapter.keyToKeyName(code, tablename, true);
             keynamecache.put(cacheKey, result);
         }
         return result;
@@ -1334,22 +1573,25 @@ List<Mapping> scorelistSnapshot = null;
      * Renamed to learnRelatedPhraseAndUpdateScore Jeremy '15,6,4
      */
 
+    /**
+     * Updates the score of a mapping and learns it as a related phrase.
+     * <p>
+     * This spawns a background thread to update the score cache and persistent storage asynchronously.
+     *
+     * @param updateMapping The mapping to update/learn.
+     */
     public void learnRelatedPhraseAndUpdateScore(Mapping updateMapping)
     //String id, String code, String word,
     //String pword, int score, boolean isDictionary)
-            throws RemoteException {
+    {
         if (DEBUG) Log.i(TAG, "learnRelatedPhraseAndUpdateScore() ");
-
-        if (scorelist == null) {
-            scorelist = new ArrayList<>();
-        }
 
         // Temp final Mapping Object For updateMapping thread.
         if (updateMapping != null) {
             final Mapping updateMappingTemp = new Mapping(updateMapping);
-
-            // Jeremy '11,6,11. Always update score and sort according to preferences.
-            scorelist.add(updateMappingTemp);
+            synchronized (scorelist) {
+                scorelist.add(updateMappingTemp);
+            }
             Thread UpdatingThread = new Thread() {
                 public void run() {
                     updateScoreCache(updateMappingTemp);
@@ -1359,6 +1601,12 @@ List<Mapping> scorelistSnapshot = null;
         }
     }
 
+    /**
+     * Adds a mapping to the Learning Dictionary (LD) phrase buffer.
+     *
+     * @param mapping The mapping to add.
+     * @param ending  True if this mapping ends the current phrase sequence.
+     */
     public void addLDPhrase(Mapping mapping,//String id, String code, String word, int score,
                             boolean ending) {
         if (LDPhraseListArray == null)
@@ -1385,21 +1633,34 @@ List<Mapping> scorelistSnapshot = null;
 
     }
 
-    public List<KeyboardObj> getKeyboardList() throws RemoteException {
+    /**
+     * Retrieves the list of installed keyboards.
+     *
+     * @return A list of {@link Keyboard} objects.
+     * @throws RemoteException If a database error occurs.
+     */
+    public List<Keyboard> getKeyboardConfigList() throws RemoteException {
         //if(dbadapter == null){dbadapter = new LimeDB(ctx);}
-        return dbadapter.getKeyboardList();
+        return dbadapter.getKeyboardConfigList();
     }
 
-    public List<ImObj> getImList() throws RemoteException {
-        //if(dbadapter == null){dbadapter = new LimeDB(ctx);}
-        return dbadapter.getImList();
+    /**
+     * Retrieves the list of Input Methods (IMs).
+     *
+     * @return A list of {@link ImConfig} objects with soft keyboard settings of all activated IM.
+     * @throws RemoteException If a database error occurs.
+     */
+    public List<ImConfig> getAllImKeyboardConfigList() throws RemoteException {
+        return dbadapter.getImConfigList(null, LIME.DB_IM_COLUMN_KEYBOARD);
     }
 
 
+    /**
+     * Clears all runtime caches (score list, mappings, english, emoji, key names).
+     *
+     * @throws RemoteException If a database error occurs.
+     */
     public void clear() throws RemoteException {
-        if (scorelist != null) {
-            scorelist.clear();
-        }
         if (scorelist != null) {
             scorelist.clear();
         }
@@ -1424,6 +1685,13 @@ List<Mapping> scorelistSnapshot = null;
     private static String lastEnglishWord = null;
     private static boolean noSuggestionsForLastEnglishWord = false;
 
+    /**
+     * Retrieves English word suggestions for a given prefix.
+     *
+     * @param word The prefix or word to search for.
+     * @return A list of English word mappings.
+     * @throws RemoteException If a database error occurs.
+     */
     public synchronized List<Mapping> getEnglishSuggestions(String word) throws RemoteException {
 
         long startTime=0;
@@ -1449,7 +1717,7 @@ List<Mapping> scorelistSnapshot = null;
                     temp.setEnglishSuggestionRecord();
                     result.add(temp);
                 }
-                if (result.size() > 0) {
+                if (!result.isEmpty()) {
                     engcache.put(word, result);
                 }
             }
@@ -1466,27 +1734,26 @@ List<Mapping> scorelistSnapshot = null;
 
     }
 
-    /*
-        public boolean isImKeys(char c) throws RemoteException {
-            if (imKeysMap.get(tablename) == null || imKeysMap.size() == 0) {
-                //if(dbadapter == null){dbadapter = new LimeDB(ctx);}
-                imKeysMap.put(tablename, dbadapter.getImInfo(tablename, "imkeys"));
-            }
-            String imkeys = imKeysMap.get(tablename);
-            return !(imkeys == null || imkeys.equals("")) && (imkeys.indexOf(c) >= 0);
-        }
-    */
+
+    /**
+     * Retrieves the selection key string for the current keyboard.
+     * <p>
+     * Selection keys are used for selecting candidates (e.g., "1234567890" or "asdfghjkl;").
+     *
+     * @return The selection key characters string.
+     * @throws RemoteException If a database error occurs.
+     */
     public String getSelkey() throws RemoteException {
         if (DEBUG)
             Log.i(TAG, "getSelkey():hasNumber:" + hasNumberMapping + "hasSymbol:" + hasSymbolMapping);
         String selkey;
         String table = tablename;
-        if (tablename.equals("phonetic")) {
+        if (tablename.equals(LIME.DB_TABLE_PHONETIC)) {
             table = tablename + mLIMEPref.getPhoneticKeyboardType();
         }
-        if (selKeyMap.get(table) == null || selKeyMap.size() == 0) {
+        if (selKeyMap.get(table) == null || selKeyMap.isEmpty()) {
             //if(dbadapter == null){dbadapter = new LimeDB(ctx);}
-            selkey = dbadapter.getImInfo(tablename, "selkey");
+            selkey = dbadapter.getImConfig(tablename, "selkey");
             if (DEBUG)
                 Log.i(TAG, "getSelkey():selkey from db:" + selkey);
             boolean validSelkey = true;
@@ -1500,10 +1767,10 @@ List<Mapping> scorelistSnapshot = null;
             } else
                 validSelkey = false;
             //Jeremy '11,6,19 Rewrite for IM has symbol mapping like ETEN
-            if (!validSelkey || tablename.equals("phonetic")) {
+            if (!validSelkey || tablename.equals(LIME.DB_TABLE_PHONETIC)) {
                 if (hasNumberMapping && hasSymbolMapping) {
-                    if (tablename.equals("dayi")
-                            || (tablename.equals("phonetic") && mLIMEPref.getPhoneticKeyboardType().equals("standard"))) {
+                    if (tablename.equals(LIME.DB_TABLE_DAYI)
+                            || (tablename.equals(LIME.DB_TABLE_PHONETIC) && mLIMEPref.getPhoneticKeyboardType().equals(LIME.DB_TABLE_PHONETIC))) {
                         selkey = "'[]-\\^&*()";
                     } else {
                         selkey = "!@#$%^&*()";
@@ -1538,19 +1805,19 @@ List<Mapping> scorelistSnapshot = null;
             do {
                 exactMatchMapping = completeCodeResultList.get(i);
                 int score = exactMatchMapping.getBasescore();
-                if (score < 120) {
-                    score = 120;
-                } else if (score > 200) {
-                    score = 200;
+                if (score < MIN_SCORE_THRESHOLD) {
+                    score = MIN_SCORE_THRESHOLD;
+                } else if (score > MAX_SCORE_THRESHOLD) {
+                    score = MAX_SCORE_THRESHOLD;
                 }
-                int codeLenBonus = exactMatchMapping.getCode().length() / exactMatchMapping.getWord().length() * 30;
+                int codeLenBonus = exactMatchMapping.getCode().length() / exactMatchMapping.getWord().length() * CODE_LENGTH_BONUS_MULTIPLIER;
                 exactMatchMapping.setBasescore((score + codeLenBonus) * exactMatchMapping.getWord().length());
 
                 if (DEBUG || dumpRunTimeSuggestion)
                     Log.i(TAG, "addExactMatch() complete code = " + code + "" +
                             ", got exact match  = " + exactMatchMapping.getWord()
                             + " score =" + exactMatchMapping.getScore() + ", basescore=" + exactMatchMapping.getBasescore());
-
+                
 
                 //push the exact match mapping with current code into exact match stack. '15,6,2 Jeremy
                 if (exactMatchMapping.getBasescore() > 0) {
@@ -1593,8 +1860,7 @@ List<Mapping> scorelistSnapshot = null;
                             if (phraseLen < 2 || remainingCodeExactMatchMapping.getBasescore() < 2)
                                 continue;
                             int remainingScore = remainingCodeExactMatchMapping.getBasescore();
-                            int codeLenBonus = remainingCodeExactMatchMapping.getCode().length() /
-                                    remainingCodeExactMatchMapping.getWord().length() * 30;
+                            int codeLenBonus = remainingCodeExactMatchMapping.getCode().length() / remainingCodeExactMatchMapping.getWord().length() * 30;
                             if (remainingScore > 120) remainingScore = 120;
                             remainingScore = remainingScore / remainingCodeExactMatchMapping.getWord().length() + codeLenBonus;
 
@@ -1626,7 +1892,7 @@ List<Mapping> scorelistSnapshot = null;
                                 highestRelatedScore = relatedMapping.getBasescore();
                                 suggestMapping.setScore(highestRelatedScore);
 
-                                suggestMapping.setBasescore((averageScore + 50) * phraseLen);
+                                suggestMapping.setBasescore((averageScore + SCORE_ADJUSTMENT_INCREMENT) * phraseLen);
                                 suggestionList.add(new Pair<>(suggestMapping, code));
                                 if (DEBUG || dumpRunTimeSuggestion)
                                     Log.i(TAG, "makeRunTimeSuggestion()  run-time suggest phrase verified from related table ="
@@ -1665,5 +1931,675 @@ List<Mapping> scorelistSnapshot = null;
 
     }
     */
+
+    // ============================================================================
+    // UI-Compatible Methods - Delegates to LimeDB for database operations
+    // These methods allow UI components to access database operations through
+    // SearchServer instead of directly accessing LimeDB, maintaining architectural
+    // separation and enabling centralized caching/logging if needed in the future.
+    // ============================================================================
+
+    /**
+     * Gets IM records filtered by code and/or configEntry.
+     * 
+     * <p>This method delegates to LimeDB.getIm() to retrieve IM information records.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param code The IM code to filter by, or null/empty for all
+     * @param configEntry The IM configEntry to filter by, or null/empty for all
+     * @return List of Im objects, or empty list if database error
+     */
+    public List<ImConfig> getImConfigList(String code, String configEntry) {
+        if (dbadapter == null) {
+            Log.e(TAG, "getIm(): dbadapter is null");
+            return new ArrayList<>();
+        }
+        return dbadapter.getImConfigList(code, configEntry);
+    }
+
+    /**
+     * Gets a list of all keyboards from the database.
+     * 
+     * <p>This method delegates to LimeDB.getKeyboard() to retrieve keyboard records.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @return List of Keyboard objects, or empty list if database error
+     */
+    public List<Keyboard> getKeyboard() {
+        if (dbadapter == null) {
+            Log.e(TAG, "getKeyboard(): dbadapter is null");
+            return new ArrayList<>();
+        }
+        return dbadapter.getKeyboardConfigList();
+    }
+
+
+    /**
+     * Counts the number of mapping records in a table.
+     * 
+     * <p>This method delegates to LimeDB.countRecords() to count mapping records.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param imCode The table name to count records in
+     * @return The number of records, or 0 if database error
+     */
+
+
+    public String getImConfig(String imCode, String field) {
+        if (dbadapter == null || imCode == null) {
+            Log.e(TAG, "getImConfig(): dbadapter or imCode is null");
+            return "";
+        }
+        return dbadapter.getImConfig(imCode, field);
+    }
+
+    /**
+     * Sets IM information for a specific field.
+     *
+     * <p>This method delegates to LimeDB.setImInfo() to store or update configuration
+     * information in the imCode table. UI components should use this method instead of
+     * directly accessing LimeDB.
+     *
+     * @param imCode    The IM code (e.g., LIME.DB_TABLE_PHONETIC, LIME.DB_TABLE_DAYI)
+     * @param field The field name to set
+     * @param value The value to store
+     * @return
+     */
+    public boolean setImConfig(String imCode, String field, String value) {
+        if (dbadapter == null) {
+            Log.e(TAG, "setImInfo(): dbadapter is null");
+            return false;
+        }
+        dbadapter.setImConfig(imCode, field, value);
+        return false;
+    }
+
+    /**
+     * Sets the keyboard assignment for an IM using string parameters.
+     * 
+     * <p>This method delegates to LimeDB.setIMKeyboard() to store keyboard
+     * configuration in the im table. UI components should use this method instead
+     * of directly accessing LimeDB.
+     * 
+     * @param im The IM code
+     * @param value The keyboard description/name
+     * @param keyboard The keyboard code
+     */
+    public void setIMKeyboard(String im, String value, String keyboard) {
+        if (dbadapter == null) {
+            Log.e(TAG, "setIMKeyboard(): dbadapter is null");
+            return;
+        }
+        dbadapter.setIMConfigKeyboard(im, value, keyboard);
+    }
+
+    /**
+     * Sets the keyboard assignment for an IM using a Keyboard object.
+     * 
+     * <p>This method delegates to LimeDB.setImKeyboard() to store keyboard
+     * configuration in the im table. UI components should use this method instead
+     * of directly accessing LimeDB.
+     * 
+     * @param imCode The IM imCode
+     * @param keyboard The Keyboard object containing keyboard information
+     */
+    public void setIMKeyboard(String imCode, Keyboard keyboard) {
+        if (dbadapter == null) {
+            Log.e(TAG, "setIMKeyboard(): dbadapter is null");
+            return;
+        }
+        dbadapter.setImConfigKeyboard(imCode, keyboard);
+    }
+
+    /**
+     * Backs up user-learned records to a backup table.
+     * 
+     * <p>This method delegates to LimeDB.backupUserRecords() to create a backup table
+     * containing user-learned records (score > 0). UI components should use this method
+     * instead of directly accessing LimeDB.
+     * 
+     * @param table The table name to backup user records from
+     */
+    public void backupUserRecords(String table) {
+        if (dbadapter == null) {
+            Log.e(TAG, "backupUserRecords(): dbadapter is null");
+            return;
+        }
+        dbadapter.backupUserRecords(table);
+    }
+
+    /**
+     * Restores user-learned records from a backup table to the main table.
+     * 
+     * <p>This method delegates to LimeDB.restoreUserRecords() to restore user-learned
+     * records from a backup table (typically named "{table}_user") back to the main
+     * mapping table. UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * <p>The method performs the following operations:
+     * <ul>
+     *   <li>Validates that the database adapter is available</li>
+     *   <li>Delegates to LimeDB.restoreUserRecords() which validates the table name</li>
+     *   <li>Retrieves all records from the backup table</li>
+     *   <li>Restores each record to the main table using addOrUpdateMappingRecord</li>
+     * </ul>
+     * 
+     * @param table The base table name to restore records to (e.g., "cj", "phonetic")
+     * @return The number of records restored, or 0 if no records to restore or error
+     */
+    public int restoreUserRecords(String table) {
+        if (dbadapter == null) {
+            Log.e(TAG, "restoreUserRecords(): dbadapter is null");
+            return 0;
+        }
+        
+        try {
+            return dbadapter.restoreUserRecords(table);
+        } catch (Exception e) {
+            Log.e(TAG, "restoreUserRecords(): Error restoring user records for table: " + table, e);
+            return 0;
+        }
+    }
+
+    /**
+     * Gets a single record by ID.
+     * 
+     * <p>This method delegates to LimeDB.getRecord() to retrieve a record.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param code The table name (code)
+     * @param id The record ID
+     * @return Record object, or null if not found or database error
+     */
+    public Record getRecord(String code, long id) {
+        if (dbadapter == null) {
+            Log.e(TAG, "getRecord(): dbadapter is null");
+            return null;
+        }
+        return dbadapter.getRecord(code, id);
+    }
+
+    /**
+     * Gets the count of records matching a query by word or code.
+     * 
+     * <p>This method delegates to LimeDB.countRecords() to get the count of matching records.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param table The table name to query
+     * @param curQuery The search query, or null/empty for all records
+     * @param searchByCode If true, search by code; if false, search by word
+     * @return The count of matching records, or 0 if database error
+     */
+    public int countRecordsByWordOrCode(String table, String curQuery, boolean searchByCode) {
+        if(DEBUG)
+            Log.i(TAG,"countRecordsByWordOrCode()");
+        if (dbadapter == null) {
+            Log.e(TAG, "countRecordsByWordOrCode(): dbadapter is null");
+            return 0;
+        }
+        // Build WHERE clause for countRecords() with parameterized queries
+        StringBuilder whereBuilder = new StringBuilder();
+        List<String> whereArgsList = new ArrayList<>();
+
+        if (curQuery != null && !curQuery.isEmpty()) {
+            if (searchByCode) {
+                whereBuilder.append(LIME.DB_COLUMN_CODE).append(" LIKE ? AND ");
+                whereArgsList.add(curQuery + "%");
+            } else {
+                whereBuilder.append(LIME.DB_COLUMN_WORD).append(" LIKE ? AND ");
+                whereArgsList.add("%" + curQuery + "%");
+            }
+        }
+        whereBuilder.append("ifnull(").append(LIME.DB_COLUMN_WORD).append(", '') <> ''");
+
+        String[] whereArgs = whereArgsList.isEmpty() ? null : whereArgsList.toArray(new String[0]);
+        return dbadapter.countRecords(table, whereBuilder.toString(), whereArgs);
+    }
+
+    /**
+     * Deletes a record from a table using a parameterized query.
+     * 
+     * <p>This method delegates to LimeDB.deleteRecord() to safely delete records.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param table The table name
+     * @param whereClause WHERE clause with "?" placeholders
+     * @param whereArgs Arguments for the WHERE clause
+     * @return Number of rows deleted, or 0 if error
+     */
+    public int deleteRecord(String table, String whereClause, String[] whereArgs) {
+        if (dbadapter == null) {
+            Log.e(TAG, "deleteRecord(): dbadapter is null");
+            return 0;
+        }
+        return dbadapter.deleteRecord(table, whereClause, whereArgs);
+    }
+
+    /**
+     * Adds or updates a mapping record in the database.
+     * 
+     * <p>This method delegates to LimeDB.addOrUpdateMappingRecord() to store or update
+     * word mappings. UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param table The table name
+     * @param code The code
+     * @param word The word
+     * @param score The score
+     */
+    public void addOrUpdateMappingRecord(String table, String code, String word, int score) {
+        if (dbadapter == null) {
+            Log.e(TAG, "addOrUpdateMappingRecord(): dbadapter is null");
+            return;
+        }
+        dbadapter.addOrUpdateMappingRecord(table, code, word, score);
+    }
+
+    /**
+     * Adds a record to a table using ContentValues.
+     * 
+     * <p>This method delegates to LimeDB.addRecord() to safely insert records.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param table The table name
+     * @param values The ContentValues containing column values
+     * @return The row ID of the newly inserted row, or -1 if error
+     */
+    public long addRecord(String table, ContentValues values) {
+        if (dbadapter == null) {
+            Log.e(TAG, "addRecord(): dbadapter is null");
+            return -1;
+        }
+        return dbadapter.addRecord(table, values);
+    }
+
+    /**
+     * Counts the total number of records in the specified table.
+     * 
+     * <p>This method delegates to LimeDB.countRecords() to get the count of records.
+     * Filters out records with null/empty values to match getRecords() behavior.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param table The table name to count records from
+     * @return The number of records in the table (excluding null/empty key values), or 0 if error or empty
+     */
+    public int countRecords(String table) {
+        if (dbadapter == null) {
+            Log.e(TAG, "countRecords(): dbadapter is null");
+            return 0;
+        }
+        
+        // Apply table-specific filters to match getRecords behavior
+        String whereClause = null;
+        if (LIME.DB_TABLE_RELATED.equals(table)) {
+            // For related table: exclude null/empty pword or cword
+            whereClause = "ifnull(" + LIME.DB_RELATED_COLUMN_PWORD + ", '') <> '' AND ifnull(" + LIME.DB_RELATED_COLUMN_CWORD + ", '') <> ''";
+        } else {
+            // For IM tables: exclude null/empty word
+            whereClause = "ifnull(" + LIME.DB_COLUMN_WORD + ", '') <> ''";
+        }
+        
+        return dbadapter.countRecords(table, whereClause, null);
+    }
+
+    /**
+     * Clears a mapping table by deleting all records and clearing the cache.
+     * 
+     * <p>This method delegates to LimeDB.resetMapping() to safely delete all records from
+     * the specified table and reset the cache. UI components should use this method
+     * instead of directly accessing LimeDB.
+     * 
+     * <p>The method performs the following operations:
+     * <ul>
+     *   <li>Validates that the database adapter is available</li>
+     *   <li>Delegates to LimeDB.resetMapping() which validates the table name</li>
+     *   <li>Deletes all records from the specified table</li>
+     *   <li>Resets the SearchServer cache to ensure consistency</li>
+     * </ul>
+     * 
+     * <p>If the database adapter is null or the table name is invalid, the method
+     * will log an error and return without performing any operations.
+     * 
+     * @param table The table name to clear (must be valid according to LimeDB.isValidTableName())
+     * @throws IllegalArgumentException if table name is null or empty (propagated from LimeDB)
+     */
+    public void clearTable(String table) {
+        if (dbadapter == null) {
+            Log.e(TAG, "clearTable(): dbadapter is null");
+            return;
+        }
+        
+        try {
+            dbadapter.clearTable(table);
+        } catch (IllegalArgumentException e) {
+            Log.e(TAG, "clearTable(): Invalid table name: " + table, e);
+            throw e;
+        } catch (Exception e) {
+            Log.e(TAG, "clearTable(): Error clearing table: " + table, e);
+        }
+    }
+
+    /**
+     * Resets the SearchServer cache.
+     * 
+     * <p>This method delegates to LimeDB.resetCache() to clear the cache maintained
+     * by SearchServer. UI components should use this method instead of directly
+     * accessing LimeDB.
+     */
+    public void resetCache() {
+        if (dbadapter == null) {
+            Log.e(TAG, "resetCache(): dbadapter is null");
+            return;
+        }
+        dbadapter.resetCache();
+    }
+
+    /**
+     * Checks and updates phonetic keyboard settings consistency between preferences and database.
+     * 
+     * <p>This method delegates to LimeDB.checkPhoneticKeyboardSetting() to ensure that the
+     * keyboard configuration stored in the database matches the user's preference setting.
+     * It handles different phonetic keyboard types (hsu, eten26, eten, standard).
+     * 
+     * <p>UI components should use this method instead of directly accessing LimeDB.
+     */
+    public void checkPhoneticKeyboardSetting() {
+        if (dbadapter == null) {
+            Log.e(TAG, "checkPhoneticKeyboardSetting(): dbadapter is null");
+            return;
+        }
+        dbadapter.checkPhoneticKeyboardSetting();
+    }
+
+    /**
+     * Checks if a backup table exists and has records.
+     * 
+     * <p>This method delegates to LimeDB.checkBackuptable() to check if user data
+     * backup exists. UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param table The base table name to check backup for
+     * @return true if backup table exists and has records, false otherwise
+     */
+    public boolean checkBackupTable(String table) {
+        if (dbadapter == null) {
+            Log.e(TAG, "checkBackuptable(): dbadapter is null");
+            return false;
+        }
+        return dbadapter.checkBackupTable(table);
+    }
+
+    /**
+     * Gets all records from a backup table.
+     * 
+     * <p>This method delegates to LimeDB.getBackupTableRecords() to retrieve backup records.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param backupTableName The backup table name (must end with "_user", e.g., "cj_user")
+     * @return Cursor with all records from the backup table, or null if invalid or error
+     */
+    public android.database.Cursor getBackupTableRecords(String backupTableName) {
+        if (dbadapter == null) {
+            Log.e(TAG, "getBackupTableRecords(): dbadapter is null");
+            return null;
+        }
+        return dbadapter.getBackupTableRecords(backupTableName);
+    }
+
+    /**
+     * Removes IM information for a specific field.
+     * 
+     * <p>This method delegates to LimeDB.removeImInfo() to delete configuration information.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param im The IM code
+     * @param field The field name to remove
+     */
+    public void removeImInfo(String im, String field) {
+        if (dbadapter == null) {
+            Log.e(TAG, "removeImInfo(): dbadapter is null");
+            return;
+        }
+        dbadapter.removeImConfig(im, field);
+    }
+
+    /**
+     * Resets all IM information for a specific IM.
+     * 
+     * <p>This method delegates to LimeDB.resetImInfo() to clear all configuration
+     * information for an IM. UI components should use this method instead of
+     * directly accessing LimeDB.
+     * 
+     * @param imCode The IM code to reset
+     */
+    public void resetImConfig(String imCode) {
+        if (dbadapter == null) {
+            Log.e(TAG, "resetImInfo(): dbadapter is null");
+            return;
+        }
+        dbadapter.resetImConfig(imCode);
+    }
+
+    /**
+     * Resets all LIME settings to factory defaults.
+     * 
+     * <p>This method delegates to LimeDB.resetLimeSetting() to reset all databases
+     * (main, emoji, han converter) to factory defaults. This is a destructive operation
+     * that will erase all user data including learned mappings and related phrases.
+     * 
+     * <p>UI components should use this method instead of directly accessing LimeDB.
+     */
+    public void restoredToDefault() {
+        if (dbadapter == null) {
+            Log.e(TAG, "resetLimeSetting(): dbadapter is null");
+            return;
+        }
+        dbadapter.restoredToDefault();
+    }
+
+    /**
+     * Gets keyboard information for a specific field.
+     * 
+     * <p>This method delegates to LimeDB.getKeyboardInfo() to retrieve keyboard
+     * configuration information. UI components should use this method instead of
+     * directly accessing LimeDB.
+     * 
+     * @param keyboardCode The keyboard code (e.g., "lime", "limenum")
+     * @param field The field name to retrieve
+     * @return The field value, or null if not found or database error
+     */
+    public String getKeyboardInfo(String keyboardCode, String field) {
+        if (dbadapter == null) {
+            Log.e(TAG, "getKeyboardInfo(): dbadapter is null");
+            return null;
+        }
+        return dbadapter.getKeyboardInfo(keyboardCode, field);
+    }
+
+
+    /**
+     * Gets keyboard object information for a specific keyboard code.
+     * 
+     * <p>This method delegates to LimeDB.getKeyboardConfig() to retrieve keyboard
+     * configuration including layout definitions. UI components should use this
+     * method instead of directly accessing LimeDB.
+     * 
+     * @param keyboard The keyboard code (e.g., "lime", "limenum", "wb", "hs")
+     * @return KeyboardObj with keyboard information, or null if not found or database error
+     */
+    public Keyboard getKeyboardConfig(String keyboard) {
+        if (dbadapter == null) {
+            Log.e(TAG, "getKeyboardConfig(): dbadapter is null");
+            return null;
+        }
+        return dbadapter.getKeyboardConfig(keyboard);
+    }
+
+    /**
+     * Loads records from a table with optional filtering and pagination.
+     * 
+     * <p>This method delegates to LimeDB.getRecords() to retrieve records.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param code The table name (code)
+     * @param query The search query, or null/empty for all records
+     * @param searchByCode If true, search by code; if false, search by word
+     * @param maximum Maximum number of records to return (0 for no limit)
+     * @param offset Number of records to skip (0 for no offset)
+     * @return List of Record objects, or empty list if error
+     */
+    public List<Record> getRecords(String code, String query, boolean searchByCode, int maximum, int offset) {
+        if (dbadapter == null) {
+            Log.e(TAG, "getRecords(): dbadapter is null");
+            return new ArrayList<>();
+        }
+        return dbadapter.getRecordList(code, query, searchByCode, maximum, offset);
+    }
+
+
+    /**
+     * Gets the count of related phrase records for a parent word.
+     * 
+     * <p>This method delegates to LimeDB.countRecords() to get the count of related phrases.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param pword The parent word to count related phrases for
+     * @return The count of related phrases, or 0 if database error or not found
+     */
+    public int countRecordsRelated(String pword) {
+        if (dbadapter == null) {
+            Log.e(TAG, "countRecords(): dbadapter is null");
+            return 0;
+        }
+        // Build WHERE clause for related table
+        StringBuilder whereBuilder = new StringBuilder();
+        List<String> whereArgsList = new ArrayList<>();
+        
+        String cword = "";
+        if (pword != null && !pword.isEmpty() && pword.length() > 1) {
+            cword = pword.substring(1);
+            pword = pword.substring(0, 1);
+        }
+        
+        if (pword != null && !pword.isEmpty()) {
+            whereBuilder.append(LIME.DB_RELATED_COLUMN_PWORD).append(" = ? AND ");
+            whereArgsList.add(pword);
+        }
+        if (!cword.isEmpty()) {
+            whereBuilder.append(LIME.DB_RELATED_COLUMN_CWORD).append(" LIKE ? AND ");
+            whereArgsList.add(cword + "%");
+        }
+        
+        whereBuilder.append("ifnull(").append(LIME.DB_RELATED_COLUMN_CWORD).append(", '') <> ''");
+        
+        String[] whereArgs = whereArgsList.isEmpty() ? null : whereArgsList.toArray(new String[0]);
+        return dbadapter.countRecords(LIME.DB_TABLE_RELATED, whereBuilder.toString(), whereArgs);
+    }
+
+    /**
+     * Checks if a related phrase exists.
+     * 
+     * <p>This method delegates to LimeDB.countRecords() to check for related phrase existence.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param pword The parent word (must not be null or empty)
+     * @param cword The child word (must not be null or empty)
+     * @return true if related phrase exists, false otherwise
+     */
+    public boolean hasRelated(String pword, String cword) {
+        if (dbadapter == null) {
+            Log.e(TAG, "hasRelated(): dbadapter is null");
+            return false;
+        }
+        // Build WHERE clause for related table
+        StringBuilder whereBuilder = new StringBuilder();
+        List<String> whereArgsList = new ArrayList<>();
+        
+        if (pword != null && !pword.isEmpty()) {
+            whereBuilder.append(LIME.DB_RELATED_COLUMN_PWORD).append(" = ? AND ");
+            whereArgsList.add(pword);
+        }
+        if (cword != null && !cword.isEmpty()) {
+            whereBuilder.append(LIME.DB_RELATED_COLUMN_CWORD).append(" = ?");
+            whereArgsList.add(cword);
+        } else {
+            whereBuilder.append(LIME.DB_RELATED_COLUMN_CWORD).append(" IS NULL");
+        }
+        
+        String[] whereArgs = whereArgsList.isEmpty() ? null : whereArgsList.toArray(new String[0]);
+        int count = dbadapter.countRecords(LIME.DB_TABLE_RELATED, whereBuilder.toString(), whereArgs);
+        return count > 0;
+    }
+
+    /**
+     * Updates records in a table using parameterized queries.
+     * 
+     * <p>This method delegates to LimeDB.updateRecord() to safely update records.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param table The table name
+     * @param values The values to update
+     * @param whereClause WHERE clause with "?" placeholders
+     * @param whereArgs Arguments for the WHERE clause
+     * @return Number of rows updated, or -1 if error
+     */
+    public int updateRecord(String table, android.content.ContentValues values, String whereClause, String[] whereArgs) {
+        if (dbadapter == null) {
+            Log.e(TAG, "updateRecord(): dbadapter is null");
+            return -1;
+        }
+        return dbadapter.updateRecord(table, values, whereClause, whereArgs);
+    }
+
+
+    /**
+     * Gets related phrase records with optional filtering and pagination.
+     * 
+     * <p>This method delegates to LimeDB.getRelated() to retrieve related phrase records.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param pword The parent word to search for, or null/empty for all
+     * @param maximum Maximum number of records to return (0 for no limit)
+     * @param offset Number of records to skip (0 for no offset)
+     * @return List of Related objects, or empty list if error
+     */
+    public List<Related> getRelatedByWord(String pword, int maximum, int offset) {
+        if (dbadapter == null) {
+            Log.e(TAG, "getRelatedByWord(): dbadapter is null");
+            return new ArrayList<>();
+        }
+        return dbadapter.getRelated(pword, maximum, offset);
+    }
+
+    /**
+     * Gets a list of IM information records for a specific IM code.
+     * 
+     * <p>This method delegates to LimeDB.getImList() to retrieve IM information.
+     * UI components should use this method instead of directly accessing LimeDB.
+     *
+     * @param code The IM code to retrieve information for
+     * @return List of Im objects, or null if database error
+     */
+    public List<ImConfig> getImAllConfigList(String code) {
+        if (dbadapter == null) {
+            Log.e(TAG, "getImList(): dbadapter is null");
+            return null;
+        }
+        return dbadapter.getImConfigList(code, null);
+    }
+
+    /**
+     * Validates if a table name is valid according to LimeDB whitelist.
+     * 
+     * <p>This method delegates to LimeDB.isValidTableName() to validate table names.
+     * UI components should use this method instead of directly accessing LimeDB.
+     * 
+     * @param tableName The table name to validate
+     * @return true if the table name is valid, false otherwise
+     */
+    public boolean isValidTableName(String tableName) {
+        if (dbadapter == null) {
+            Log.e(TAG, "isValidTableName(): dbadapter is null");
+            return false;
+        }
+        return dbadapter.isValidTableName(tableName);
+    }
 
 }

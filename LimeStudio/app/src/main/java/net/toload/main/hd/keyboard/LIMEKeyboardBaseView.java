@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -43,13 +43,13 @@ import android.graphics.Paint;
 import android.graphics.Paint.Align;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
-import android.graphics.Region.Op;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Message;
 import android.os.SystemClock;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.util.TypedValue;
@@ -65,6 +65,8 @@ import android.widget.PopupWindow;
 import android.widget.TextView;
 
 import net.toload.main.hd.R;
+import net.toload.main.hd.data.Keyboard;
+import net.toload.main.hd.global.LIME;
 import net.toload.main.hd.keyboard.LIMEBaseKeyboard.Key;
 
 import java.lang.ref.WeakReference;
@@ -80,6 +82,16 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
     private static final boolean DEBUG = false;
 
     public static final int NOT_A_TOUCH_COORDINATE = -1;
+    
+    // UI Dimension Constants (in pixels/dp)
+    private static final int DEFAULT_PREVIEW_HEIGHT_PX = 80; // Default key preview height
+    private static final int DEFAULT_KEY_TEXT_SIZE_SP = 18; // Default key text size
+    private static final int DEFAULT_LABEL_TEXT_SIZE_SP = 14; // Default label text size (for sub-labels, small labels)
+    private static final int DEFAULT_PREVIEW_TOP_PADDING_PX = 10; // Default preview top padding
+    private static final int SWIPE_VELOCITY_UNITS_PER_SECOND = 1000; // Velocity calculation units
+    
+    // Swipe/Touch Constants
+    private static final int SWIPE_THRESHOLD_BASE_DP = 500; // Base swipe threshold in density-independent pixels
 
     public interface OnKeyboardActionListener {
 
@@ -164,7 +176,6 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
 
     // Miscellaneous constants
     /* package */ static final int NOT_A_KEY = -1;
-    private static final int[] LONG_PRESSABLE_STATE_SET = {android.R.attr.state_long_pressable};
     private static final int NUMBER_HINT_VERTICAL_ADJUSTMENT_PIXEL = -1;
 
     // XML attribute
@@ -203,12 +214,11 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
 
     // Key preview popup
     private TextView mPreviewText;
-    private PopupWindow mPreviewPopup;
+    private final PopupWindow mPreviewPopup;
     private int mPreviewTextSizeLarge;
     private int[] mOffsetInWindow;
     private int mOldPreviewKeyIndex = NOT_A_KEY;
     private boolean mShowPreview = true;
-    private boolean mShowTouchPoints = true;
     private int mPopupPreviewOffsetX;
     private int mPopupPreviewOffsetY;
     private int mWindowY;
@@ -217,7 +227,7 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
     private final int mDelayAfterPreview;
 
     // Popup mini keyboard
-    private PopupWindow mMiniKeyboardPopup;
+    private final PopupWindow mMiniKeyboardPopup;
     private LIMEKeyboardBaseView mMiniKeyboard;
     private View mMiniKeyboardParent;
     private final WeakHashMap<Key, View> mMiniKeyboardCache = new WeakHashMap<>();
@@ -245,7 +255,7 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
     private final boolean mHasDistinctMultitouch;
     private int mOldPointerCount = 1;
 
-    protected KeyDetector mKeyDetector = new ProximityKeyDetector();
+    private KeyDetector mKeyDetector = new ProximityKeyDetector();
 
     // Swipe gesture detector
     private GestureDetector mGestureDetector;
@@ -284,13 +294,10 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
 
     private Drawable mPopupHint;//Jeremy /11,8,11
 
-    private boolean isLargeScreen; // Jeremy //11,8,8 used for disable fling selection on minipopup keyboard for larger screen
+    private final boolean isLargeScreen; // Jeremy //11,8,8 used for disable fling selection on minipopup keyboard for larger screen
 
     private final UIHandler mHandler = new UIHandler(this);
 
-    private boolean isAPIpre8;
-
-    //private LIMEPreferenceManager mLIMEPref;
 
     static class UIHandler extends Handler {
         private static final int MSG_POPUP_PREVIEW = 1;
@@ -304,7 +311,8 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
         private final WeakReference<LIMEKeyboardBaseView> mLIMEKeyboardBaseViewWeakReference;
 
         public UIHandler(LIMEKeyboardBaseView keyboardBaseView){
-            mLIMEKeyboardBaseViewWeakReference = new WeakReference<LIMEKeyboardBaseView>(keyboardBaseView);
+            super(Looper.getMainLooper());
+            mLIMEKeyboardBaseViewWeakReference = new WeakReference<>(keyboardBaseView);
         }
 
         @Override
@@ -318,10 +326,11 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
                     break;
                 case MSG_DISMISS_PREVIEW:
                     if(DEBUG) Log.i(TAG, "handleMessage()  MSG_DISMISS_PREVIEW");
-                    mLIMEKeyboardBaseView.mPreviewText.setVisibility(INVISIBLE);
-                    if(mLIMEKeyboardBaseView.mPreviewPopup.isShowing())
+                    if (mLIMEKeyboardBaseView.mPreviewText != null) {
+                        mLIMEKeyboardBaseView.mPreviewText.setVisibility(INVISIBLE);
+                    }
+                    if(mLIMEKeyboardBaseView.mPreviewPopup != null && mLIMEKeyboardBaseView.mPreviewPopup.isShowing())
                         mLIMEKeyboardBaseView.mPreviewPopup.dismiss();
-
                     break;
                 case MSG_REPEAT_KEY: {
                     if(DEBUG) Log.i(TAG, "handleMessage()  MSG_REPEAT_KEY");
@@ -341,7 +350,9 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
                     final PointerTracker tracker = (PointerTracker) msg.obj;
                     if(!tracker.isSpaceKey(msg.arg1))
                         mLIMEKeyboardBaseView.startKeyPreviewFadeInAnimation();
-                    mLIMEKeyboardBaseView.mPreviewText.setVisibility(VISIBLE);
+                    if (mLIMEKeyboardBaseView.mPreviewText != null) {
+                        mLIMEKeyboardBaseView.mPreviewText.setVisibility(VISIBLE);
+                    }
                     break;
                 }
             }
@@ -435,7 +446,7 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
     }
 
     static class PointerQueue {
-        private LinkedList<PointerTracker> mQueue = new LinkedList<>();
+        private final LinkedList<PointerTracker> mQueue = new LinkedList<>();
 
         public void add(PointerTracker tracker) {
             mQueue.add(tracker);
@@ -491,15 +502,19 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
     }
     private void startKeyPreviewFadeInAnimation()
     {
-        mKeyPreviewFadeInAnimator.reset();
-        mPreviewText.clearAnimation();
-        mPreviewText.startAnimation(mKeyPreviewFadeInAnimator);
+        if (mKeyPreviewFadeOutAnimator != null && mPreviewText != null) {
+            mKeyPreviewFadeInAnimator.reset();
+            mPreviewText.clearAnimation();
+            mPreviewText.startAnimation(mKeyPreviewFadeInAnimator);
+        }
     }
     private void startKeyPreviewFadeOutAnimation()
     {
-        mKeyPreviewFadeOutAnimator.reset();
-        mPreviewText.clearAnimation();
-        mPreviewText.startAnimation(mKeyPreviewFadeOutAnimator);
+        if (mKeyPreviewFadeOutAnimator != null && mPreviewText != null) {
+            mKeyPreviewFadeOutAnimator.reset();
+            mPreviewText.clearAnimation();
+            mPreviewText.startAnimation(mKeyPreviewFadeOutAnimator);
+        }
     }
 
     public LIMEKeyboardBaseView(Context context, AttributeSet attrs) {
@@ -521,93 +536,68 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
 
         setLayerType(LAYER_TYPE_HARDWARE, null);
 
-        TypedArray a = context.getTheme().obtainStyledAttributes(
-                attrs, R.styleable.LIMEKeyboardBaseView, defStyle, R.style.LIMEBaseKeyboard);
         LayoutInflater inflate =
                 (LayoutInflater) context.getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         int previewLayout = 0;
         int keyTextSize = 0;
 
+        try (TypedArray a = context.getTheme().obtainStyledAttributes(
+                attrs, R.styleable.LIMEKeyboardBaseView, defStyle, R.style.LIMEBaseKeyboard)) {
 
-        int n = a.getIndexCount();
+            int n = a.getIndexCount();
 
-        for (int i = 0; i < n; i++) {
-            int attr = a.getIndex(i);
+            for (int i = 0; i < n; i++) {
+                int attr = a.getIndex(i);
 
-            switch (attr) {
-                case R.styleable.LIMEKeyboardBaseView_keyBackground:
+                if(attr == R.styleable.LIMEKeyboardBaseView_keyBackground)
                     mKeyBackground = a.getDrawable(attr);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_keyHysteresisDistance:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_keyHysteresisDistance)
                     mKeyHysteresisDistance = a.getDimensionPixelOffset(attr, 0);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_verticalCorrection:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_verticalCorrection)
                     mVerticalCorrection = a.getDimensionPixelOffset(attr, 0);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_keyPreviewLayout:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_keyPreviewLayout)
                     previewLayout = a.getResourceId(attr, 0);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_keyPreviewOffset:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_keyPreviewOffset)
                     mPreviewOffset = a.getDimensionPixelOffset(attr, 0);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_keyPreviewHeight:
-                    mPreviewHeight = a.getDimensionPixelSize(attr, 80);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_keyTextSize:
-                    mKeyTextSize = a.getDimensionPixelSize(attr, 18);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_functionKeyTextColorNormal:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_keyPreviewHeight)
+                    mPreviewHeight = a.getDimensionPixelSize(attr, DEFAULT_PREVIEW_HEIGHT_PX);
+                else if(attr == R.styleable.LIMEKeyboardBaseView_keyTextSize)
+                    mKeyTextSize = a.getDimensionPixelSize(attr, DEFAULT_KEY_TEXT_SIZE_SP);
+                else if(attr == R.styleable.LIMEKeyboardBaseView_functionKeyTextColorNormal)
                     mFunctionKeyTextColorNormal = a.getColor(attr, 0xFF000000);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_functionKeyTextColorPressed:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_functionKeyTextColorPressed)
                     mFunctionKeyTextColorPressed = a.getColor(attr, 0xFF000000);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_keyTextColorNormal:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_keyTextColorNormal)
                     mKeyTextColorNormal = a.getColor(attr, 0xFF000000);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_keyTextColorPressed:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_keyTextColorPressed)
                     mKeyTextColorPressed = a.getColor(attr, 0xFF000000);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_keySubLabelTextColorNormal:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_keySubLabelTextColorNormal)
                     mKeySubLabelTextColorNormal = a.getColor(attr, 0xFF000000);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_keySubLabelTextColorPressed:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_keySubLabelTextColorPressed)
                     mKeySubLabelTextColorPressed = a.getColor(attr, 0xFF000000);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_labelTextSize:
-                    mLabelTextSize = a.getDimensionPixelSize(attr, 14);
-                    break;
-                //Jeremy '11,8,11, Extended for sub-label display
-                case R.styleable.LIMEKeyboardBaseView_smallLabelTextSize:
-                    mSmallLabelTextSize = a.getDimensionPixelSize(attr, 14);
-                    break;
-                //Jeremy '11,8,11, Extended for sub-label display
-                case R.styleable.LIMEKeyboardBaseView_subLabelTextSize:
-                    mSubLabelTextSize = a.getDimensionPixelSize(attr, 14);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_popupLayout:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_labelTextSize)
+                    mLabelTextSize = a.getDimensionPixelSize(attr, DEFAULT_LABEL_TEXT_SIZE_SP);
+                else if(attr == R.styleable.LIMEKeyboardBaseView_smallLabelTextSize)
+                    mSmallLabelTextSize = a.getDimensionPixelSize(attr, DEFAULT_LABEL_TEXT_SIZE_SP);
+                else if(attr == R.styleable.LIMEKeyboardBaseView_subLabelTextSize)
+                    mSubLabelTextSize = a.getDimensionPixelSize(attr, DEFAULT_LABEL_TEXT_SIZE_SP);
+                else if(attr == R.styleable.LIMEKeyboardBaseView_popupLayout)
                     mPopupLayout = a.getResourceId(attr, 0);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_popupHint:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_popupHint)
                     mPopupHint = a.getDrawable(attr);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_shadowColor:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_shadowColor)
                     mShadowColor = a.getColor(attr, 0);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_shadowRadius:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_shadowRadius)
                     mShadowRadius = a.getFloat(attr, 0f);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_spacePreviewTopPadding:  //Jeremy 15,7,13
-                    mSpacePreviewTopPadding = a.getDimensionPixelSize(attr, 10);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_previewTopPadding:  //Jeremy 15,7,13
+                else if(attr == R.styleable.LIMEKeyboardBaseView_spacePreviewTopPadding)
+                    mSpacePreviewTopPadding = a.getDimensionPixelSize(attr, DEFAULT_PREVIEW_TOP_PADDING_PX);
+                else if(attr == R.styleable.LIMEKeyboardBaseView_previewTopPadding)
                     mPreviewTopPadding = a.getDimensionPixelSize(attr, 0);
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_backgroundDimAmount:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_backgroundDimAmount)
                     mBackgroundDimAmount = a.getFloat(attr, 0.5f);
-                    break;
-                //case android.R.styleable.
-                case R.styleable.LIMEKeyboardBaseView_keyTextStyle:
+                else if(attr == R.styleable.LIMEKeyboardBaseView_symbolColorScheme)
+                    mSymbolColorScheme = a.getInt(attr, 0);
+                else if(attr == R.styleable.LIMEKeyboardBaseView_keyTextStyle) {
                     int textStyle = a.getInt(attr, 0);
                     switch (textStyle) {
                         case 0:
@@ -620,16 +610,12 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
                             mKeyTextStyle = Typeface.defaultFromStyle(textStyle);
                             break;
                     }
-                    break;
-                case R.styleable.LIMEKeyboardBaseView_symbolColorScheme:
-                    mSymbolColorScheme = a.getInt(attr, 0);
-                    break;
+                }
+
             }
         }
 
         final Resources res = getResources();
-
-        isAPIpre8 = android.os.Build.VERSION.SDK_INT < 8;  //Jeremy '11,8,7 detect API level and disable multi-touch API for API leve 7
 
 
         isLargeScreen = true; //large || xlarge;  //Force turn off fling selection now.
@@ -666,9 +652,11 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
         mPaint.setAlpha(255);
 
         mPadding = new Rect(0, 0, 0, 0);
-        mKeyBackground.getPadding(mPadding);
+        if(mKeyBackground != null) {
+            mKeyBackground.getPadding(mPadding);
+        }
 
-        mSwipeThreshold = (int) (500 * res.getDisplayMetrics().density);
+        mSwipeThreshold = (int) (SWIPE_THRESHOLD_BASE_DP * res.getDisplayMetrics().density);
         // TODO: Refer frameworks/base/core/res/res/values/config.xml
         mDisambiguateSwipe = res.getBoolean(R.bool.config_swipeDisambiguation);
         mMiniKeyboardSlideAllowance = res.getDimension(R.dimen.mini_keyboard_slide_allowance);
@@ -684,7 +672,7 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
                         float deltaY = me2.getY() - me1.getY();
                         int travelX = getWidth() / 2; // Half the keyboard width
                         int travelY = getHeight() / 2; // Half the keyboard height
-                        mSwipeTracker.computeCurrentVelocity(1000);
+                        mSwipeTracker.computeCurrentVelocity(SWIPE_VELOCITY_UNITS_PER_SECOND);
                         final float endingVelocityX = mSwipeTracker.getXVelocity();
                         final float endingVelocityY = mSwipeTracker.getYVelocity();
                         if (velocityX > mSwipeThreshold && absY < absX && deltaX > travelX) {
@@ -712,15 +700,11 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
                     }
                 };
 
-        final boolean ignoreMultitouch = true;
-        if (isAPIpre8)
-            mGestureDetector = new GestureDetector(getContext(), listener, null);
-        else
-            mGestureDetector = new GestureDetector(getContext(), listener, null, ignoreMultitouch);
+        mGestureDetector = new GestureDetector(getContext(), listener);
 
         mGestureDetector.setIsLongpressEnabled(false);
 
-        mHasDistinctMultitouch = (!isAPIpre8) && context.getPackageManager()
+        mHasDistinctMultitouch = context.getPackageManager()
                 .hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN_MULTITOUCH_DISTINCT);
         mKeyRepeatInterval = res.getInteger(R.integer.config_key_repeat_interval);
     }
@@ -890,9 +874,10 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
                     getPaddingLeft() + getPaddingRight(), getPaddingTop() + getPaddingBottom());
         } else {
             int width = mKeyboard.getMinWidth() + getPaddingLeft() + getPaddingRight();
-            if (MeasureSpec.getSize(widthMeasureSpec) < width + 10) {
+            if (MeasureSpec.getSize(widthMeasureSpec) < width + DEFAULT_PREVIEW_TOP_PADDING_PX) {
                 width = MeasureSpec.getSize(widthMeasureSpec);
             }
+            Log.i(TAG,"Width = " + width + "  height = " + mKeyboard.getHeight() + getPaddingTop() + getPaddingBottom() + ".");
             setMeasuredDimension(
                     width, mKeyboard.getHeight() + getPaddingTop() + getPaddingBottom());
         }
@@ -946,246 +931,256 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
             mKeyboardChanged = false;
         }
         final Canvas canvas = mCanvas;
-        canvas.clipRect(mDirtyRect, Op.REPLACE);
+        canvas.save();
+        try {
+            canvas.clipRect(mDirtyRect);
 
-        if (mKeyboard == null) return;
+            //canvas.clipRect(mDirtyRect, Op.REPLACE);
 
-        final Paint paint = mPaint;
-        final Drawable keyBackground = mKeyBackground;
-        final Rect clipRegion = mClipRegion;
-        final Rect padding = mPadding;
-        final int kbdPaddingLeft = getPaddingLeft();
-        final int kbdPaddingTop = getPaddingTop();
-        final Key[] keys = mKeys;
-        final Key invalidKey = mInvalidatedKey;
+            if (mKeyboard == null) return;
 
-
-        boolean drawSingleKey = false;
-        if (invalidKey != null && canvas.getClipBounds(clipRegion)) {
-            // TODO we should use Rect.inset and Rect.contains here.
-            // Is clipRegion completely contained within the invalidated key?
-            if (invalidKey.x + kbdPaddingLeft - 1 <= clipRegion.left &&
-                    invalidKey.y + kbdPaddingTop - 1 <= clipRegion.top &&
-                    invalidKey.x + invalidKey.width + kbdPaddingLeft + 1 >= clipRegion.right &&
-                    invalidKey.y + invalidKey.height + kbdPaddingTop + 1 >= clipRegion.bottom) {
-                drawSingleKey = true;
-            }
-        }
-        canvas.drawColor(0x00000000, PorterDuff.Mode.CLEAR);
-        //final int keyCount = keys.length;
-        for (final Key key : keys) {
-            if (drawSingleKey && invalidKey != key) {
-                continue;
-            }
-            int[] drawableState = key.getCurrentDrawableState();
-            keyBackground.setState(drawableState);
+            final Paint paint = mPaint;
+            final Drawable keyBackground = mKeyBackground;
+            final Rect clipRegion = mClipRegion;
+            final Rect padding = mPadding;
+            final int kbdPaddingLeft = getPaddingLeft();
+            final int kbdPaddingTop = getPaddingTop();
+            final Key[] keys = mKeys;
+            final Key invalidKey = mInvalidatedKey;
 
 
-            // Switch the character to uppercase if shift is pressed
-            String label = key.label == null ? null : adjustCase(key.label).toString();
-
-            final Rect bounds = keyBackground.getBounds();
-            if (key.width != bounds.right || key.height != bounds.bottom) {
-                keyBackground.setBounds(0, 0, key.width, key.height);
-            }
-            canvas.translate(key.x + kbdPaddingLeft, key.y + kbdPaddingTop);
-            keyBackground.draw(canvas);
-
-            boolean shouldDrawIcon = true;
-            if (label != null) {
-                // For characters, use large font. For labels like "Done", use small font.
-                final int labelSize;
-
-                if (DEBUG)
-                    Log.i(TAG, "onBufferDraw():" + label
-                            + " keySizeScale = " + mKeyboard.getKeySizeScale() + " "
-                            + " labelSizeScale = " + key.getLabelSizeScale());
-                //Jeremy '11,8,11, Extended for sub-label display
-                //Jeremy '11,9,4 Scale label size
-                float keySizeScale = mKeyboard.getKeySizeScale();
-                float labelSizeScale = key.getLabelSizeScale();
-
-                //Jeremy '12,6,7 moved to LIMEbasekeyboard
-                /*if(key.height < mKeyboard.getKeyHeight())  //Jeremy '12,5,21 scaled the label size if the key height is smaller than default key height
-					labelSizeScale =  (float)(key.height) / (float)(mKeyboard.getKeyHeight());
-
-				if(key.width < mKeyboard.getKeyWidth())  //Jeremy '12,5,26 scaled the label size if the key width is smaller than default key width
-					labelSizeScale *=  (float)(key.width) / (float)(mKeyboard.getKeyWidth());*/
-
-                boolean hasSubLabel = label.contains("\n");
-                boolean hasSecondSubLabel = false;
-                String subLabel = "", secondSubLabel = "";
-                if (hasSubLabel) {
-                    String labelA[] = label.split("\n");
-                    if (labelA.length > 0) label = labelA[1];
-                    subLabel = labelA[0];
-
-                    hasSecondSubLabel = subLabel.contains("\t");
-                    if (hasSecondSubLabel) {
-                        String subLabelA[] = subLabel.split("\t");
-                        if (subLabelA.length > 0) subLabel = subLabelA[0];
-                        secondSubLabel = subLabelA[1];
-                    }
+            boolean drawSingleKey = false;
+            if (invalidKey != null && canvas.getClipBounds(clipRegion)) {
+                // TODO we should use Rect.inset and Rect.contains here.
+                // Is clipRegion completely contained within the invalidated key?
+                if (invalidKey.x + kbdPaddingLeft - 1 <= clipRegion.left &&
+                        invalidKey.y + kbdPaddingTop - 1 <= clipRegion.top &&
+                        invalidKey.x + invalidKey.width + kbdPaddingLeft + 1 >= clipRegion.right &&
+                        invalidKey.y + invalidKey.height + kbdPaddingTop + 1 >= clipRegion.bottom) {
+                    drawSingleKey = true;
                 }
-                if (hasSubLabel) {
-                    if (label.length() > 1) { //Jeremy '12,6,6 shrink the font size for more characters on label
-                        labelSize = (int) (mSmallLabelTextSize * keySizeScale * labelSizeScale * 0.8f);
+            }
+            canvas.drawColor(0x00000000, PorterDuff.Mode.CLEAR);
+            //final int keyCount = keys.length;
+            for (final Key key : keys) {
+                if (drawSingleKey && invalidKey != key) {
+                    continue;
+                }
+                int[] drawableState = key.getCurrentDrawableState();
+                keyBackground.setState(drawableState);
+
+
+                // Switch the character to uppercase if shift is pressed
+                String label = key.label == null ? null : adjustCase(key.label).toString();
+
+                final Rect bounds = keyBackground.getBounds();
+                if (key.width != bounds.right || key.height != bounds.bottom) {
+                    keyBackground.setBounds(0, 0, key.width, key.height);
+                }
+                canvas.translate(key.x + kbdPaddingLeft, key.y + kbdPaddingTop);
+                keyBackground.draw(canvas);
+
+                boolean shouldDrawIcon = true;
+                if (label != null) {
+                    // For characters, use large font. For labels like "Done", use small font.
+                    final int labelSize;
+
+//                    if (DEBUG)
+//                        Log.i(TAG, "onBufferDraw():" + label
+//                                + " keySizeScale = " + mKeyboard.getKeySizeScale() + " "
+//                                + " labelSizeScale = " + key.getLabelSizeScale());
+                    //Jeremy '11,8,11, Extended for sub-label display
+                    //Jeremy '11,9,4 Scale label size
+                    float keySizeScale = mKeyboard.getKeySizeScale();
+                    float labelSizeScale = key.getLabelSizeScale();
+
+                    //Jeremy '12,6,7 moved to LIMEbasekeyboard
+                    /*if(key.height < mKeyboard.getKeyHeight())  //Jeremy '12,5,21 scaled the label size if the key height is smaller than default key height
+                        labelSizeScale =  (float)(key.height) / (float)(mKeyboard.getKeyHeight());
+
+                    if(key.width < mKeyboard.getKeyWidth())  //Jeremy '12,5,26 scaled the label size if the key width is smaller than default key width
+                        labelSizeScale *=  (float)(key.width) / (float)(mKeyboard.getKeyWidth());*/
+
+                    boolean hasSubLabel = label.contains("\n");
+                    boolean hasSecondSubLabel = false;
+                    String subLabel = "", secondSubLabel = "";
+                    if (hasSubLabel) {
+                        String[] labelA = label.split("\n");
+                        if (labelA.length > 0) label = labelA[1];
+                        subLabel = labelA[0];
+
+                        hasSecondSubLabel = subLabel.contains("\t");
+                        if (hasSecondSubLabel) {
+                            String[] subLabelA = subLabel.split("\t");
+                            if (subLabelA.length > 0) subLabel = subLabelA[0];
+                            secondSubLabel = subLabelA[1];
+                        }
+                    }
+                    if (hasSubLabel) {
+                        if (label.length() > 1) { //Jeremy '12,6,6 shrink the font size for more characters on label
+                            labelSize = (int) (mSmallLabelTextSize * keySizeScale * labelSizeScale * 0.8f);
+                            paint.setTypeface(Typeface.DEFAULT_BOLD);
+                        } else {
+                            labelSize = (int) (mSmallLabelTextSize * keySizeScale * labelSizeScale);
+                            paint.setTypeface(Typeface.DEFAULT_BOLD);
+                        }
+                    } else if (label.length() > 1 && key.codes.length < 2) {
+                        labelSize = (int) (mLabelTextSize * keySizeScale * labelSizeScale);
                         paint.setTypeface(Typeface.DEFAULT_BOLD);
                     } else {
-                        labelSize = (int) (mSmallLabelTextSize * keySizeScale * labelSizeScale);
-                        paint.setTypeface(Typeface.DEFAULT_BOLD);
+                        labelSize = (int) (mKeyTextSize * keySizeScale * labelSizeScale);
+                        paint.setTypeface(mKeyTextStyle);
                     }
-                } else if (label.length() > 1 && key.codes.length < 2) {
-                    labelSize = (int) (mLabelTextSize * keySizeScale * labelSizeScale);
-                    paint.setTypeface(Typeface.DEFAULT_BOLD);
-                } else {
-                    labelSize = (int) (mKeyTextSize * keySizeScale * labelSizeScale);
-                    paint.setTypeface(mKeyTextStyle);
-                }
-                paint.setTextSize(labelSize);
+                    paint.setTextSize(labelSize);
 
 
-                final int labelHeight;
-                final int labelWidth;
-                String KEY_LABEL_HEIGHT_REFERENCE_CHAR = "W";
-                if (mTextHeightCache.get(labelSize) != null) {
-                    labelHeight = mTextHeightCache.get(labelSize);
-                    labelWidth = mTextWidthCache.get(labelSize);
-                } else {
-                    Rect textBounds = new Rect();
-                    paint.getTextBounds(KEY_LABEL_HEIGHT_REFERENCE_CHAR, 0, 1, textBounds);
-                    labelHeight = textBounds.height();
-                    labelWidth = textBounds.width();
-                    mTextHeightCache.put(labelSize, labelHeight);
-                    mTextWidthCache.put(labelSize, labelWidth);
-                }
-
-                // Draw a drop shadow for the text
-                if (mShadowRadius > 0) paint.setShadowLayer(mShadowRadius, 0, 0, mShadowColor);
-                final int centerX = (key.width + padding.left - padding.right) / 2;
-                final int centerY = (key.height + padding.top - padding.bottom) / 2;
-                final int keyColor = key.isFunctionalKey()
-                        ? (key.pressed ? mFunctionKeyTextColorPressed : mFunctionKeyTextColorNormal)
-                        : (key.pressed ? mKeyTextColorPressed : mKeyTextColorNormal);
-                final int subKeyColor = key.isFunctionalKey()
-                        ? (key.pressed ? mFunctionKeyTextColorPressed : mFunctionKeyTextColorNormal)
-                        :(key.pressed ? mKeySubLabelTextColorPressed : mKeySubLabelTextColorNormal);
-
-                float KEY_LABEL_VERTICAL_ADJUSTMENT_FACTOR = 0.55f;
-                float baseline = centerY
-                        + labelHeight * KEY_LABEL_VERTICAL_ADJUSTMENT_FACTOR;
-                if (hasSubLabel) {
-                    final int subLabelSize = (int) (mSubLabelTextSize * keySizeScale * labelSizeScale);
-                    final int subLabelHeight;
-                    final int subLabelWidth;
-                    paint.setTypeface(Typeface.DEFAULT_BOLD);
-
-                    paint.setTextSize(subLabelSize);
-                    if (mTextHeightCache.get(subLabelSize) != null) {
-                        subLabelHeight = mTextHeightCache.get(subLabelSize);
-                        subLabelWidth = mTextWidthCache.get(subLabelSize);
+                    int labelHeight = 0;
+                    int labelWidth = 0;
+                    String KEY_LABEL_HEIGHT_REFERENCE_CHAR = "W";
+                    if (mTextHeightCache.get(labelSize) != null) {
+                        Integer cachedHeight = mTextHeightCache.get(labelSize);
+                        Integer cachedWidth = mTextWidthCache.get(labelSize);
+                        if (cachedHeight != null && cachedWidth != null) {
+                            labelHeight = cachedHeight;
+                            labelWidth = cachedWidth;
+                        }
                     } else {
-
                         Rect textBounds = new Rect();
                         paint.getTextBounds(KEY_LABEL_HEIGHT_REFERENCE_CHAR, 0, 1, textBounds);
-                        subLabelHeight = textBounds.height();
-                        subLabelWidth = textBounds.width();
-                        mTextHeightCache.put(subLabelSize, subLabelHeight);
-                        mTextWidthCache.put(subLabelSize, subLabelWidth);
+                        labelHeight = textBounds.height();
+                        labelWidth = textBounds.width();
+                        mTextHeightCache.put(labelSize, labelHeight);
+                        mTextWidthCache.put(labelSize, labelWidth);
                     }
 
-                    //portrait keyboard
-                    if (key.height > key.width || subLabel.length() >2 || hasSecondSubLabel) {
-                        baseline = (key.height + padding.top - padding.bottom) * 2 / 3
-                                + labelHeight * KEY_LABEL_VERTICAL_ADJUSTMENT_FACTOR;
-                        float subBaseline = (key.height + padding.top - padding.bottom) / 4
-                                + subLabelHeight * KEY_LABEL_VERTICAL_ADJUSTMENT_FACTOR;
-                        paint.setColor(subKeyColor);
+                    // Draw a drop shadow for the text
+                    if (mShadowRadius > 0) paint.setShadowLayer(mShadowRadius, 0, 0, mShadowColor);
+                    final int centerX = (key.width + padding.left - padding.right) / 2;
+                    final int centerY = (key.height + padding.top - padding.bottom) / 2;
+                    final int keyColor = key.isFunctionalKey()
+                            ? (key.pressed ? mFunctionKeyTextColorPressed : mFunctionKeyTextColorNormal)
+                            : (key.pressed ? mKeyTextColorPressed : mKeyTextColorNormal);
+                    final int subKeyColor = key.isFunctionalKey()
+                            ? (key.pressed ? mFunctionKeyTextColorPressed : mFunctionKeyTextColorNormal)
+                            : (key.pressed ? mKeySubLabelTextColorPressed : mKeySubLabelTextColorNormal);
 
-                        if (hasSecondSubLabel) {
-                            canvas.drawText(subLabel, centerX / 2, subBaseline, paint);
+                    float KEY_LABEL_VERTICAL_ADJUSTMENT_FACTOR = 0.55f;
+                    float baseline = centerY
+                            + labelHeight * KEY_LABEL_VERTICAL_ADJUSTMENT_FACTOR;
+                    if (hasSubLabel) {
+                        final int subLabelSize = (int) (mSubLabelTextSize * keySizeScale * labelSizeScale);
+                        final int subLabelHeight;
+                        final int subLabelWidth;
+                        paint.setTypeface(Typeface.DEFAULT_BOLD);
 
+                        paint.setTextSize(subLabelSize);
+                        if (mTextHeightCache.get(subLabelSize) != null) {
+                            Integer cachedSubLabelHeight = mTextHeightCache.get(subLabelSize);
+                            Integer cachedSubLabelWidth = mTextWidthCache.get(subLabelSize);
+                            subLabelHeight = (cachedSubLabelHeight != null) ? cachedSubLabelHeight : 0;
+                            subLabelWidth = (cachedSubLabelWidth != null) ? cachedSubLabelWidth : 0;
+                        } else {
+
+                            Rect textBounds = new Rect();
+                            paint.getTextBounds(KEY_LABEL_HEIGHT_REFERENCE_CHAR, 0, 1, textBounds);
+                            subLabelHeight = textBounds.height();
+                            subLabelWidth = textBounds.width();
+                            mTextHeightCache.put(subLabelSize, subLabelHeight);
+                            mTextWidthCache.put(subLabelSize, subLabelWidth);
+                        }
+
+                        //portrait keyboard
+                        if (key.height > key.width || subLabel.length() > 2 || hasSecondSubLabel) {
+                            baseline = (float) ((key.height + padding.top - padding.bottom) * 2/3)
+                                    + labelHeight * KEY_LABEL_VERTICAL_ADJUSTMENT_FACTOR;
+                            float subBaseline = (float) (key.height + padding.top - padding.bottom) /3
+                                    + subLabelHeight * KEY_LABEL_VERTICAL_ADJUSTMENT_FACTOR;
+                            paint.setColor(subKeyColor);
+
+                            if (hasSecondSubLabel) {
+                                canvas.drawText(subLabel, (float) centerX / 2, subBaseline, paint);
+
+                                paint.setColor(keyColor);
+                                canvas.drawText(secondSubLabel, (float) centerX / 2 * 3, subBaseline, paint);
+                            } else
+                                canvas.drawText(subLabel, centerX, subBaseline, paint);
+
+                            paint.setTextSize(labelSize);
+                            paint.setTypeface(mKeyTextStyle);
                             paint.setColor(keyColor);
-                            canvas.drawText(secondSubLabel, centerX / 2 * 3, subBaseline, paint);
-                        } else
-                            canvas.drawText(subLabel, centerX, subBaseline, paint);
+                            canvas.drawText(label, centerX, baseline, paint);
 
-                        paint.setTextSize(labelSize);
-                        paint.setTypeface(mKeyTextStyle);
+                        } else {    //landscape keyboard
+                            paint.setColor(subKeyColor);
+                            //if (subLabel.length() > 2)  // draw sub keys as portrait keys in two rows.
+                            //    paint.setTextSize(subLabelSize * 2 / 3);  //123 EN  in landscape is usually to wide.
+                            /*if (hasSecondSubLabel) {
+                                                        canvas.drawText(subLabel, centerX - subLabelWidth * 2, baseline, paint);
+                                                        paint.setColor(keyColor);
+                                                        canvas.drawText(secondSubLabel, centerX - subLabelWidth, baseline, paint);
+                                                    } else*/
+                            canvas.drawText(subLabel, centerX - subLabelWidth, baseline, paint);
+
+                            paint.setTextSize(labelSize);
+                            paint.setTypeface(mKeyTextStyle);
+                            paint.setColor(keyColor);
+                            canvas.drawText(label, centerX + (float) labelWidth / 2, baseline, paint);
+
+                        }
+
+                    } else {
                         paint.setColor(keyColor);
                         canvas.drawText(label, centerX, baseline, paint);
+                    }
+                    // Turn off drop shadow
+                    if (mShadowRadius > 0) paint.setShadowLayer(0, 0, 0, 0);
 
-                    } else {    //landscape keyboard
-                        paint.setColor(subKeyColor);
-                        //if (subLabel.length() > 2)  // draw sub keys as portrait keys in two rows.
-                        //    paint.setTextSize(subLabelSize * 2 / 3);  //123 EN  in landscape is usually to wide.
-                        /*if (hasSecondSubLabel) {
-                                                    canvas.drawText(subLabel, centerX - subLabelWidth * 2, baseline, paint);
-                                                    paint.setColor(keyColor);
-                                                    canvas.drawText(secondSubLabel, centerX - subLabelWidth, baseline, paint);
-                                                } else*/
-                        canvas.drawText(subLabel, centerX - subLabelWidth, baseline, paint);
-
-                        paint.setTextSize(labelSize);
-                        paint.setTypeface(mKeyTextStyle);
-                        paint.setColor(keyColor);
-                        canvas.drawText(label, centerX + labelWidth/2, baseline, paint);
-
+                    // Usually don't draw icon if label is not null, but we draw icon for the number
+                    // hint and popup hint.
+                    shouldDrawIcon = shouldDrawLabelAndIcon(key);
+                }
+                if (shouldDrawIcon) {
+                    Drawable icon = key.icon;
+                    if (icon == null)
+                        icon = mPopupHint;
+                    else {
+                        icon.setState(drawableState);
                     }
 
-                } else {
-                    paint.setColor(keyColor);
-                    canvas.drawText(label, centerX, baseline, paint);
-                }
-                // Turn off drop shadow
-                if (mShadowRadius > 0) paint.setShadowLayer(0, 0, 0, 0);
 
-                // Usually don't draw icon if label is not null, but we draw icon for the number
-                // hint and popup hint.
-                shouldDrawIcon = shouldDrawLabelAndIcon(key);
+                    // Special handing for the upper-right number hint icons
+                    final int drawableWidth;
+                    final int drawableHeight;
+                    final int drawableX;
+                    final int drawableY;
+                    if (shouldDrawIconFully(key)) {
+                        drawableWidth = key.width;
+                        drawableHeight = key.height;
+                        drawableX = 0;
+                        drawableY = NUMBER_HINT_VERTICAL_ADJUSTMENT_PIXEL;
+                    } else {
+
+                        drawableHeight = key.height; // icon.getIntrinsicHeight();
+                        drawableWidth = icon.getIntrinsicWidth() * drawableHeight / icon.getIntrinsicHeight();
+                        drawableX = (key.width + padding.left - padding.right - drawableWidth) / 2;
+                        drawableY = (key.height + padding.top - padding.bottom - drawableHeight) / 2;
+                    }
+                    canvas.translate(drawableX, drawableY);
+                    icon.setBounds(0, 0, drawableWidth, drawableHeight);
+                    icon.draw(canvas);
+                    canvas.translate(-drawableX, -drawableY);
+                }
+                canvas.translate(-key.x - kbdPaddingLeft, -key.y - kbdPaddingTop);
             }
-            if (shouldDrawIcon) {
-                Drawable icon = key.icon;
-                if (icon == null)
-                    icon = mPopupHint;
-                else {
-                    icon.setState(drawableState);
-                }
-
-
-                // Special handing for the upper-right number hint icons
-                final int drawableWidth;
-                final int drawableHeight;
-                final int drawableX;
-                final int drawableY;
-                if (shouldDrawIconFully(key)) {
-                    drawableWidth = key.width;
-                    drawableHeight = key.height;
-                    drawableX = 0;
-                    drawableY = NUMBER_HINT_VERTICAL_ADJUSTMENT_PIXEL;
-                } else {
-
-                    drawableHeight = key.height; // icon.getIntrinsicHeight();
-                    drawableWidth = icon.getIntrinsicWidth() * drawableHeight / icon.getIntrinsicHeight()  ;
-                    drawableX = (key.width + padding.left - padding.right - drawableWidth) / 2;
-                    drawableY = (key.height + padding.top - padding.bottom - drawableHeight) / 2;
-                }
-                canvas.translate(drawableX, drawableY);
-                icon.setBounds(0, 0, drawableWidth, drawableHeight);
-                icon.draw(canvas);
-                canvas.translate(-drawableX, -drawableY);
+            mInvalidatedKey = null;
+            // Overlay a dark rectangle to dim the keyboard
+            if (mMiniKeyboard != null) {
+                paint.setColor((int) (mBackgroundDimAmount * 0xFF) << 24);
+                canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
             }
-            canvas.translate(-key.x - kbdPaddingLeft, -key.y - kbdPaddingTop);
-        }
-        mInvalidatedKey = null;
-        // Overlay a dark rectangle to dim the keyboard
-        if (mMiniKeyboard != null) {
-            paint.setColor((int) (mBackgroundDimAmount * 0xFF) << 24);
-            canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
-        }
 
-        if (DEBUG) {
-            if (mShowTouchPoints) {
+            if (DEBUG) {
+                //boolean mShowTouchPoints = true;
                 for (PointerTracker tracker : mPointerTrackers) {
                     int startX = tracker.getStartX();
                     int startY = tracker.getStartY();
@@ -1198,9 +1193,12 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
                     paint.setColor(0xFF0000FF);
                     canvas.drawCircle(lastX, lastY, 3, paint);
                     paint.setColor(0xFF00FF00);
-                    canvas.drawCircle((startX + lastX) / 2, (startY + lastY) / 2, 2, paint);
+                    canvas.drawCircle((float) (startX + lastX) / 2, (float) (startY + lastY) / 2, 2, paint);
                 }
             }
+        }
+        finally {
+            canvas.restore();
         }
 
         mDrawPending = false;
@@ -1294,7 +1292,7 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
         }
         // Set the preview background state
         mPreviewText.getBackground().setState(
-                key.popupResId != 0 ? LONG_PRESSABLE_STATE_SET : EMPTY_STATE_SET);
+                key.popupResId != 0 ? View.PRESSED_STATE_SET : View.EMPTY_STATE_SET);
         popupPreviewX += mOffsetInWindow[0];
         popupPreviewY += mOffsetInWindow[1];
 
@@ -1356,19 +1354,19 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
         mDirtyRect.union(key.x + getPaddingLeft(), key.y + getPaddingTop(),
                 key.x + key.width + getPaddingLeft(), key.y + key.height + getPaddingTop());
         onBufferDraw();
-        invalidate(key.x + getPaddingLeft(), key.y + getPaddingTop(),
-                key.x + key.width + getPaddingLeft(), key.y + key.height + getPaddingTop());
+        // Use invalidate() without parameters or invalidate(Rect) instead of deprecated invalidate(int, int, int, int)
+        invalidate();
     }
 
-    private boolean openPopupIfRequired(int keyIndex, PointerTracker tracker) {
+    private void openPopupIfRequired(int keyIndex, PointerTracker tracker) {
         // Check if we have a popup layout specified first.
         if (mPopupLayout == 0) {
-            return false;
+            return;
         }
 
         Key popupKey = tracker.getKey(keyIndex);
         if (popupKey == null)
-            return false;
+            return;
         boolean result = onLongPress(popupKey);
         if (result) {
             dismissKeyPreview();
@@ -1377,7 +1375,6 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
             tracker.setAlreadyProcessed();
             mPointerQueue.remove(tracker);
         }
-        return result;
     }
 
     private View inflateMiniKeyboardContainer(Key popupKey) {
@@ -1388,7 +1385,7 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
             throw new NullPointerException();
 
         LIMEKeyboardBaseView miniKeyboard =
-                (LIMEKeyboardBaseView) container.findViewById(R.id.LIMEPopupKeyboard);
+                container.findViewById(R.id.LIMEPopupKeyboard);
         miniKeyboard.setOnKeyboardActionListener(new OnKeyboardActionListener() {
             public void onKey(int primaryCode, int[] keyCodes, int x, int y) {
                 mKeyboardActionListener.onKey(primaryCode, keyCodes, x, y);
@@ -1430,15 +1427,7 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
         // Remove gesture detector on mini-keyboarda
         miniKeyboard.mGestureDetector = null;
 
-        LIMEBaseKeyboard keyboard;
-        if (popupKey.popupCharacters != null) {
-            keyboard = new LIMEBaseKeyboard(mContext, popupKeyboardId, popupKey.popupCharacters,
-                    -1, getPaddingLeft() + getPaddingRight(),
-                    LIMEKeyboardBaseView.this.mKeyboard.getKeySizeScale());
-        } else {
-            keyboard = new LIMEBaseKeyboard(mContext, popupKeyboardId
-                    , LIMEKeyboardBaseView.this.mKeyboard.getKeySizeScale(), 0, 0); //Jeremy '12,5,21 never show arrow keys in popup keyboard
-        }
+        LIMEBaseKeyboard keyboard = getLimeBaseKeyboard(popupKey, popupKeyboardId);
         //mini keyboard in fling mode override with fling correction. Jeremy '12,5,27
         if (!isLargeScreen || keyboard.getKeys().size() == 1)
             miniKeyboard.mVerticalCorrection =
@@ -1452,8 +1441,21 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
         return container;
     }
 
+    private LIMEBaseKeyboard getLimeBaseKeyboard(Key popupKey, int popupKeyboardId) {
+        LIMEBaseKeyboard keyboard;
+        if (popupKey.popupCharacters != null) {
+            keyboard = new LIMEBaseKeyboard(mContext, popupKeyboardId, popupKey.popupCharacters,
+                    -1, getPaddingLeft() + getPaddingRight(),
+                    LIMEKeyboardBaseView.this.mKeyboard.getKeySizeScale());
+        } else {
+            keyboard = new LIMEBaseKeyboard(mContext, popupKeyboardId
+                    , LIMEKeyboardBaseView.this.mKeyboard.getKeySizeScale(), 0, 0); //Jeremy '12,5,21 never show arrow keys in popup keyboard
+        }
+        return keyboard;
+    }
+
     private static boolean isOneRowKeys(List<Key> keys) {
-        if (keys.size() == 0) return false;
+        if (keys.isEmpty()) return false;
         final int edgeFlags = keys.get(0).edgeFlags;
         // HACK: The first key of mini keyboard which was inflated from xml and has multiple rows,
         // does not have both top and bottom edge flags on at the same time.  On the other hand,
@@ -1484,7 +1486,7 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
             container = inflateMiniKeyboardContainer(popupKey);
             mMiniKeyboardCache.put(popupKey, container);
         }
-        mMiniKeyboard = (LIMEKeyboardBaseView) container.findViewById(R.id.LIMEPopupKeyboard);
+        mMiniKeyboard = container.findViewById(R.id.LIMEPopupKeyboard);
         if (mWindowOffset == null) {
             mWindowOffset = new int[2];
             getLocationInWindow(mWindowOffset);
@@ -1498,11 +1500,10 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
         //  b) When we have the rightmost key in popup keyboard directly above the pressed key
         //     Left edges of both keys should be aligned for consistent default selection
         final List<Key> miniKeys = mMiniKeyboard.getKeyboard().getKeys();
-        final int miniKeyWidth = miniKeys.size() > 0 ? miniKeys.get(0).width : 0;
+        final int miniKeyWidth = !miniKeys.isEmpty() ? miniKeys.get(0).width : 0;
 
         // HACK: Have the leftmost number in the popup characters right above the key
-        boolean isNumberAtLeftmost =
-                hasMultiplePopupChars(popupKey) && isNumberAtLeftmostPopupChar(popupKey);
+        boolean isNumberAtLeftmost = hasMultiplePopupChars(popupKey) && isNumberAtLeftmostPopupChar(popupKey);
         int popupX = popupKey.x + mWindowOffset[0];
         popupX += getPaddingLeft();
         if (isNumberAtLeftmost) {
@@ -1628,7 +1629,8 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
             int index = mPointerQueue.lastIndexOf(tracker);
             if (index >= 0) {
                 mPointerQueue.releaseAllPointersOlderThan(tracker, eventTime);
-            } else {
+            }
+            else {
                 Log.w(TAG, "onUpEvent: corresponding down event not found for pointer "
                         + tracker.mPointerId);
             }
@@ -1638,11 +1640,12 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
     }
 
 
+    @SuppressLint("ClickableViewAccessibility")
     @Override
     public boolean onTouchEvent(@NonNull MotionEvent me) {
         if(DEBUG)
             Log.i(TAG,"onTouchEvent()");
-        final int action = (isAPIpre8) ? me.getAction() : me.getActionMasked();
+        final int action = me.getActionMasked();
         final int pointerCount = me.getPointerCount();
         final int oldPointerCount = mOldPointerCount;
         mOldPointerCount = pointerCount;
@@ -1669,7 +1672,7 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
         }
 
         final long eventTime = me.getEventTime();
-        final int index = (isAPIpre8) ? 0 : me.getActionIndex();
+        final int index =  me.getActionIndex();
         final int id = me.getPointerId(index);
         final int x = (int) me.getX(index);
         final int y = (int) me.getY(index);

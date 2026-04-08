@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -26,11 +26,24 @@ package net.toload.main.hd.data;
 
 import android.database.Cursor;
 
-import net.toload.main.hd.Lime;
+import net.toload.main.hd.global.LIME;
 
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Represents a keyboard configuration in the database.
+ * 
+ * <p>A Keyboard contains configuration for different keyboard layouts
+ * (IM keyboard, English keyboard, symbol keyboard, etc.) and their
+ * shift variants.
+ * 
+ * <p>This class provides static helper methods to convert Cursor objects
+ * to Keyboard instances, but does not contain any SQL code. All database
+ * operations should be performed through {@link net.toload.main.hd.limedb.LimeDB}.
+ * 
+ * @author LimeIME Team
+ */
 public class Keyboard {
 
 	private int id;
@@ -52,79 +65,21 @@ public class Keyboard {
 
 	private boolean disable;
 
-	public static Keyboard get(Cursor cursor){
-		Keyboard record = new Keyboard();
-				record.setId(cursor.getInt(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_ID)));
-				record.setCode(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_CODE)));
-				record.setName(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_NAME)));
-				record.setDesc(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_DESC)));
-				record.setType(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_TYPE)));
-				record.setImage(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_IMAGE)));
-				record.setImkb(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_IMKB)));
-				record.setImshiftkb(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_IMSHIFTKB)));
-				record.setEngkb(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_ENGKB)));
-				record.setEngshiftkb(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_ENGSHIFTKB)));
-				record.setSymbolkb(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_SYMBOLKB)));
-				record.setSymbolshiftkb(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_SYMBOLSHIFTKB)));
-				record.setDefaultkb(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_DEFAULTKB)));
-				record.setDefaultshiftkb(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_DEFAULTSHIFTKB)));
-				record.setExtendedkb(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_EXTENDEDKB)));
-				record.setExtendedshiftkb(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_EXTENDEDSHIFTKB)));
-				record.setDisable(Boolean.getBoolean(cursor.getString(cursor.getColumnIndex(Lime.DB_KEYBOARD_COLUMN_DISABLE))));
-		return record;
+	// NOTE: Database cursor parsing logic moved to LimeDB to centralize DB access.
+	// Keep model-level convenience accessors for compatibility with existing code.
+
+	// Backwards-compatible description accessors (KeyboardConfig used getDescription())
+	public String getDescription() { return desc; }
+	public void setDescription(String description) { this.desc = description; }
+
+	// UI convenience overloads preserved from KeyboardConfig
+	public String getEngkb(boolean showNumberRow) {
+		if (showNumberRow) return "lime_english_number";
+		else return "lime_english";
 	}
-
-	public static List<Keyboard> getList(Cursor cursor){
-		List<Keyboard> list = new ArrayList<Keyboard>();
-		cursor.moveToFirst();
-		while(!cursor.isAfterLast()){
-			list.add(get(cursor));
-			cursor.moveToNext();
-		}
-		cursor.close();
-		return list;
-	}
-
-
-	public static String getInsertQuery(Keyboard record){
-		StringBuffer sb = new StringBuffer();
-		sb.append("INSERT INTO " + Lime.DB_KEYBOARD + "(");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_ID +", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_CODE+", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_NAME+", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_DESC +", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_TYPE +", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_IMAGE+", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_IMKB +", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_IMSHIFTKB+", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_ENGKB +", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_ENGSHIFTKB+", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_SYMBOLKB +", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_SYMBOLSHIFTKB +", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_DEFAULTKB +", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_DEFAULTSHIFTKB +", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_EXTENDEDKB +", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_EXTENDEDSHIFTKB +", ");
-		sb.append(Lime.DB_KEYBOARD_COLUMN_DISABLE +") VALUES(");
-		sb.append("\""+record.getId()+"\",");
-		sb.append("\""+record.getCode()+"\",");
-		sb.append("\""+record.getName()+"\",");
-		sb.append("\""+record.getDesc()+"\",");
-		sb.append("\""+record.getType()+"\",");
-		sb.append("\""+record.getImage()+"\",");
-		sb.append("\""+record.getImkb()+"\",");
-		sb.append("\""+record.getImshiftkb()+"\",");
-		sb.append("\""+record.getEngkb()+"\",");
-		sb.append("\""+record.getEngshiftkb()+"\",");
-		sb.append("\""+record.getSymbolkb()+"\",");
-		sb.append("\""+record.getSymbolshiftkb()+"\",");
-		sb.append("\""+record.getDefaultkb()+"\",");
-		sb.append("\""+record.getDefaultshiftkb()+"\",");
-		sb.append("\""+record.getExtendedkb()+"\",");
-		sb.append("\""+record.getExtendedshiftkb()+"\",");
-		sb.append("\""+record.isDisable()+"\"");
-		sb.append(")");
-		return sb.toString();
+	public String getEngshiftkb(boolean showNumberRow) {
+		if (showNumberRow) return "lime_english_number_shift";
+		else return "lime_english_shift";
 	}
 
 	public int getId() {

@@ -3,7 +3,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -26,6 +26,7 @@
 
 package net.toload.main.hd.candidate;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
@@ -50,20 +51,21 @@ public class CandidateViewContainer extends LinearLayout implements OnTouchListe
         
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     public void initViews() {
         if (mCandidateView == null) {
             mButtonExpandLayout = findViewById(R.id.candidate_right_parent);
-            mButtonExpand = (ImageButton) findViewById(R.id.candidate_right);
+            mButtonExpand = findViewById(R.id.candidate_right);
             if (mButtonExpand != null) {
                 mButtonExpand.setOnTouchListener(this);
             }
-            mCandidateView = (CandidateView) findViewById(R.id.candidates);
-            TextView mEmbeddedTextView = (TextView) findViewById(R.id.embeddedComposing);
+            mCandidateView = findViewById(R.id.candidates);
+            TextView mEmbeddedTextView = findViewById(R.id.embeddedComposing);
 
             mCandidateView.setEmbeddedComposingView(mEmbeddedTextView);
             mCandidateView.setBackgroundColor(mCandidateView.mColorBackground);
             mButtonExpand.setBackgroundColor(mCandidateView.mColorBackground);
-            mButtonExpand.setImageDrawable(mCandidateView.mDrawableExpandButton);
+            mButtonExpand.setImageDrawable(mCandidateView.mDrawableExpandDownButton);
         }
     }
 

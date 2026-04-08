@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -26,8 +26,10 @@ package net.toload.main.hd.keyboard;
 
 import net.toload.main.hd.R;
 import net.toload.main.hd.keyboard.LIMEBaseKeyboard.Key;
+
+import android.annotation.SuppressLint;
 import android.content.Context;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -48,7 +50,7 @@ public class LIMEKeyboardView extends LIMEKeyboardBaseView {
 	
    // private Keyboard mPhoneKeyboard;
   
-    private int mKeyHeight=0;
+    private final int mKeyHeight;
 
 	public LIMEKeyboardView(Context context, AttributeSet attrs) {
 		super(context, attrs);
@@ -83,16 +85,17 @@ public class LIMEKeyboardView extends LIMEKeyboardBaseView {
 	/*
 	 *
 	 */
-	@Override
+	@SuppressLint("ClickableViewAccessibility")
+    @Override
 	public boolean onTouchEvent(@NonNull MotionEvent me) {
-		if(DEBUG) Log.i(TAG, "OnTouchEvent(), me.getAction() =" + me.getAction());
+		if(DEBUG) Log.i(TAG, "OnTouchEvent(), me.getActionMasked() =" + me.getActionMasked());
 		LIMEKeyboard keyboard = (LIMEKeyboard) getKeyboard();
-		if (me.getAction() == MotionEvent.ACTION_DOWN) {
+		if (me.getActionMasked() == MotionEvent.ACTION_DOWN) {
 			if(DEBUG) Log.i(TAG, "OnTouchEvent(), ACTION_DOWN");
 			keyboard.keyReleased();
 		}
 
-		if (me.getAction() == MotionEvent.ACTION_UP) {
+		if (me.getActionMasked() == MotionEvent.ACTION_UP) {
 			int spaceDragDirection = keyboard.getSpaceDragDirection();
 			if(DEBUG) Log.i(TAG, "OnTouchEvent(), ACTION_UP, spaceDragDirection:" + spaceDragDirection);
 			if (spaceDragDirection != 0) {

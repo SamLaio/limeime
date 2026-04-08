@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -24,13 +24,6 @@
 
 package net.toload.main.hd.global;
 
-import org.apache.http.HttpEntity;
-import org.apache.http.entity.HttpEntityWrapper;
-
-import java.io.FilterOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-
 /**
  * Created by Jeremy on 2015/5/23.
  */
@@ -44,15 +37,14 @@ public abstract class LIMEProgressListener {
     }
 
     public void onError(int code, String source){
-        return;
+
     }
     public void onPreExecute(){
-        return;
     }
     public void onPostExecute(boolean success, String status, int code){
-        return;
+
     }
     public void onStatusUpdate(String status){
-        return;
+
     }
 }

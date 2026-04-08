@@ -2,7 +2,7 @@
 <!--
   ~ /*
   ~  *
-  ~  **    Copyright 2015, The LimeIME Open Source Project
+  ~  **    Copyright 2025, The LimeIME Open Source Project
   ~  **
   ~  **    Project Url: http://github.com/lime-ime/limeime/
   ~  **                 http://android.toload.net/
@@ -28,6 +28,7 @@
     <!-- Image button description  -->
     <string name="more_cand">Click for more candidates.</string>
     <string name="close_cand">Close the popup candiates view.</string>
+    <string name="show_keyboard">Show keyboard</string>
 
     <!-- Title for Latin keyboard  -->
     <string name="ime_name">LIME-HD</string>
@@ -37,7 +38,7 @@
     <string name="license">版權聲明</string>
     <string name="license_detail">LIME-HD 是一個輸入法框架程式，旨在提供 Android 裝置中文輸入法程式。\n組織或個人由網路自行下載之輸入法字根及字典檔案若有版權上的爭議，請自行向原作者取得授權，本程式不負擔其所產生的任何法律及版權上的責任。\n完整資訊請參考 LIME Project 網站上的版權說明  http://code.google.com/p/limeime/。</string>
 
-    <!-- Symbols that are commonly considered word separators in this language -->
+    <!-- Symbols that are commonly considered record separators in this language -->
     <string name="word_separators">\u0020.,;:!?\n()[]*&amp;@{}/&lt;&gt;_+=|&quot;</string>
     <string name="word_symbol_separators">\u0020?\n{}&lt;&gt;_+|&quot;</string>
 
@@ -173,8 +174,8 @@
 
     <!-- Other Messages -->
 
-    <!-- Indicates that a word has been added to the dictionary -->
-    <string name="added_word"><xliff:g id="word">%s</xliff:g> : Saved</string>
+    <!-- Indicates that a record has been added to the dictionary -->
+    <string name="added_word"><xliff:g id="record">%s</xliff:g> : Saved</string>
     <!-- Accented forms of "a" -->
     <string name="alternates_for_a">àáâãäåæ</string>
     <!-- Accented forms of "e" -->
@@ -193,7 +194,7 @@
     <string name="alternates_for_c">ç</string>
     <!-- Accented forms of "y" -->
     <string name="alternates_for_y">ýÿ</string>
-    <!-- Symbols that are commonly considered word separators in this language -->
+    <!-- Symbols that are commonly considered record separators in this language -->
     <!-- Symbols that are sentence separators, for purposes of making it hug the last sentence. -->
     <string name="sentence_separators">.,;:!?</string>
     <!-- Accented characters related to "d" -->
@@ -485,11 +486,12 @@
     <string name="l3_initial_backup_database">備份資料庫</string>
     <string name="l3_initial_backup_start">開始備份資料庫</string>
     <string name="l3_initial_backup_end">資料庫備份完成</string>
-    <string name="l3_initial_backup_confirm">您是否要備份資料庫?</string>
+    <string name="l3_initial_backup_confirm">請在按確認後選擇備份備儲存位置</string>
+    <string name="l3_initial_backup_confirm_downloads">備份檔案將儲存至下載項目資料夾</string>
     <string name="l3_initial_backup_error">資料庫備份失敗</string>
     <string name="l3_initial_restore_database">還原資料庫</string>
     <string name="l3_initial_restore_error">還原失敗, 請確定備份檔案存在.</string>
-    <string name="l3_initial_restore_confirm">您是否要還原資料庫?</string>
+    <string name="l3_initial_restore_confirm">請在按確認後點選將還原之備份檔</string>
     <string name="l3_initial_restore_start">開始還原資料庫</string>
     <string name="l3_initial_restore_end">資料庫還原完成</string>
 
@@ -504,24 +506,6 @@
     <string name="l3_initial_cloud_restore_start">開始還原Google Drive資料庫</string>
     <string name="l3_initial_cloud_restore_end">Google Drive資料庫還原完成</string>
     <string name="l3_initial_cloud_failed">Google Drive服務暫時無法連接，請稍後再試</string>
-
-    <string name="l3_initial_dropbox_backup_database">Dropbox 備份</string>
-    <string name="l3_initial_dropbox_downloading">Dropbox 備份檔下載中 </string>
-    <string name="l3_initial_dropbox_uploading">Dropbox 備份檔上傳中 </string>
-    <string name="l3_initial_dropbox_backup_start">開始Dropbox資料庫備份</string>
-    <string name="l3_initial_dropbox_backup_end">Dropbox資料庫備份完成</string>
-    <string name="l3_initial_dropbox_backup_confirm">您是否要備份資料庫至Dropbox?</string>
-    <string name="l3_initial_dropbox_backup_error">資料庫不存在，無法進行備份.</string>
-    <string name="l3_initial_dropbox_restore_database">Dropbox 還原</string>
-    <string name="l3_initial_dropbox_restore_error">Dropbox 備份不存在. 請先進行Dropbox 備份</string>
-    <string name="l3_initial_dropbox_restore_confirm">您是否要由Dropbox還原資料庫?</string>
-    <string name="l3_initial_dropbox_restore_start">開始還原Dropbox資料庫</string>
-    <string name="l3_initial_dropbox_restore_end">Dropbox資料庫還原完成</string>
-    <string name="l3_initial_dropbox_failed">Dropbox服務暫時無法連接，請稍後再試</string>
-    <string name="l3_initial_dropbox_canceled">Dropbox動作已取消，請稍後再試</string>
-    <string name="l3_initial_dropbox_authetication_failed">Dropbox認證失敗，請稍後再試</string>
-    <string name="l3_initial_dropbox_large">檔案過大無法上傳Dropbox</string>
-
 
     <string name="l3_im_setting_select_keyboard">請選擇輸入法鍵盤顯示</string>
     <string name="l3_im_setting_back">回到上一頁</string>
@@ -639,6 +623,13 @@
     <string name="l3_im_database_error">資料庫操作錯誤，請稍待一會重新操作。</string>
 
     <string name="l3_database_loading">資料庫載入中，請稍待…</string>
+    <string name="l3_database_exporting">資料庫匯出中，請稍待…</string>
+    <string name="l3_database_loading_records">匯入資料庫 - </string>
+    <string name="l3_database_exporting_records">資料庫匯出 - </string>
+    <string name="l3_database_exporting_complete">資料庫匯出完成 - </string>
+
+
+
     <string name="l3_database_not_exist">資料庫不存在，請先下載資料庫</string>
 
     <string name="l3_tab_bluetooth">藍牙設定</string>

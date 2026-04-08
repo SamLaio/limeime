@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -24,91 +24,37 @@
 
 package net.toload.main.hd.data;
 
-import android.database.Cursor;
+/**
+ * Represents a related phrase record for UI layer operations.
+ * 
+ * <p>This is an alias for {@link Mapping} used in the Manage Related Phrases UI
+ * where related phrase terminology (pword, cword) is more appropriate.
+ * 
+ * <p>Field mappings:
+ * <ul>
+ *   <li>{@code getPword()} / {@code setPword()} - Parent word</li>
+ *   <li>{@code getCword()} / {@code setCword()} - Child word (alias for word)</li>
+ *   <li>{@code getUserscore()} / {@code setUserscore()} - User score (alias for score)</li>
+ *   <li>{@code getBasescore()} / {@code setBasescore()} - Base score</li>
+ * </ul>
+ * 
+ * <p>All fields and methods are inherited from {@link Mapping}.
+ * 
+ * @author LimeIME Team
+ * @see Mapping
+ */
+public class Related extends Mapping {
 
-import net.toload.main.hd.Lime;
-
-import java.util.ArrayList;
-import java.util.List;
-
-public class Related {
-
-	private int id;
-	private String pword;
-	private String cword;
-	private int basescore;
-	private int userscore;
-
-	public int getId() {
-		return id;
+	/** Empty constructor */
+	public Related() {
+		super();
 	}
 
-	public void setId(int id) {
-		this.id = id;
+	/**
+	 * Copy constructor.
+	 * @param mapping The mapping to copy
+	 */
+	public Related(Mapping mapping) {
+		super(mapping);
 	}
-
-	public String getPword() {
-		return pword;
-	}
-
-	public void setPword(String pword) {
-		this.pword = pword;
-	}
-
-	public String getCword() {
-		return cword;
-	}
-
-	public void setCword(String cword) {
-		this.cword = cword;
-	}
-
-	public int getBasescore() {
-		return basescore;
-	}
-
-	public void setBasescore(int basescore) {
-		this.basescore = basescore;
-	}
-
-	public int getUserscore() {return userscore;}
-
-	public void setUserscore(int userscore) {this.userscore = userscore;}
-
-	public static Related get(Cursor cursor){
-		Related record = new Related();
-				record.setId(cursor.getInt(cursor.getColumnIndex(Lime.DB_RELATED_COLUMN_ID)));
-				record.setPword(cursor.getString(cursor.getColumnIndex(Lime.DB_RELATED_COLUMN_PWORD)));
-				record.setCword(cursor.getString(cursor.getColumnIndex(Lime.DB_RELATED_COLUMN_CWORD)));
-				record.setUserscore(cursor.getInt(cursor.getColumnIndex(Lime.DB_RELATED_COLUMN_USERSCORE)));
-				record.setBasescore(cursor.getInt(cursor.getColumnIndex(Lime.DB_RELATED_COLUMN_BASESCORE)));
-		return record;
-	}
-
-	public static List<Related> getList(Cursor cursor){
-		List<Related> list = new ArrayList<Related>();
-		cursor.moveToFirst();
-		while(!cursor.isAfterLast()){
-			list.add(get(cursor));
-			cursor.moveToNext();
-		}
-		cursor.close();
-		return list;
-	}
-
-	public static String getInsertQuery(Related record){
-		StringBuffer sb = new StringBuffer();
-		sb.append("INSERT INTO " + Lime.DB_RELATED + "(");
-		sb.append(Lime.DB_RELATED_COLUMN_PWORD +", ");
-		sb.append(Lime.DB_RELATED_COLUMN_CWORD +", ");
-		sb.append(Lime.DB_RELATED_COLUMN_USERSCORE +", ");
-		sb.append(Lime.DB_RELATED_COLUMN_BASESCORE +") VALUES(");
-		sb.append("\""+record.getPword()+"\",");
-		sb.append("\""+record.getCword()+"\",");
-		sb.append("\""+record.getUserscore()+"\",");
-		sb.append("\""+record.getBasescore()+"\"");
-		sb.append(")");
-		return sb.toString();
-	}
-
 }

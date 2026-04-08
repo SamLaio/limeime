@@ -3,7 +3,7 @@
 <!--
   ~ /*
   ~  *
-  ~  **    Copyright 2015, The LimeIME Open Source Project
+  ~  **    Copyright 2025, The LimeIME Open Source Project
   ~  **
   ~  **    Project Url: http://github.com/lime-ime/limeime/
   ~  **                 http://android.toload.net/
@@ -104,5 +104,7 @@
 
     <color name="background_score">#88333333</color>
 
+    <!-- Semi-transparent white background for keyboard (90% opaque, 10% transparent) -->
+    <color name="keyboard_background_semi_transparent">#E6FFFFFF</color>
 
 </resources>

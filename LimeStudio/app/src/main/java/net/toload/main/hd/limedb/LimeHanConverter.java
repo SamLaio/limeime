@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -37,6 +37,18 @@ import android.util.Log;
 
 
 /**
+ * Helper for Han character conversion and base-frequency lookup.
+ *
+ * <p>This class wraps a lightweight read-only SQLite database ("hanconvertv2.db")
+ * that provides mappings and base frequency scores used when loading mapping
+ * tables and computing default base scores for characters/phrases.
+ *
+ * <p>Primary responsibilities:
+ * <ul>
+ *   <li>Lookup of base frequency scores via {@link #getBaseScore(String)}</li>
+ *   <li>Conversion between Traditional and Simplified Chinese via {@link #convert(String, Integer)}</li>
+ * </ul>
+ *
  * @author Art Hung
  */
 public class LimeHanConverter extends SQLiteOpenHelper {
@@ -59,7 +71,7 @@ public class LimeHanConverter extends SQLiteOpenHelper {
 	}
 	/**
 	 * Count total amount of specific table
-	 *
+
 
 	public int countMapping(String table) {
 		if(DEBUG)
@@ -76,7 +88,7 @@ public class LimeHanConverter extends SQLiteOpenHelper {
 					Log.i(TAG, "countMapping" + "Table," + table + ": " + total);
 			return total;
 		} catch (Exception e) {
-			e.printStackTrace();
+			Log.e(TAG, "Error in Han conversion", e);
 		}
 		return 0;
 	}
@@ -97,38 +109,41 @@ public class LimeHanConverter extends SQLiteOpenHelper {
 		
 	}
 	
-	public int getBaseScore(String input){
-		if(DEBUG)
-			Log.i(TAG, "getBaseScore()");
-		int score = 0;
-		if(input!=null && !input.equals("")) {
-			Cursor cursor;
-			
-			try {
-				SQLiteDatabase db = this.getReadableDatabase();
-				
-				cursor = db.query("TCSC", null, FIELD_CODE + " = '" + input + "' "
-							, null, null, null, null, null);		
-					if (cursor.moveToFirst()) {
-						int scoreColumn = cursor.getColumnIndex(FIELD_SCORE);
-						score = cursor.getInt(scoreColumn);
-					}else if(input.length()>1)
-						score = 1;  //phase has default score = 1
+	public int getBaseScore(String input) {
+        if (DEBUG)
+            Log.i(TAG, "getBaseScore()");
+        int score = 0;
+        if (input != null && !input.isEmpty()) {
+            Cursor cursor = null;
 
-				//cursor.deactivate();
-				cursor.close();
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
-		}
-		
-		return score;
-	}
+            try {
+                SQLiteDatabase db = this.getReadableDatabase();
+
+                // Use parameterized query to prevent SQL injection
+                cursor = db.query("TCSC", null, FIELD_CODE + " = ?"
+                        , new String[]{input}, null, null, null, null);
+                if (cursor != null && cursor.moveToFirst()) {
+                    int scoreColumn = cursor.getColumnIndex(FIELD_SCORE);
+                    score = cursor.getInt(scoreColumn);
+                } else if (input.length() > 1)
+                    score = 1;  //phase has default score = 1
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error in Han conversion", e);
+            } finally {
+                // Ensure cursor is closed even if exception occurs
+                if (cursor != null) {
+                    cursor.close();
+                }
+            }
+        }
+        return score;
+    }
 	
 	public String convert(String input, Integer hanConvertOption){
-		String output=input;
+		StringBuilder output= new StringBuilder(input);
 		//Log.i("LimeHanConverter.convert()","hanConvertOption:"+hanConvertOption);
-		if(input!=null && !input.equals("") && hanConvertOption != 0){
+		if(!input.isEmpty() && hanConvertOption != 0){
 			String tablename = "";
 			Cursor cursor = null;
 			if(hanConvertOption == 1 ) { //TC to SC
@@ -139,32 +154,43 @@ public class LimeHanConverter extends SQLiteOpenHelper {
 			try {
 				SQLiteDatabase db = this.getReadableDatabase();
 				
-				output = "";
+				output = new StringBuilder();
 				for(int i=0;i<input.length();i++){
-					
-					cursor = db.query(tablename, null, FIELD_CODE + " = '" + input.substring(i,i+1) + "' "
-							, null, null, null, null, null);
+					// Validate table name to prevent SQL injection
+					if (!tablename.equals("TCSC") && !tablename.equals("SCTC")) {
+						Log.e(TAG, "convert(): Invalid table name: " + tablename);
+						break;
+					}
+					// Use parameterized query to prevent SQL injection
+					String charStr = String.valueOf(input.charAt(i));
+					cursor = db.query(tablename, null, FIELD_CODE + " = ?"
+							, new String[]{charStr}, null, null, null, null);
 				
-					if (cursor.moveToFirst()) {
+					if (cursor != null && cursor.moveToFirst()) {
 						//int codeColumn = cursor.getColumnIndex(FIELD_CODE);
 						int wordColumn = cursor.getColumnIndex(FIELD_WORD);
 						String word = cursor.getString(wordColumn);
-						output += word; 
-							
-					}else
-						output += input.substring(i,i+1);
-						
-				}
+						output.append(word);
+					} else {
+						output.append(input.charAt(i));
+					}
 					
+					// Close cursor after each iteration to prevent resource leak
+					if (cursor != null) {
+						cursor.close();
+						cursor = null;
+					}
+				}
+            } catch (Exception e) {
+				Log.e(TAG, "Error in Han conversion", e);
+			} finally {
+				// Ensure cursor is closed even if exception occurs
 				if (cursor != null) {
-					//cursor.deactivate();
 					cursor.close();
 				}
-			} catch (Exception e) {
-				e.printStackTrace();
 			}
 					
 		}
-		return output;
+		return output.toString();
 	}
 }

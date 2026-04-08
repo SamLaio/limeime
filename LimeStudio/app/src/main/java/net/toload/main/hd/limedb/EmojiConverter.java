@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -30,11 +30,9 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
-import android.graphics.Paint;
 import android.util.Log;
 
-import net.toload.main.hd.Lime;
-import net.toload.main.hd.R;
+import net.toload.main.hd.global.LIME;
 import net.toload.main.hd.data.Mapping;
 
 import java.util.LinkedList;
@@ -42,6 +40,13 @@ import java.util.List;
 
 
 /**
+ * Emoji conversion helper backed by a small SQLite database (emoji.db).
+ *
+ * <p>Provides lookup of emoji values by tag for different emoji datasets
+ * (CN/EN/TW). The {@link #convert(String, Integer)} method returns a list of
+ * lightweight {@link net.toload.main.hd.data.Mapping} objects representing
+ * emoji candidates to be presented to the UI.
+ *
  * @author Art Hung
  */
 public class EmojiConverter extends SQLiteOpenHelper {
@@ -78,45 +83,46 @@ public class EmojiConverter extends SQLiteOpenHelper {
 
 	public List<Mapping> convert(String tag, Integer emoji){
 
-		List<Mapping> output = new LinkedList<Mapping>();
+		List<Mapping> output = new LinkedList<>();
 
-		if(tag!=null && !tag.equals("")){
+		if(tag!=null && !tag.isEmpty()){
 			String tablename = "";
-			Cursor cursor = null;
-			if(emoji == Lime.EMOJI_CN ) {
+			Cursor cursor;
+			if(emoji == LIME.EMOJI_CN ) {
 				tablename = "cn";
-			}else if(emoji == Lime.EMOJI_EN ) {//
+			}else if(emoji == LIME.EMOJI_EN ) {//
 				tablename = "en";
-			}else if(emoji == Lime.EMOJI_TW ) {//
+			}else if(emoji == LIME.EMOJI_TW ) {//
 				tablename = "tw";
 			}
 
 			try {
 				SQLiteDatabase db = this.getReadableDatabase();
 
-				cursor = db.query(tablename, null, Lime.EMOJI_FIELD_TAG + " = '" + tag + "' "
+				cursor = db.query(tablename, null, LIME.EMOJI_FIELD_TAG + " = '" + tag + "' "
 							, null, null, null, null, null);
 				
 				if (cursor.moveToFirst()) {
-					int wordColumn = cursor.getColumnIndex(Lime.EMOJI_FIELD_VALUE);
-					while (!cursor.isAfterLast()) {
-						String word = cursor.getString(wordColumn);
-						if(word != null && !word.isEmpty() && !word.equals(" ")){
-							Mapping mapping = new Mapping();
-									mapping.setCode("");
-									mapping.setWord(word);
-									mapping.setEmojiRecord();
+					int wordColumn = cursor.getColumnIndex(LIME.EMOJI_FIELD_VALUE);
+					if (wordColumn >= 0) {
+						while (!cursor.isAfterLast()) {
+							String word = cursor.getString(wordColumn);
+							if(word != null && !word.isEmpty() && !word.equals(" ")){
+								Mapping mapping = new Mapping();
+								mapping.setCode("");
+								mapping.setWord(word);
+								mapping.setEmojiRecord();
 
-							output.add(mapping);
-
+								output.add(mapping);
+							}
+							cursor.moveToNext();
 						}
-						cursor.moveToNext();
 					}
 				}
-					
-				if (cursor != null) {cursor.close();}
-			} catch (Exception e) {
-				e.printStackTrace();
+
+                cursor.close();
+            } catch (Exception e) {
+				Log.e(TAG, "Error in emoji conversion", e);
 			}
 		}
 		return output;

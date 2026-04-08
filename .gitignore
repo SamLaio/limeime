@@ -44,9 +44,13 @@ local.properties
 # Build results
 
 [Dd]ebug/
-[Rr]elease/
+#[Rr]elease/
 x64/
 build/
+android-profile/
+baselineProfiles/
+*.dm
+reports/
 [Bb]in/
 [Oo]bj/
 
@@ -221,3 +225,7 @@ LimeStudio/.idea/misc.xml
 LimeStudio/app/app.iml
 LimeStudio/app/app.iml
 LimeStudio/app/app.iml
+LimeStudio/app/release/baselineProfiles
+*.dm
+#output-metadata.json
+LimeStudio/gradle/gradle-daemon-jvm.properties

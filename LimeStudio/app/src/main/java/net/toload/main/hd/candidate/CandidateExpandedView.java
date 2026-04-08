@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -28,7 +28,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -55,12 +55,12 @@ public class CandidateExpandedView extends CandidateView {
     private int mSelRow; //Jeremy '11,8,28
     private int mSelCol; //Jeremy '11,8,28
     //private int mScrollY;
-    private int[][] mWordX = new int[MAX_SUGGESTIONS][MAX_SUGGESTIONS];
-    private int[][] mWordWidth = new int[MAX_SUGGESTIONS][MAX_SUGGESTIONS];
-    private int[] mRowSize = new int[MAX_SUGGESTIONS];
-    private int[] mRowStartingIndex = new int[MAX_SUGGESTIONS];
+    private final int[][] mWordX = new int[MAX_SUGGESTIONS][MAX_SUGGESTIONS];
+    private final int[][] mWordWidth = new int[MAX_SUGGESTIONS][MAX_SUGGESTIONS];
+    private final int[] mRowSize = new int[MAX_SUGGESTIONS];
+    private final int[] mRowStartingIndex = new int[MAX_SUGGESTIONS];
     private int mRows = 0;
-    private int mHeight; // built own mHeight and get from resources.
+    private int mHeight; // Row height (configHeight + mVerticalPadding), updated in updateFontSize()
     private int mTotalHeight;
     private ScrollView mParentScrollView;
 
@@ -72,6 +72,8 @@ public class CandidateExpandedView extends CandidateView {
     public CandidateExpandedView(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
 
+        // mHeight will be set in updateFontSize() to match parent's mHeight (configHeight + mVerticalPadding)
+        // Initialize with a default value
         mHeight = (int) (context.getResources().
                 getDimensionPixelSize(R.dimen.candidate_stripe_height) * mLIMEPref.getFontSize());
 
@@ -157,7 +159,7 @@ public class CandidateExpandedView extends CandidateView {
                     canvas.translate(-mWordX[mSelRow][mSelCol], -mSelRow * (height + mVerticalPadding));
                 }
             } catch (ArrayIndexOutOfBoundsException e) {
-                e.printStackTrace();
+                Log.e(TAG, "Error in candidate expanded view", e);
             }
 
             try {
@@ -168,7 +170,7 @@ public class CandidateExpandedView extends CandidateView {
 
                     for (int j = 0; j < mRowSize[i]; j++) {
 
-                        if(mSuggestions == null || mSuggestions.size() == 0 || mSuggestions.get(index) == null){
+                        if(mSuggestions == null || mSuggestions.isEmpty() || mSuggestions.get(index) == null){
                             continue;
                         }
                         String suggestion = mSuggestions.get(index).getWord();
@@ -208,7 +210,7 @@ public class CandidateExpandedView extends CandidateView {
                     }
                 }
             }catch(Exception e){
-                e.printStackTrace();
+                Log.e(TAG, "Error in candidate expanded view", e);
                 // ignore error
             }
 
@@ -227,14 +229,17 @@ public class CandidateExpandedView extends CandidateView {
         if (DEBUG)
             Log.i(TAG, "prepareLayout()");
 
-        if (mSuggestions == null || mSuggestions.size() == 0) return;
+        if (mSuggestions == null || mSuggestions.isEmpty()) return;
 
         if (DEBUG)
             Log.i(TAG, "prepareLayout():mSuggestions.size()" + mSuggestions.size());
 
         updateFontSize();
+        
+        // Update mHeight to configHeight (content height without padding)
+        // Row height is mHeight + mVerticalPadding, which matches parent's mHeight
+        mHeight = configHeight;
 
-        final int height = mHeight;
         final Paint paint = mCandidatePaint;
         int x = 0;
         int row = 0;
@@ -284,7 +289,7 @@ public class CandidateExpandedView extends CandidateView {
         }
         //mTotalWidth = x;
         mRows = row + 1;
-        mTotalHeight = (height + mVerticalPadding) * (mRows);
+        mTotalHeight = (mHeight + mVerticalPadding) * (mRows);
         if (DEBUG)
             Log.i(TAG, "prepareLayout(): mRows=" + mRows + ", mTotalHeight=" + mTotalHeight);
     }
@@ -320,7 +325,7 @@ public class CandidateExpandedView extends CandidateView {
         if (DEBUG)
             Log.i(TAG, "onTouchEvent(): x =" + me.getX() + ", y=" + me.getY()
                     + ", ScroolY=" + mParentScrollView.getScrollY());
-        int action = me.getAction();
+        int action = me.getActionMasked();
         int x = (int) me.getX();
         int y = (int) me.getY();
         mTouchX = x;
@@ -418,7 +423,7 @@ public class CandidateExpandedView extends CandidateView {
                 Log.i(TAG, "selectNextRow(): newRow=" + mSelRow
                         + ", mSelCol=" + mSelCol
                         + ", mRowStartingIndex[mSelRow]=" + mRowStartingIndex[mSelRow]
-                        + ", + mRowSize[mSelRow]" + +mRowSize[mSelRow]);
+                        + ", + mRowSize[mSelRow]" + mRowSize[mSelRow]);
             if (mSelCol > mRowSize[mSelRow] - 1)
                 mSelCol = mRowSize[mSelRow] - 1;
             else if (mSelCol == -1)

@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -26,6 +26,7 @@ package net.toload.main.hd.keyboard;
 
 import net.toload.main.hd.LIMEKeyboardSwitcher;
 import net.toload.main.hd.R;
+import net.toload.main.hd.global.LIME;
 import android.content.Context;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
@@ -64,7 +65,7 @@ public class LIMEKeyboard extends LIMEBaseKeyboard {
     
     private static SlidingSpaceBarDrawable mSlidingSpaceBarIcon = null;
 
-    private static boolean themedResourcesLoaded = false;
+    //private static boolean themedResourcesLoaded = false;
     /**
      * Drawable to override function key icons
      */
@@ -98,8 +99,11 @@ public class LIMEKeyboard extends LIMEBaseKeyboard {
     
     private static final int OPACITY_FULLY_OPAQUE = 255;
     
+    // UI Dimension Constants (in pixels/dp)
+    private static final int DEFAULT_SPACE_KEY_TEXT_SIZE_SP = 25; // Default space key sliding text size
+    private static final int KEY_POSITION_ADJUSTMENT_DIVISOR = 10; // Divisor for key position adjustments
+    
     private Context mContext;
-    private final Resources mRes;
     //private final int mMode;
     private LIMEKeyboardSwitcher mKeyboardSwitcher;
     
@@ -111,7 +115,7 @@ public class LIMEKeyboard extends LIMEBaseKeyboard {
         super(context, xmlLayoutResId, mode, keySizeScale, showArrowKeys, splitKeyboard);
         if(DEBUG)
             Log.i(TAG, "LIMEKeyboard()");
-        mRes = context.getResources();
+        //Resources mRes = context.getResources();
     }
 
 
@@ -123,26 +127,25 @@ public class LIMEKeyboard extends LIMEBaseKeyboard {
 
         mContext = context;
 
-        TypedArray a = context.getTheme().obtainStyledAttributes(//R.style.LIMEKeyboardLight, R.styleable.LIMEKeyboard);
-                null, R.styleable.LIMEKeyboard, R.attr.LIMEKeyboardStyle, R.style.LIMEKeyboard);
+        try (TypedArray a = context.getTheme().obtainStyledAttributes(
+                null, R.styleable.LIMEKeyboard, R.attr.LIMEKeyboardStyle, R.style.LIMEKeyboard)) {
 
-        mSpaceKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_spaceKeyIcon);
-        mSpaceKeyPreviewIcon = a.getDrawable(R.styleable.LIMEKeyboard_spaceKeyPreviewIcon);
-        mEnterKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_enterKeyIcon);
-        mSearchKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_searchKeyIcon);
-        mDoneKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_doneKeyIcon);
-        mDeleteKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_deleteKeyIcon);
-        mShiftKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_shiftKeyIcon);
-        mShiftKeyShiftedIcon = a.getDrawable(R.styleable.LIMEKeyboard_shiftKeyShiftedIcon);
+            mSpaceKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_spaceKeyIcon);
+            mSpaceKeyPreviewIcon = a.getDrawable(R.styleable.LIMEKeyboard_spaceKeyPreviewIcon);
+            mEnterKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_enterKeyIcon);
+            mSearchKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_searchKeyIcon);
+            mDoneKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_doneKeyIcon);
+            mDeleteKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_deleteKeyIcon);
+            mShiftKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_shiftKeyIcon);
+            mShiftKeyShiftedIcon = a.getDrawable(R.styleable.LIMEKeyboard_shiftKeyShiftedIcon);
 
-        // for sliding space bar
-        mSpaceKeyTextColor = a.getColor(R.styleable.LIMEKeyboard_spaceKeyTextColor,0xFF000000);
-        mSpaceKeyVerticalCorrection = a.getDimensionPixelSize(R.styleable.LIMEKeyboard_spaceKeyVerticalCorrection, 0);
-        mSpaceKeySlidingTextSize = a.getDimensionPixelSize(R.styleable.LIMEKeyboard_spaceKeySlidingTextSize,25);
-        mSpaceKeySlidingLeftArrow = a.getDrawable(R.styleable.LIMEKeyboard_spaceKeySlidingLeftArrow);
-        mSpaceKeySlidingRightArrow = a.getDrawable(R.styleable.LIMEKeyboard_spaceKeySlidingRightArrow);
-
-        a.recycle();
+            // for sliding space bar
+            mSpaceKeyTextColor = a.getColor(R.styleable.LIMEKeyboard_spaceKeyTextColor,0xFF000000);
+            mSpaceKeyVerticalCorrection = a.getDimensionPixelSize(R.styleable.LIMEKeyboard_spaceKeyVerticalCorrection, 0);
+            mSpaceKeySlidingTextSize = a.getDimensionPixelSize(R.styleable.LIMEKeyboard_spaceKeySlidingTextSize, DEFAULT_SPACE_KEY_TEXT_SIZE_SP);
+            mSpaceKeySlidingLeftArrow = a.getDrawable(R.styleable.LIMEKeyboard_spaceKeySlidingLeftArrow);
+            mSpaceKeySlidingRightArrow = a.getDrawable(R.styleable.LIMEKeyboard_spaceKeySlidingRightArrow);
+        }
     }
 
 	@Override
@@ -208,7 +211,7 @@ public class LIMEKeyboard extends LIMEBaseKeyboard {
     }
 
     public void setShiftLocked(boolean shiftLocked) {
-    	if(DEBUG)
+        if(DEBUG)
             Log.i("LIMEKeyboard", "setShiftLocked: "+ shiftLocked);
         if (mShiftKey != null) {
             if (shiftLocked) {
@@ -333,7 +336,7 @@ public class LIMEKeyboard extends LIMEBaseKeyboard {
         final int code = key.codes[0];
         if (code == KEYCODE_SHIFT ||
                 code == KEYCODE_DELETE) {
-            y -= key.height / 10;
+            y -= key.height / KEY_POSITION_ADJUSTMENT_DIVISOR;
             if (code == KEYCODE_SHIFT) x += key.width / 6;
             if (code == KEYCODE_DELETE) x -= key.width / 6;
         } else if (code == KEYCODE_SPACE) {
@@ -378,10 +381,8 @@ public class LIMEKeyboard extends LIMEBaseKeyboard {
      	return mSpaceDragLastDiff;
         }
     public int getSpaceDragDirection() {
-    	if(DEBUG) Log.i(TAG, "getSpaceDragDirection(): mSpaceDragLastDiff= " + 
-    			mSpaceDragLastDiff + ". mSpaceKey.width=" + mSpaceKey.width);
-        if (mSpaceKey == null 
-                || Math.abs(mSpaceDragLastDiff) < mSpaceKey.width * SPACEBAR_DRAG_THRESHOLD ) {
+        if(DEBUG) Log.i(TAG, "getSpaceDragDirection(): mSpaceDragLastDiff= " + mSpaceDragLastDiff + ". mSpaceKey.width=" + mSpaceKey.width);
+        if (mSpaceKey == null || Math.abs(mSpaceDragLastDiff) < mSpaceKey.width * SPACEBAR_DRAG_THRESHOLD ) {
             return 0; // No change
         }
         return mSpaceDragLastDiff > 0 ? 1 : -1;
@@ -498,7 +499,7 @@ public class LIMEKeyboard extends LIMEBaseKeyboard {
         private String mCurrentKeyboard;
         private String mNextKeyboard;
         private String mPrevKeyboard;
-        private int mSlidingTextSize;
+        private final int mSlidingTextSize;
 
         public SlidingSpaceBarDrawable(Drawable background, Drawable leftArrow, Drawable rightArrow, int slidingTextSize, int width, int height) {
             mBackground = background;
@@ -545,11 +546,10 @@ public class LIMEKeyboard extends LIMEBaseKeyboard {
             if (mHitThreshold) {
                 Paint paint = mTextPaint;
                 final int width = mWidth;
-                final int height = mHeight;
                 final int diff = mDiff;
                 final Drawable lArrow = mLeftDrawable;
                 final Drawable rArrow = mRightDrawable;
-                canvas.clipRect(0, 0, width, height);
+                canvas.clipRect(0, 0, width, mHeight);
                 if (mCurrentKeyboard == null) {
                     mCurrentKeyboard = mKeyboardSwitcher.getActiveIMShortname();
                     mNextKeyboard = mKeyboardSwitcher.getNextActivatedIMShortname();
@@ -564,9 +564,9 @@ public class LIMEKeyboard extends LIMEBaseKeyboard {
                 final float baseline = mHeight * SPACEBAR_IMNAME_BASELINE - paint.descent();
                 paint.setColor(mSpaceKeyTextColor);
                 paint.setTextSize(mSlidingTextSize);
-                canvas.drawText(mCurrentKeyboard, width / 2 + diff, baseline, paint);
-                canvas.drawText(mNextKeyboard, diff - width / 5, baseline, paint);
-                canvas.drawText(mPrevKeyboard, diff + width + width / 5, baseline, paint);
+                canvas.drawText(mCurrentKeyboard, (float) width / 2 + diff, baseline, paint);
+                canvas.drawText(mNextKeyboard, diff - (float) width / 5, baseline, paint);
+                canvas.drawText(mPrevKeyboard, diff + width + (float) width / 5, baseline, paint);
 
                 setDefaultBounds(lArrow);
                 rArrow.setBounds(width - rArrow.getIntrinsicWidth(), 0, width,
@@ -583,6 +583,7 @@ public class LIMEKeyboard extends LIMEBaseKeyboard {
         
         
         @Override
+        @SuppressWarnings("deprecation")
         public int getOpacity() {
             return PixelFormat.TRANSLUCENT;
         }

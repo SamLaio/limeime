@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -28,7 +28,7 @@ import android.view.MotionEvent;
 
 public class SwipeTracker {
     private static final int NUM_PAST = 4;
-    private static final int LONGEST_PAST_TIME = 200;
+    private static final int LONGEST_PAST_TIME = 200; // Longest past time for swipe tracking (in milliseconds)
 
     final EventRingBuffer mBuffer = new EventRingBuffer(NUM_PAST);
 
@@ -101,9 +101,9 @@ public class SwipeTracker {
 
     public static class EventRingBuffer {
         private final int bufSize;
-        private final float xBuf[];
-        private final float yBuf[];
-        private final long timeBuf[];
+        private final float[] xBuf;
+        private final float[] yBuf;
+        private final long[] timeBuf;
         private int top;  // points new event
         private int end;  // points oldest event
         private int count; // the number of valid data

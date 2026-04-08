@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -52,7 +52,7 @@ abstract class KeyDetector {
         mCorrectionY = (int)correctionY;
         mKeyboard = keyboard;
         List<Key> keys = mKeyboard.getKeys();
-        Key[] array = keys.toArray(new Key[keys.size()]);
+        Key[] array = keys.toArray(new Key[0]);
         mKeys = array;
         return array;
     }
@@ -90,8 +90,7 @@ abstract class KeyDetector {
      *
      * @return Allocates and returns an array that can hold all key indices returned by
      *         {@link #getKeyIndexAndNearbyCodes} method. All elements in the returned array are
-     *         initialized by {@link com.android.inputmethod.latin.LatinKeyboardView.NOT_A_KEY}
-     *         value.
+     *         initialized to {@link LIMEKeyboardBaseView#NOT_A_KEY} *         value.
      */
     public int[] newCodeArray() {
         int[] codes = new int[getMaxNearbyKeys()];

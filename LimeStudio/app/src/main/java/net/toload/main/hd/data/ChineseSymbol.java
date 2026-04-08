@@ -1,7 +1,7 @@
 /*
  *
  *  *
- *  **    Copyright 2015, The LimeIME Open Source Project
+ *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
  *  **    Project Url: http://github.com/lime-ime/limeime/
  *  **                 http://android.toload.net/
@@ -27,12 +27,23 @@ package net.toload.main.hd.data;
 import java.util.LinkedList;
 import java.util.List;
 
+/**
+ * Provides Chinese punctuation symbol conversion utilities.
+ * 
+ * <p>This class contains methods to convert English punctuation marks
+ * to their Chinese full-width equivalents, and provides a list of
+ * Chinese punctuation symbols for use in the IME.
+ * 
+ * <p>This class does not contain any SQL code or database operations.
+ * 
+ * @author LimeIME Team
+ */
 public class ChineseSymbol {
 	public final static String chineseSymbols = "，|。|、|？|！|：|；|（|）|「|」|『|』|【|】|" +
 			"／|＼|－|＿|＊|＆|︿|％|＄|＃|＠|～|｛|｝|［|］|＜|＞|＋|｜|‵|＂";	
 	
 	
-	private static List<Mapping> mChineseSymbolMapping = new LinkedList<>();
+	private static final List<Mapping> mChineseSymbolMapping = new LinkedList<>();
 	public static String getSymbol(char symbol){
 	
 		switch(symbol){
@@ -84,7 +95,7 @@ public class ChineseSymbol {
 	
 	public static List<Mapping> getChineseSymoblList(){
 
-		if(mChineseSymbolMapping.size()==0){
+		if(mChineseSymbolMapping.isEmpty()){
 			String [] symArray =  chineseSymbols.split("\\|");
 			
 			for(String sym: symArray){
