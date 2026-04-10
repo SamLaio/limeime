@@ -1,0 +1,571 @@
+{
+  "id": "lime_et_41_shift",
+  "defaultWidthPercent": 10.0,
+  "rows": [
+    {
+      "isBottomRow": false,
+      "keys": [
+        {
+          "code": 33,
+          "label": "!\\n˙",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 64,
+          "label": "\\@\\nˊ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 35,
+          "label": "\\#\\nˇ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 36,
+          "label": "$\\nˋ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 37,
+          "label": "%",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 94,
+          "label": "^",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 38,
+          "label": "&\\nㄑ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 42,
+          "label": "*\\nㄢ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 40,
+          "label": "(\\nㄣ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 41,
+          "label": ")\\nㄤ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        }
+      ]
+    },
+    {
+      "isBottomRow": false,
+      "keys": [
+        {
+          "code": 81,
+          "label": "Q\\nㄟ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 87,
+          "label": "W\\nㄝ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 69,
+          "label": "E\\n一",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 82,
+          "label": "R\\nㄜ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 84,
+          "label": "T\\nㄊ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 89,
+          "label": "Y\\nㄡ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 85,
+          "label": "U\\nㄩ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 73,
+          "label": "I\\nㄞ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 79,
+          "label": "O\\nㄛ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 80,
+          "label": "P\\nㄆ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        }
+      ]
+    },
+    {
+      "isBottomRow": false,
+      "keys": [
+        {
+          "code": 65,
+          "label": "A\\nㄚ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 83,
+          "label": "S\\nㄙ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 68,
+          "label": "D\\nㄉ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 70,
+          "label": "F\\nㄈ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 71,
+          "label": "G\\nㄐ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 72,
+          "label": "H\\nㄏ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 74,
+          "label": "J\\nㄖ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 75,
+          "label": "K\\nㄎ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 76,
+          "label": "L\\nㄌ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 58,
+          "label": ":\\nㄗ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        }
+      ]
+    },
+    {
+      "isBottomRow": false,
+      "keys": [
+        {
+          "code": -1,
+          "label": "",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "sym_keyboard_shift_shifted",
+          "isModifier": true,
+          "isRepeatable": false,
+          "isSticky": true,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 90,
+          "label": "Z\\nㄠ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 88,
+          "label": "X\\nㄨ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 67,
+          "label": "C\\nㄒ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 86,
+          "label": "V\\nㄍ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 66,
+          "label": "B\\nㄅ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 78,
+          "label": "N\\nㄋ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 77,
+          "label": "M\\nㄇ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 34,
+          "label": "\"\\nㄘ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": -5,
+          "label": "",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "delete.backward",
+          "isModifier": true,
+          "isRepeatable": true,
+          "isSticky": false,
+          "popupKeyboard": ""
+        }
+      ]
+    },
+    {
+      "isBottomRow": true,
+      "keys": [
+        {
+          "code": -3,
+          "label": "",
+          "sublabel": "",
+          "widthPercent": 15.0,
+          "icon": "keyboard.chevron.compact.down",
+          "isModifier": true,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": "",
+          "longPressCode": -100
+        },
+        {
+          "code": -9,
+          "label": "EN",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": true,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 32,
+          "label": "",
+          "sublabel": "",
+          "widthPercent": 15.0,
+          "icon": "space.bar",
+          "isModifier": false,
+          "isRepeatable": true,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 60,
+          "label": "<\\nㄓ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 62,
+          "label": ">\\nㄔ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": "@xml/popup_punctuation"
+        },
+        {
+          "code": 63,
+          "label": "\\?\\nㄕ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 95,
+          "label": "_\\nㄥ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 43,
+          "label": "+\\nㄦ",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        },
+        {
+          "code": 10,
+          "label": "",
+          "sublabel": "",
+          "widthPercent": 10.0,
+          "icon": "return",
+          "isModifier": true,
+          "isRepeatable": false,
+          "isSticky": false,
+          "popupKeyboard": ""
+        }
+      ]
+    }
+  ]
+}

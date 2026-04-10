@@ -1,0 +1,1012 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		054C1466956DBE2D8BEA3A34 /* lime_cj.json in Resources */ = {isa = PBXBuildFile; fileRef = 1736168811E753E9330AA481 /* lime_cj.json */; };
+		090FE96F5983C4AAFEDE4AD7 /* IMStoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8905C956F3A8B895DC1D239 /* IMStoreView.swift */; };
+		12187D253A452F9C88E7C3E1 /* lime_et26.json in Resources */ = {isa = PBXBuildFile; fileRef = E291FC497AF0014D898E57FA /* lime_et26.json */; };
+		1230969E78D532747075B0A1 /* lime_cj_number_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = BD9E7EE11221BAE243B120CD /* lime_cj_number_shift.json */; };
+		12383EA9BE71DC6C521BE418 /* lime_array.json in Resources */ = {isa = PBXBuildFile; fileRef = 1C4F9CE98A2F9BFF29641233 /* lime_array.json */; };
+		13652AFA1DEB88089B2BCC8E /* Related.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14502A56A42472FB229360DB /* Related.swift */; };
+		15A7155D44FB31C8E5FA81A7 /* lime_abc.json in Resources */ = {isa = PBXBuildFile; fileRef = 55C6C7CF0775CFE705BB3B43 /* lime_abc.json */; };
+		17766B10C8DE7763C32633C1 /* Mapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0956117FEB1C2F5C09EB5C5 /* Mapping.swift */; };
+		179D101D08689450880985FA /* lime_et_41.json in Resources */ = {isa = PBXBuildFile; fileRef = D0CDCC557DD26055CA872A57 /* lime_et_41.json */; };
+		1ABA5CCCC3B8B68420955EDA /* lime_wb_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = F8352DFA101AE0D5E1606C9A /* lime_wb_shift.json */; };
+		1F3AF38E0937B9889CAEC6AE /* lime_ez_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = BF5C2CE83CEB146D8C56CA62 /* lime_ez_shift.json */; };
+		246EAA15755121E22608F909 /* lime_array_number.json in Resources */ = {isa = PBXBuildFile; fileRef = AB8617B6EB9EBC4689424A49 /* lime_array_number.json */; };
+		27553064FBBC2A0E4E5ACDC9 /* Related.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14502A56A42472FB229360DB /* Related.swift */; };
+		277F7AAC5172A82852C00322 /* lime_ez.json in Resources */ = {isa = PBXBuildFile; fileRef = 00CD73E75A8CF0D717BCDC50 /* lime_ez.json */; };
+		2D6B665397277A10660A2280 /* LimeIMEKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 782285680D8D9FE97C096F39 /* LimeIMEKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		2EE2BFCC6A02AFA1E73E7D27 /* ImConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0757CC0618D9DFE1917DB1 /* ImConfig.swift */; };
+		3627870C41CBCF6BBC97C35C /* lime_number_symbol.json in Resources */ = {isa = PBXBuildFile; fileRef = 86957E4A2DDA8D483FC30D94 /* lime_number_symbol.json */; };
+		381F28F38C655529F1922A2A /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = D84706F48CD91AF3D1857A1F /* ZIPFoundation */; };
+		3E81089E57F6CB90A2BFF152 /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D75E50434E278FAEF4A4654C /* KeyboardView.swift */; };
+		41F0C74C36F32BE94395EF6C /* Mapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0956117FEB1C2F5C09EB5C5 /* Mapping.swift */; };
+		495495B3EC2756E2FA4BF57A /* lime_english_number_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = 45BBFE60A3BC8E3A9EFBFED2 /* lime_english_number_shift.json */; };
+		4B920F8769522781A1177534 /* lime_dayi_sym_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = 75D020F016341574B4FF2E84 /* lime_dayi_sym_shift.json */; };
+		4C1012BD29921E3B0201DBBC /* Keyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43AF70BA22361D8084D34B7F /* Keyboard.swift */; };
+		4D55F7F8166AB9405DB0200D /* SearchServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0AD7B903A3658D6EBB77E60 /* SearchServer.swift */; };
+		50E96984370C01489813E77A /* lime_abc_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = BA669B17DFE81A3ADB4188FF /* lime_abc_shift.json */; };
+		52A2BC2194D460DE8925686B /* lime_number_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = BC7C55BF2A2E802706106E50 /* lime_number_shift.json */; };
+		54537083062A7847A6BAE8BC /* Keyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43AF70BA22361D8084D34B7F /* Keyboard.swift */; };
+		54E5706A45996F6DCC4C1C73 /* Related.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14502A56A42472FB229360DB /* Related.swift */; };
+		59E842FEFEFEA6FEAF6EE663 /* popup_domains.json in Resources */ = {isa = PBXBuildFile; fileRef = 868BBFF2AF500C4B76479AA6 /* popup_domains.json */; };
+		644A29210C83B5B9BD11A9AC /* KeyLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A03CFBF615643C92EF59C8E /* KeyLayout.swift */; };
+		65B48ECD66FBB98FA64DE8CD /* popup_punctuation.json in Resources */ = {isa = PBXBuildFile; fileRef = F04435F2855594DD68DDAB57 /* popup_punctuation.json */; };
+		6A2B456E9E54D00FE08276CB /* lime_dayi_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = FCCC8E71C5E48A1A81AB896E /* lime_dayi_shift.json */; };
+		6B4236631D644D17D3FF0FFC /* popup_c_punctuation.json in Resources */ = {isa = PBXBuildFile; fileRef = F6CE80A85C6FB759A9C33E95 /* popup_c_punctuation.json */; };
+		6DDCA062AC27D53BE405CECB /* Record.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91652FC0787DE834F53E57B3 /* Record.swift */; };
+		73F7D68E669A8B3C3D55AD5E /* lime_dayi.json in Resources */ = {isa = PBXBuildFile; fileRef = 38B13D232556DEB9E4DCA530 /* lime_dayi.json */; };
+		75C334B2B5C31010A7890979 /* lime_email.json in Resources */ = {isa = PBXBuildFile; fileRef = FB7A16FA3131160C10D80369 /* lime_email.json */; };
+		76BEE873AC0F13CDBB4969AF /* lime_english_number.json in Resources */ = {isa = PBXBuildFile; fileRef = 526D1D44C8B349F1C4E03E4A /* lime_english_number.json */; };
+		782E5A3464C0CEE76B8F75D9 /* lime_hsu_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = 5D8D9FA3BB7317CC35DCEEE6 /* lime_hsu_shift.json */; };
+		789E933FF233931B215B68C9 /* lime_hs_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = A066ECD24F9A4BF55136EAD8 /* lime_hs_shift.json */; };
+		7F9F9E4BA76E6189F91E57E3 /* Mapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0956117FEB1C2F5C09EB5C5 /* Mapping.swift */; };
+		84261E617020CF869698CE7C /* lime_cj_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = AD0AE1C6B0C4ACFF5512A9BF /* lime_cj_shift.json */; };
+		8AC6B7DC76692A7FBFDDF3F9 /* ChineseSymbol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C791A042EAF0B0D85E4AEC3 /* ChineseSymbol.swift */; };
+		8B72D83300CAD566BFCF3FE1 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51309BD0A4AEAF429010BB4F /* KeyboardViewController.swift */; };
+		8B8D5CEFF8EB0D19EEB0F35C /* LimeDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = C413C5F3C96DA0D6411EAD4B /* LimeDB.swift */; };
+		8EBAC89F106963E2B9A020A1 /* SearchServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0AD7B903A3658D6EBB77E60 /* SearchServer.swift */; };
+		91114A2E568054305BF86C11 /* ImConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0757CC0618D9DFE1917DB1 /* ImConfig.swift */; };
+		969E9ECB3E49FD62355A5DCD /* lime_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = A4E19D552BFEAA3E2632A221 /* lime_shift.json */; };
+		9A89239ABF584278D63C802F /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7D65C99D71D2AC588F3B3903 /* GRDB */; };
+		9B1ECA9BBCEE603587497032 /* LimeDBTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C07357EED170657A3BF133 /* LimeDBTest.swift */; };
+		9E8C11739737F32191ABCD0E /* lime_cj_number.json in Resources */ = {isa = PBXBuildFile; fileRef = 5881111DCA9ED12EFE8C4039 /* lime_cj_number.json */; };
+		9F691C57C1223C205DBE0A70 /* lime_et26_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = 5CA64EBB9FF2770C1978FA54 /* lime_et26_shift.json */; };
+		9FB37AFD7E021F497B9BC5C7 /* ChineseSymbol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C791A042EAF0B0D85E4AEC3 /* ChineseSymbol.swift */; };
+		9FF9B6B6C491BD7514AAEFA0 /* lime_english_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = 8A142D8C48B8080CACC06BF5 /* lime_english_shift.json */; };
+		A2E7579A48126A3587829923 /* ImConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C0757CC0618D9DFE1917DB1 /* ImConfig.swift */; };
+		A74D09B3AEDBF27CDBBD079E /* lime_phonetic.json in Resources */ = {isa = PBXBuildFile; fileRef = 930EE39E03E98427009BFB60 /* lime_phonetic.json */; };
+		A8AF9BBEF924BCFC21672E25 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 6D731A726502199FD73E3CF5 /* ZIPFoundation */; };
+		AAB43ADB780D8C94FCFF9D68 /* IMCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C519D06270032D72E51CF613 /* IMCatalog.swift */; };
+		B174D69873CFB28046FD2166 /* SearchServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0AD7B903A3658D6EBB77E60 /* SearchServer.swift */; };
+		B7114F1C925F5668C7B1426F /* popup_template.json in Resources */ = {isa = PBXBuildFile; fileRef = 955B457572A329E2A1ADEA50 /* popup_template.json */; };
+		BCBFE011E27ED97F41C1A1DB /* lime_hsu.json in Resources */ = {isa = PBXBuildFile; fileRef = B2E2CC2294E9DD745CA44937 /* lime_hsu.json */; };
+		BDD2EAB7644539066FF9FF55 /* lime_url.json in Resources */ = {isa = PBXBuildFile; fileRef = DB41E641804023A28303BAE5 /* lime_url.json */; };
+		C29DD224E7D5797D71BFD56C /* LayoutLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E84CB76CFC92DAA008483771 /* LayoutLoader.swift */; };
+		C704ECEA2AA4777A7F4F0D52 /* lime_dayi_sym.json in Resources */ = {isa = PBXBuildFile; fileRef = C8CEAFA241DA366CFB51031E /* lime_dayi_sym.json */; };
+		C798DBEA7EC7AAD1D9821E2E /* lime_array_number_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = 48A1A8F3D03D778777ACC688 /* lime_array_number_shift.json */; };
+		C8ECC0AE9971356C025A4864 /* lime_array_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = 86E3E355AECB6CF44FE1CB4F /* lime_array_shift.json */; };
+		C9C4D445F9D778B1F3CB5102 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E6D814B179560C36A6F65E /* MainViewController.swift */; };
+		D028529390E0D4AB93F413FB /* lime_phonetic_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = 6D385999861624C778BD7C83 /* lime_phonetic_shift.json */; };
+		D3739EC294D3485404012D3B /* lime_number.json in Resources */ = {isa = PBXBuildFile; fileRef = C0A5FC3D6D44CBBA94E88C16 /* lime_number.json */; };
+		D56F9308DBE0E2982A156EDC /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95784239B04D9F726B1DE025 /* AppDelegate.swift */; };
+		D721F1B7CEA6C5FC9CD152A3 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 59409130182D005E62853937 /* ZIPFoundation */; };
+		D82AE1FA73F859BBABBF644C /* LimeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E9EE5BA80907FE7407DC189 /* LimeSettingsView.swift */; };
+		D85527A1D89F1ACD5D86FE5A /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 9D5AC9140B64BE293B4125AC /* GRDB */; };
+		DAB0143D532C5A092FAE707C /* Record.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91652FC0787DE834F53E57B3 /* Record.swift */; };
+		DD329C69B687BA18D2865041 /* lime_wb.json in Resources */ = {isa = PBXBuildFile; fileRef = 63D7BA593E5AEB581D0E15C5 /* lime_wb.json */; };
+		E02BE727FF878D591A3D34B5 /* LimeDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = C413C5F3C96DA0D6411EAD4B /* LimeDB.swift */; };
+		E1A1FABDFEEB6C9DF7A93E59 /* popup_symbol_mode.json in Resources */ = {isa = PBXBuildFile; fileRef = FEB7554DFA2B6A6F31A1D39C /* popup_symbol_mode.json */; };
+		ECC6875166947EFFA1140D0B /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 48B5C1F9A381B91371CE5694 /* GRDB */; };
+		EFBC852F9176543E0F0EE2BA /* lime_hs.json in Resources */ = {isa = PBXBuildFile; fileRef = FD47F81F6585217423024BE3 /* lime_hs.json */; };
+		F20EA45656BE08E5A291F4F5 /* Keyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43AF70BA22361D8084D34B7F /* Keyboard.swift */; };
+		F2C8C872E8796234504622A6 /* popup_smileys.json in Resources */ = {isa = PBXBuildFile; fileRef = CB92E7B40C1C7C8BE4561773 /* popup_smileys.json */; };
+		F6DC3F8E9D7CB81AB558668A /* lime_english.json in Resources */ = {isa = PBXBuildFile; fileRef = 0A1B5D154B1A949CA010C9CE /* lime_english.json */; };
+		F732111715EF1196B7295C24 /* ChineseSymbol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C791A042EAF0B0D85E4AEC3 /* ChineseSymbol.swift */; };
+		F86AF51C921192791F73AFA9 /* lime_number_symbol_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = F0787C19D84A228F8B9731E4 /* lime_number_symbol_shift.json */; };
+		F9D73852B20448B404C09BAB /* LimeDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = C413C5F3C96DA0D6411EAD4B /* LimeDB.swift */; };
+		FB1C3B404DFFA9F23F06F7A5 /* CandidateBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B510DDC8A4131A41B66AF682 /* CandidateBarView.swift */; };
+		FB79C88DB4D99018F75EEAFA /* Record.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91652FC0787DE834F53E57B3 /* Record.swift */; };
+		FC4F73BB12D8F2E1EC9F48EF /* lime_et_41_shift.json in Resources */ = {isa = PBXBuildFile; fileRef = EDDD136F5375CC1B486B368C /* lime_et_41_shift.json */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		8371A0E6B572FCFA1AE76F02 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AB8A5E21D4C217AD21F67C3A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8E0810E1C8E2E432E67648A5;
+			remoteInfo = LimeIME;
+		};
+		C3C39B9E74F7B061A4395F38 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AB8A5E21D4C217AD21F67C3A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E5EEAC95CEE986BFC16612A3;
+			remoteInfo = LimeIMEKeyboard;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		5F7BE0979F0F761E8B3CCFC6 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				2D6B665397277A10660A2280 /* LimeIMEKeyboard.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		00CD73E75A8CF0D717BCDC50 /* lime_ez.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_ez.json; sourceTree = "<group>"; };
+		0A1B5D154B1A949CA010C9CE /* lime_english.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_english.json; sourceTree = "<group>"; };
+		14502A56A42472FB229360DB /* Related.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Related.swift; sourceTree = "<group>"; };
+		1736168811E753E9330AA481 /* lime_cj.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_cj.json; sourceTree = "<group>"; };
+		1C4F9CE98A2F9BFF29641233 /* lime_array.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_array.json; sourceTree = "<group>"; };
+		2BBD717D9016C3670D1726BD /* LimeIMETests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LimeIMETests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2C0757CC0618D9DFE1917DB1 /* ImConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImConfig.swift; sourceTree = "<group>"; };
+		38B13D232556DEB9E4DCA530 /* lime_dayi.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_dayi.json; sourceTree = "<group>"; };
+		43AF70BA22361D8084D34B7F /* Keyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keyboard.swift; sourceTree = "<group>"; };
+		45BBFE60A3BC8E3A9EFBFED2 /* lime_english_number_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_english_number_shift.json; sourceTree = "<group>"; };
+		46C07357EED170657A3BF133 /* LimeDBTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimeDBTest.swift; sourceTree = "<group>"; };
+		48A1A8F3D03D778777ACC688 /* lime_array_number_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_array_number_shift.json; sourceTree = "<group>"; };
+		51309BD0A4AEAF429010BB4F /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		526D1D44C8B349F1C4E03E4A /* lime_english_number.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_english_number.json; sourceTree = "<group>"; };
+		55C6C7CF0775CFE705BB3B43 /* lime_abc.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_abc.json; sourceTree = "<group>"; };
+		5881111DCA9ED12EFE8C4039 /* lime_cj_number.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_cj_number.json; sourceTree = "<group>"; };
+		5CA64EBB9FF2770C1978FA54 /* lime_et26_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_et26_shift.json; sourceTree = "<group>"; };
+		5D8D9FA3BB7317CC35DCEEE6 /* lime_hsu_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_hsu_shift.json; sourceTree = "<group>"; };
+		5E9EE5BA80907FE7407DC189 /* LimeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimeSettingsView.swift; sourceTree = "<group>"; };
+		63D7BA593E5AEB581D0E15C5 /* lime_wb.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_wb.json; sourceTree = "<group>"; };
+		6C791A042EAF0B0D85E4AEC3 /* ChineseSymbol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChineseSymbol.swift; sourceTree = "<group>"; };
+		6D385999861624C778BD7C83 /* lime_phonetic_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_phonetic_shift.json; sourceTree = "<group>"; };
+		7114E7123639C57474145B35 /* LimeIME.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LimeIME.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		75D020F016341574B4FF2E84 /* lime_dayi_sym_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_dayi_sym_shift.json; sourceTree = "<group>"; };
+		782285680D8D9FE97C096F39 /* LimeIMEKeyboard.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = LimeIMEKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A03CFBF615643C92EF59C8E /* KeyLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyLayout.swift; sourceTree = "<group>"; };
+		7BC49B99C3EAFF81057556EC /* LimeIME.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LimeIME.entitlements; sourceTree = "<group>"; };
+		868BBFF2AF500C4B76479AA6 /* popup_domains.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = popup_domains.json; sourceTree = "<group>"; };
+		86957E4A2DDA8D483FC30D94 /* lime_number_symbol.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_number_symbol.json; sourceTree = "<group>"; };
+		86E3E355AECB6CF44FE1CB4F /* lime_array_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_array_shift.json; sourceTree = "<group>"; };
+		89D98FE64ECEC8DE0535C88A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		8A142D8C48B8080CACC06BF5 /* lime_english_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_english_shift.json; sourceTree = "<group>"; };
+		91652FC0787DE834F53E57B3 /* Record.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Record.swift; sourceTree = "<group>"; };
+		930EE39E03E98427009BFB60 /* lime_phonetic.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_phonetic.json; sourceTree = "<group>"; };
+		955B457572A329E2A1ADEA50 /* popup_template.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = popup_template.json; sourceTree = "<group>"; };
+		95784239B04D9F726B1DE025 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		A066ECD24F9A4BF55136EAD8 /* lime_hs_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_hs_shift.json; sourceTree = "<group>"; };
+		A4E19D552BFEAA3E2632A221 /* lime_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_shift.json; sourceTree = "<group>"; };
+		AB8617B6EB9EBC4689424A49 /* lime_array_number.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_array_number.json; sourceTree = "<group>"; };
+		AD0AE1C6B0C4ACFF5512A9BF /* lime_cj_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_cj_shift.json; sourceTree = "<group>"; };
+		B2E2CC2294E9DD745CA44937 /* lime_hsu.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_hsu.json; sourceTree = "<group>"; };
+		B510DDC8A4131A41B66AF682 /* CandidateBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandidateBarView.swift; sourceTree = "<group>"; };
+		BA669B17DFE81A3ADB4188FF /* lime_abc_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_abc_shift.json; sourceTree = "<group>"; };
+		BC7C55BF2A2E802706106E50 /* lime_number_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_number_shift.json; sourceTree = "<group>"; };
+		BD9E7EE11221BAE243B120CD /* lime_cj_number_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_cj_number_shift.json; sourceTree = "<group>"; };
+		BF5C2CE83CEB146D8C56CA62 /* lime_ez_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_ez_shift.json; sourceTree = "<group>"; };
+		C0A5FC3D6D44CBBA94E88C16 /* lime_number.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_number.json; sourceTree = "<group>"; };
+		C413C5F3C96DA0D6411EAD4B /* LimeDB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimeDB.swift; sourceTree = "<group>"; };
+		C519D06270032D72E51CF613 /* IMCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMCatalog.swift; sourceTree = "<group>"; };
+		C8CEAFA241DA366CFB51031E /* lime_dayi_sym.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_dayi_sym.json; sourceTree = "<group>"; };
+		CB92E7B40C1C7C8BE4561773 /* popup_smileys.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = popup_smileys.json; sourceTree = "<group>"; };
+		D0956117FEB1C2F5C09EB5C5 /* Mapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mapping.swift; sourceTree = "<group>"; };
+		D0CDCC557DD26055CA872A57 /* lime_et_41.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_et_41.json; sourceTree = "<group>"; };
+		D75E50434E278FAEF4A4654C /* KeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardView.swift; sourceTree = "<group>"; };
+		D8905C956F3A8B895DC1D239 /* IMStoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMStoreView.swift; sourceTree = "<group>"; };
+		DB41E641804023A28303BAE5 /* lime_url.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_url.json; sourceTree = "<group>"; };
+		E291FC497AF0014D898E57FA /* lime_et26.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_et26.json; sourceTree = "<group>"; };
+		E84CB76CFC92DAA008483771 /* LayoutLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutLoader.swift; sourceTree = "<group>"; };
+		E95F4D38E0DC06E619BAC1EE /* LimeIMEKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LimeIMEKeyboard.entitlements; sourceTree = "<group>"; };
+		EDDD136F5375CC1B486B368C /* lime_et_41_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_et_41_shift.json; sourceTree = "<group>"; };
+		F04435F2855594DD68DDAB57 /* popup_punctuation.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = popup_punctuation.json; sourceTree = "<group>"; };
+		F0787C19D84A228F8B9731E4 /* lime_number_symbol_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_number_symbol_shift.json; sourceTree = "<group>"; };
+		F0AD7B903A3658D6EBB77E60 /* SearchServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchServer.swift; sourceTree = "<group>"; };
+		F485D645136F28A3B5AFED04 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		F6CE80A85C6FB759A9C33E95 /* popup_c_punctuation.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = popup_c_punctuation.json; sourceTree = "<group>"; };
+		F7E6D814B179560C36A6F65E /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		F8352DFA101AE0D5E1606C9A /* lime_wb_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_wb_shift.json; sourceTree = "<group>"; };
+		FB7A16FA3131160C10D80369 /* lime_email.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_email.json; sourceTree = "<group>"; };
+		FCCC8E71C5E48A1A81AB896E /* lime_dayi_shift.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_dayi_shift.json; sourceTree = "<group>"; };
+		FD47F81F6585217423024BE3 /* lime_hs.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lime_hs.json; sourceTree = "<group>"; };
+		FEB7554DFA2B6A6F31A1D39C /* popup_symbol_mode.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = popup_symbol_mode.json; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		2FFA88706373A94A01C5524D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ECC6875166947EFFA1140D0B /* GRDB in Frameworks */,
+				381F28F38C655529F1922A2A /* ZIPFoundation in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		34D06C4DC6A0297415E88E79 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D85527A1D89F1ACD5D86FE5A /* GRDB in Frameworks */,
+				D721F1B7CEA6C5FC9CD152A3 /* ZIPFoundation in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BB5494095EDE108D8C7A0450 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9A89239ABF584278D63C802F /* GRDB in Frameworks */,
+				A8AF9BBEF924BCFC21672E25 /* ZIPFoundation in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4D9BBA9BACFA40D84274DB5E /* LimeIMETests */ = {
+			isa = PBXGroup;
+			children = (
+				46C07357EED170657A3BF133 /* LimeDBTest.swift */,
+			);
+			path = LimeIMETests;
+			sourceTree = "<group>";
+		};
+		65127AB5C42E2A957A36A91F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				7114E7123639C57474145B35 /* LimeIME.app */,
+				782285680D8D9FE97C096F39 /* LimeIMEKeyboard.appex */,
+				2BBD717D9016C3670D1726BD /* LimeIMETests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		90B414AA423E4CF237257A99 /* LimeIMEKeyboard */ = {
+			isa = PBXGroup;
+			children = (
+				B510DDC8A4131A41B66AF682 /* CandidateBarView.swift */,
+				F485D645136F28A3B5AFED04 /* Info.plist */,
+				D75E50434E278FAEF4A4654C /* KeyboardView.swift */,
+				51309BD0A4AEAF429010BB4F /* KeyboardViewController.swift */,
+				7A03CFBF615643C92EF59C8E /* KeyLayout.swift */,
+				E84CB76CFC92DAA008483771 /* LayoutLoader.swift */,
+				E95F4D38E0DC06E619BAC1EE /* LimeIMEKeyboard.entitlements */,
+				C0A9736D68847FDA38616DD6 /* Layouts */,
+			);
+			path = LimeIMEKeyboard;
+			sourceTree = "<group>";
+		};
+		9C1506ACA815880475569550 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				6C791A042EAF0B0D85E4AEC3 /* ChineseSymbol.swift */,
+				2C0757CC0618D9DFE1917DB1 /* ImConfig.swift */,
+				43AF70BA22361D8084D34B7F /* Keyboard.swift */,
+				D0956117FEB1C2F5C09EB5C5 /* Mapping.swift */,
+				91652FC0787DE834F53E57B3 /* Record.swift */,
+				14502A56A42472FB229360DB /* Related.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A04BC4797B2B8BB4A601D413 /* LimeIME */ = {
+			isa = PBXGroup;
+			children = (
+				95784239B04D9F726B1DE025 /* AppDelegate.swift */,
+				C519D06270032D72E51CF613 /* IMCatalog.swift */,
+				D8905C956F3A8B895DC1D239 /* IMStoreView.swift */,
+				89D98FE64ECEC8DE0535C88A /* Info.plist */,
+				7BC49B99C3EAFF81057556EC /* LimeIME.entitlements */,
+				5E9EE5BA80907FE7407DC189 /* LimeSettingsView.swift */,
+				F7E6D814B179560C36A6F65E /* MainViewController.swift */,
+			);
+			path = LimeIME;
+			sourceTree = "<group>";
+		};
+		AD656E8960176F318C303682 /* Database */ = {
+			isa = PBXGroup;
+			children = (
+				C413C5F3C96DA0D6411EAD4B /* LimeDB.swift */,
+			);
+			path = Database;
+			sourceTree = "<group>";
+		};
+		C0A9736D68847FDA38616DD6 /* Layouts */ = {
+			isa = PBXGroup;
+			children = (
+				BA669B17DFE81A3ADB4188FF /* lime_abc_shift.json */,
+				55C6C7CF0775CFE705BB3B43 /* lime_abc.json */,
+				48A1A8F3D03D778777ACC688 /* lime_array_number_shift.json */,
+				AB8617B6EB9EBC4689424A49 /* lime_array_number.json */,
+				86E3E355AECB6CF44FE1CB4F /* lime_array_shift.json */,
+				1C4F9CE98A2F9BFF29641233 /* lime_array.json */,
+				BD9E7EE11221BAE243B120CD /* lime_cj_number_shift.json */,
+				5881111DCA9ED12EFE8C4039 /* lime_cj_number.json */,
+				AD0AE1C6B0C4ACFF5512A9BF /* lime_cj_shift.json */,
+				1736168811E753E9330AA481 /* lime_cj.json */,
+				FCCC8E71C5E48A1A81AB896E /* lime_dayi_shift.json */,
+				75D020F016341574B4FF2E84 /* lime_dayi_sym_shift.json */,
+				C8CEAFA241DA366CFB51031E /* lime_dayi_sym.json */,
+				38B13D232556DEB9E4DCA530 /* lime_dayi.json */,
+				FB7A16FA3131160C10D80369 /* lime_email.json */,
+				45BBFE60A3BC8E3A9EFBFED2 /* lime_english_number_shift.json */,
+				526D1D44C8B349F1C4E03E4A /* lime_english_number.json */,
+				8A142D8C48B8080CACC06BF5 /* lime_english_shift.json */,
+				0A1B5D154B1A949CA010C9CE /* lime_english.json */,
+				EDDD136F5375CC1B486B368C /* lime_et_41_shift.json */,
+				D0CDCC557DD26055CA872A57 /* lime_et_41.json */,
+				5CA64EBB9FF2770C1978FA54 /* lime_et26_shift.json */,
+				E291FC497AF0014D898E57FA /* lime_et26.json */,
+				BF5C2CE83CEB146D8C56CA62 /* lime_ez_shift.json */,
+				00CD73E75A8CF0D717BCDC50 /* lime_ez.json */,
+				A066ECD24F9A4BF55136EAD8 /* lime_hs_shift.json */,
+				FD47F81F6585217423024BE3 /* lime_hs.json */,
+				5D8D9FA3BB7317CC35DCEEE6 /* lime_hsu_shift.json */,
+				B2E2CC2294E9DD745CA44937 /* lime_hsu.json */,
+				BC7C55BF2A2E802706106E50 /* lime_number_shift.json */,
+				F0787C19D84A228F8B9731E4 /* lime_number_symbol_shift.json */,
+				86957E4A2DDA8D483FC30D94 /* lime_number_symbol.json */,
+				C0A5FC3D6D44CBBA94E88C16 /* lime_number.json */,
+				6D385999861624C778BD7C83 /* lime_phonetic_shift.json */,
+				930EE39E03E98427009BFB60 /* lime_phonetic.json */,
+				A4E19D552BFEAA3E2632A221 /* lime_shift.json */,
+				DB41E641804023A28303BAE5 /* lime_url.json */,
+				F8352DFA101AE0D5E1606C9A /* lime_wb_shift.json */,
+				63D7BA593E5AEB581D0E15C5 /* lime_wb.json */,
+				F6CE80A85C6FB759A9C33E95 /* popup_c_punctuation.json */,
+				868BBFF2AF500C4B76479AA6 /* popup_domains.json */,
+				F04435F2855594DD68DDAB57 /* popup_punctuation.json */,
+				CB92E7B40C1C7C8BE4561773 /* popup_smileys.json */,
+				FEB7554DFA2B6A6F31A1D39C /* popup_symbol_mode.json */,
+				955B457572A329E2A1ADEA50 /* popup_template.json */,
+			);
+			path = Layouts;
+			sourceTree = "<group>";
+		};
+		E57CCE835A3A3E3B16A04EBC /* Search */ = {
+			isa = PBXGroup;
+			children = (
+				F0AD7B903A3658D6EBB77E60 /* SearchServer.swift */,
+			);
+			path = Search;
+			sourceTree = "<group>";
+		};
+		EBC7471D5225EDBA1B16EA44 = {
+			isa = PBXGroup;
+			children = (
+				A04BC4797B2B8BB4A601D413 /* LimeIME */,
+				90B414AA423E4CF237257A99 /* LimeIMEKeyboard */,
+				4D9BBA9BACFA40D84274DB5E /* LimeIMETests */,
+				FAE59527757C912D6D45DF23 /* Shared */,
+				65127AB5C42E2A957A36A91F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		FAE59527757C912D6D45DF23 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				AD656E8960176F318C303682 /* Database */,
+				9C1506ACA815880475569550 /* Models */,
+				E57CCE835A3A3E3B16A04EBC /* Search */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4E79250369850046806B9D14 /* LimeIMETests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D45FC44685BEAB1CF6307874 /* Build configuration list for PBXNativeTarget "LimeIMETests" */;
+			buildPhases = (
+				8392487656C2CCC397104D24 /* Sources */,
+				BB5494095EDE108D8C7A0450 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				646093ADABDEE146D3264DBF /* PBXTargetDependency */,
+			);
+			name = LimeIMETests;
+			packageProductDependencies = (
+				7D65C99D71D2AC588F3B3903 /* GRDB */,
+				6D731A726502199FD73E3CF5 /* ZIPFoundation */,
+			);
+			productName = LimeIMETests;
+			productReference = 2BBD717D9016C3670D1726BD /* LimeIMETests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		8E0810E1C8E2E432E67648A5 /* LimeIME */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 18F9B4C4E87B375A5284541D /* Build configuration list for PBXNativeTarget "LimeIME" */;
+			buildPhases = (
+				F5E01FBCA298C9F9AAE9A8A9 /* Copy lime.db to bundle */,
+				A2A322193FD1089E054DCD60 /* Sources */,
+				34D06C4DC6A0297415E88E79 /* Frameworks */,
+				5F7BE0979F0F761E8B3CCFC6 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C80AD046DCC5225B065C1039 /* PBXTargetDependency */,
+			);
+			name = LimeIME;
+			packageProductDependencies = (
+				9D5AC9140B64BE293B4125AC /* GRDB */,
+				59409130182D005E62853937 /* ZIPFoundation */,
+			);
+			productName = LimeIME;
+			productReference = 7114E7123639C57474145B35 /* LimeIME.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E5EEAC95CEE986BFC16612A3 /* LimeIMEKeyboard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 48AD57F172DCC0C2BD747A7B /* Build configuration list for PBXNativeTarget "LimeIMEKeyboard" */;
+			buildPhases = (
+				1E20D112A5828C5602A96551 /* Copy phonetic.db to bundle */,
+				7773AA62913279E155050F6F /* Copy emoji.db to bundle */,
+				B1DDA941604063AA655294A3 /* Sources */,
+				F3F12614B80FA93D90347100 /* Resources */,
+				2FFA88706373A94A01C5524D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LimeIMEKeyboard;
+			packageProductDependencies = (
+				48B5C1F9A381B91371CE5694 /* GRDB */,
+				D84706F48CD91AF3D1857A1F /* ZIPFoundation */,
+			);
+			productName = LimeIMEKeyboard;
+			productReference = 782285680D8D9FE97C096F39 /* LimeIMEKeyboard.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AB8A5E21D4C217AD21F67C3A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					4E79250369850046806B9D14 = {
+						DevelopmentTeam = "";
+					};
+					8E0810E1C8E2E432E67648A5 = {
+						DevelopmentTeam = "";
+					};
+					E5EEAC95CEE986BFC16612A3 = {
+						DevelopmentTeam = "";
+					};
+				};
+			};
+			buildConfigurationList = 3D1639DE66308122314B4178 /* Build configuration list for PBXProject "LimeIME" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = EBC7471D5225EDBA1B16EA44;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B8B97FF38A758B2C2E9EB075 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				D3355D92D36CA4E7DA904632 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 65127AB5C42E2A957A36A91F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8E0810E1C8E2E432E67648A5 /* LimeIME */,
+				E5EEAC95CEE986BFC16612A3 /* LimeIMEKeyboard */,
+				4E79250369850046806B9D14 /* LimeIMETests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F3F12614B80FA93D90347100 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				15A7155D44FB31C8E5FA81A7 /* lime_abc.json in Resources */,
+				50E96984370C01489813E77A /* lime_abc_shift.json in Resources */,
+				12383EA9BE71DC6C521BE418 /* lime_array.json in Resources */,
+				246EAA15755121E22608F909 /* lime_array_number.json in Resources */,
+				C798DBEA7EC7AAD1D9821E2E /* lime_array_number_shift.json in Resources */,
+				C8ECC0AE9971356C025A4864 /* lime_array_shift.json in Resources */,
+				054C1466956DBE2D8BEA3A34 /* lime_cj.json in Resources */,
+				9E8C11739737F32191ABCD0E /* lime_cj_number.json in Resources */,
+				1230969E78D532747075B0A1 /* lime_cj_number_shift.json in Resources */,
+				84261E617020CF869698CE7C /* lime_cj_shift.json in Resources */,
+				73F7D68E669A8B3C3D55AD5E /* lime_dayi.json in Resources */,
+				6A2B456E9E54D00FE08276CB /* lime_dayi_shift.json in Resources */,
+				C704ECEA2AA4777A7F4F0D52 /* lime_dayi_sym.json in Resources */,
+				4B920F8769522781A1177534 /* lime_dayi_sym_shift.json in Resources */,
+				75C334B2B5C31010A7890979 /* lime_email.json in Resources */,
+				F6DC3F8E9D7CB81AB558668A /* lime_english.json in Resources */,
+				76BEE873AC0F13CDBB4969AF /* lime_english_number.json in Resources */,
+				495495B3EC2756E2FA4BF57A /* lime_english_number_shift.json in Resources */,
+				9FF9B6B6C491BD7514AAEFA0 /* lime_english_shift.json in Resources */,
+				12187D253A452F9C88E7C3E1 /* lime_et26.json in Resources */,
+				9F691C57C1223C205DBE0A70 /* lime_et26_shift.json in Resources */,
+				179D101D08689450880985FA /* lime_et_41.json in Resources */,
+				FC4F73BB12D8F2E1EC9F48EF /* lime_et_41_shift.json in Resources */,
+				277F7AAC5172A82852C00322 /* lime_ez.json in Resources */,
+				1F3AF38E0937B9889CAEC6AE /* lime_ez_shift.json in Resources */,
+				EFBC852F9176543E0F0EE2BA /* lime_hs.json in Resources */,
+				789E933FF233931B215B68C9 /* lime_hs_shift.json in Resources */,
+				BCBFE011E27ED97F41C1A1DB /* lime_hsu.json in Resources */,
+				782E5A3464C0CEE76B8F75D9 /* lime_hsu_shift.json in Resources */,
+				D3739EC294D3485404012D3B /* lime_number.json in Resources */,
+				52A2BC2194D460DE8925686B /* lime_number_shift.json in Resources */,
+				3627870C41CBCF6BBC97C35C /* lime_number_symbol.json in Resources */,
+				F86AF51C921192791F73AFA9 /* lime_number_symbol_shift.json in Resources */,
+				A74D09B3AEDBF27CDBBD079E /* lime_phonetic.json in Resources */,
+				D028529390E0D4AB93F413FB /* lime_phonetic_shift.json in Resources */,
+				969E9ECB3E49FD62355A5DCD /* lime_shift.json in Resources */,
+				BDD2EAB7644539066FF9FF55 /* lime_url.json in Resources */,
+				DD329C69B687BA18D2865041 /* lime_wb.json in Resources */,
+				1ABA5CCCC3B8B68420955EDA /* lime_wb_shift.json in Resources */,
+				6B4236631D644D17D3FF0FFC /* popup_c_punctuation.json in Resources */,
+				59E842FEFEFEA6FEAF6EE663 /* popup_domains.json in Resources */,
+				65B48ECD66FBB98FA64DE8CD /* popup_punctuation.json in Resources */,
+				F2C8C872E8796234504622A6 /* popup_smileys.json in Resources */,
+				E1A1FABDFEEB6C9DF7A93E59 /* popup_symbol_mode.json in Resources */,
+				B7114F1C925F5668C7B1426F /* popup_template.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		1E20D112A5828C5602A96551 /* Copy phonetic.db to bundle */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy phonetic.db to bundle";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/phonetic.db",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "SRC=\"${SRCROOT}/../Database/phonetic.db\"\nDST=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/phonetic.db\"\nif [ -f \"$SRC\" ]; then\n  cp -f \"$SRC\" \"$DST\"\nfi\n";
+		};
+		7773AA62913279E155050F6F /* Copy emoji.db to bundle */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy emoji.db to bundle";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/emoji.db",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "SRC=\"${SRCROOT}/../Database/emoji.db\"\nDST=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/emoji.db\"\nif [ -f \"$SRC\" ]; then\n  cp -f \"$SRC\" \"$DST\"\nfi\n";
+		};
+		F5E01FBCA298C9F9AAE9A8A9 /* Copy lime.db to bundle */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy lime.db to bundle";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(CONTENTS_FOLDER_PATH)/lime.db",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "SRC=\"${SRCROOT}/../Database/lime.db\"\nDST=\"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/lime.db\"\nif [ -f \"$SRC\" ]; then\n  cp -f \"$SRC\" \"$DST\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		8392487656C2CCC397104D24 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F732111715EF1196B7295C24 /* ChineseSymbol.swift in Sources */,
+				2EE2BFCC6A02AFA1E73E7D27 /* ImConfig.swift in Sources */,
+				F20EA45656BE08E5A291F4F5 /* Keyboard.swift in Sources */,
+				E02BE727FF878D591A3D34B5 /* LimeDB.swift in Sources */,
+				9B1ECA9BBCEE603587497032 /* LimeDBTest.swift in Sources */,
+				41F0C74C36F32BE94395EF6C /* Mapping.swift in Sources */,
+				DAB0143D532C5A092FAE707C /* Record.swift in Sources */,
+				13652AFA1DEB88089B2BCC8E /* Related.swift in Sources */,
+				B174D69873CFB28046FD2166 /* SearchServer.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A2A322193FD1089E054DCD60 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D56F9308DBE0E2982A156EDC /* AppDelegate.swift in Sources */,
+				9FB37AFD7E021F497B9BC5C7 /* ChineseSymbol.swift in Sources */,
+				AAB43ADB780D8C94FCFF9D68 /* IMCatalog.swift in Sources */,
+				090FE96F5983C4AAFEDE4AD7 /* IMStoreView.swift in Sources */,
+				91114A2E568054305BF86C11 /* ImConfig.swift in Sources */,
+				4C1012BD29921E3B0201DBBC /* Keyboard.swift in Sources */,
+				F9D73852B20448B404C09BAB /* LimeDB.swift in Sources */,
+				D82AE1FA73F859BBABBF644C /* LimeSettingsView.swift in Sources */,
+				C9C4D445F9D778B1F3CB5102 /* MainViewController.swift in Sources */,
+				7F9F9E4BA76E6189F91E57E3 /* Mapping.swift in Sources */,
+				6DDCA062AC27D53BE405CECB /* Record.swift in Sources */,
+				27553064FBBC2A0E4E5ACDC9 /* Related.swift in Sources */,
+				8EBAC89F106963E2B9A020A1 /* SearchServer.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B1DDA941604063AA655294A3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FB1C3B404DFFA9F23F06F7A5 /* CandidateBarView.swift in Sources */,
+				8AC6B7DC76692A7FBFDDF3F9 /* ChineseSymbol.swift in Sources */,
+				A2E7579A48126A3587829923 /* ImConfig.swift in Sources */,
+				644A29210C83B5B9BD11A9AC /* KeyLayout.swift in Sources */,
+				54537083062A7847A6BAE8BC /* Keyboard.swift in Sources */,
+				3E81089E57F6CB90A2BFF152 /* KeyboardView.swift in Sources */,
+				8B72D83300CAD566BFCF3FE1 /* KeyboardViewController.swift in Sources */,
+				C29DD224E7D5797D71BFD56C /* LayoutLoader.swift in Sources */,
+				8B8D5CEFF8EB0D19EEB0F35C /* LimeDB.swift in Sources */,
+				17766B10C8DE7763C32633C1 /* Mapping.swift in Sources */,
+				FB79C88DB4D99018F75EEAFA /* Record.swift in Sources */,
+				54E5706A45996F6DCC4C1C73 /* Related.swift in Sources */,
+				4D55F7F8166AB9405DB0200D /* SearchServer.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		646093ADABDEE146D3264DBF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8E0810E1C8E2E432E67648A5 /* LimeIME */;
+			targetProxy = 8371A0E6B572FCFA1AE76F02 /* PBXContainerItemProxy */;
+		};
+		C80AD046DCC5225B065C1039 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E5EEAC95CEE986BFC16612A3 /* LimeIMEKeyboard */;
+			targetProxy = C3C39B9E74F7B061A4395F38 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		22774EC58C3444B7FF5F925C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LimeIME/LimeIME.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = LimeIME/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.toload.limeime;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		2A0EBC8D367E93168B462073 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		3D094FE624A3A6EEEED6389D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LimeIMEKeyboard/LimeIMEKeyboard.entitlements;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = LimeIMEKeyboard/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.toload.limeime.keyboard;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		8FF39468EF4F44DD35C4A434 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.toload.limeime.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LimeIME.app/LimeIME";
+			};
+			name = Debug;
+		};
+		93C8EC47BB143F1224AEE96C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.toload.limeime.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LimeIME.app/LimeIME";
+			};
+			name = Release;
+		};
+		A05A409135D5FF4182F4F8A2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LimeIME/LimeIME.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = LimeIME/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.toload.limeime;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		C830F53EE27BB48488305885 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LimeIMEKeyboard/LimeIMEKeyboard.entitlements;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = LimeIMEKeyboard/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = net.toload.limeime.keyboard;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		DA9EADCE3613FA9BBFF53795 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		18F9B4C4E87B375A5284541D /* Build configuration list for PBXNativeTarget "LimeIME" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				22774EC58C3444B7FF5F925C /* Debug */,
+				A05A409135D5FF4182F4F8A2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		3D1639DE66308122314B4178 /* Build configuration list for PBXProject "LimeIME" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2A0EBC8D367E93168B462073 /* Debug */,
+				DA9EADCE3613FA9BBFF53795 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		48AD57F172DCC0C2BD747A7B /* Build configuration list for PBXNativeTarget "LimeIMEKeyboard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C830F53EE27BB48488305885 /* Debug */,
+				3D094FE624A3A6EEEED6389D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D45FC44685BEAB1CF6307874 /* Build configuration list for PBXNativeTarget "LimeIMETests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8FF39468EF4F44DD35C4A434 /* Debug */,
+				93C8EC47BB143F1224AEE96C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B8B97FF38A758B2C2E9EB075 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.0.0;
+			};
+		};
+		D3355D92D36CA4E7DA904632 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.19;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		48B5C1F9A381B91371CE5694 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B8B97FF38A758B2C2E9EB075 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+		59409130182D005E62853937 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D3355D92D36CA4E7DA904632 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+		6D731A726502199FD73E3CF5 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D3355D92D36CA4E7DA904632 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+		7D65C99D71D2AC588F3B3903 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B8B97FF38A758B2C2E9EB075 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+		9D5AC9140B64BE293B4125AC /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B8B97FF38A758B2C2E9EB075 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+		D84706F48CD91AF3D1857A1F /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D3355D92D36CA4E7DA904632 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = AB8A5E21D4C217AD21F67C3A /* Project object */;
+}
