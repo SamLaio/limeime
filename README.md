@@ -10,9 +10,9 @@ LIME 是一套以繁體中文輸入為核心的 Android 輸入法專案，採用
 
 ### 最新正式版（GitHub Release）
 
-- 版本：v6.0.0
-- APK：LIMEHD2026-6.0.0.apk
-- 下載連結：https://github.com/lime-ime/limeime/releases/latest/download/LIMEHD2026-6.0.0.apk
+- 版本：v6.0.1
+- APK：LIMEHD2026-6.0.1.apk
+- 下載連結：https://github.com/lime-ime/limeime/releases/latest/download/LIMEHD2026-6.0.1.apk
 
 ## 版本與相容性
 
