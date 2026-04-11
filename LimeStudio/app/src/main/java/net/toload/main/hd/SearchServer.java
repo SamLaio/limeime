@@ -1137,7 +1137,7 @@ public class SearchServer {
      *
      * @param cachedMapping The mapping with the updated score.
      */
-    private void updateScoreCache(Mapping cachedMapping) {
+    private synchronized void  updateScoreCache(Mapping cachedMapping) {
         if (DEBUG) Log.i(TAG, "updateScoreCache(): code=" + cachedMapping.getCode());
 
         dbadapter.addScore(cachedMapping);

@@ -138,7 +138,8 @@ public class ManageImController extends BaseController {
         
         try {
             searchServer.addOrUpdateMappingRecord(table, code, word, score);
-            
+            searchServer.initialCache();
+
             if (manageImView != null) {
                 manageImView.refreshRecordList();
             }
@@ -169,7 +170,8 @@ public class ManageImController extends BaseController {
             cv.put(LIME.DB_COLUMN_WORD, word);
             cv.put(LIME.DB_COLUMN_SCORE, score);
             searchServer.updateRecord(table, cv, LIME.DB_COLUMN_ID + " = ?", new String[]{String.valueOf(id)});
-            
+            searchServer.initialCache();
+
             if (manageImView != null) {
                 manageImView.refreshRecordList();
             }
@@ -193,7 +195,8 @@ public class ManageImController extends BaseController {
         
         try {
             searchServer.deleteRecord(table, LIME.DB_COLUMN_ID + " = ?", new String[]{String.valueOf(id)});
-            
+            searchServer.initialCache();
+
             if (manageImView != null) {
                 manageImView.refreshRecordList();
             }
