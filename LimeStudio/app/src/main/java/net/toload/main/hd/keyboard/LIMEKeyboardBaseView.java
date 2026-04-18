@@ -875,13 +875,6 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
         } else {
             int parentWidth = MeasureSpec.getSize(widthMeasureSpec);
             int width = mKeyboard.getMinWidth() + getPaddingLeft() + getPaddingRight();
-            // Issue #47: if the keyboard's laid-out width still exceeds the parent
-            // (e.g. rounding accumulation or post-construction window resize), rescale
-            // every key uniformly so the rightmost column is no longer clipped.
-            if (parentWidth > 0 && width > parentWidth) {
-                mKeyboard.scaleHorizontally(parentWidth - getPaddingLeft() - getPaddingRight());
-                width = mKeyboard.getMinWidth() + getPaddingLeft() + getPaddingRight();
-            }
             if (parentWidth < width + DEFAULT_PREVIEW_TOP_PADDING_PX) {
                 width = parentWidth;
             }

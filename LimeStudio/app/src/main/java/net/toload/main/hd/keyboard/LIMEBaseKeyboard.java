@@ -967,24 +967,6 @@ public class LIMEBaseKeyboard {
         return fallbackWidthPx;
     }
 
-    /**
-     * Issue #47: uniformly scale every key's horizontal position, width and gap so the
-     * keyboard fits exactly into {@code newWidth} pixels. Called from
-     * {@link LIMEKeyboardBaseView#onMeasure(int, int)} when the parent view is narrower
-     * than the originally laid-out keyboard (rounding accumulation, post-construction
-     * window resize, multi-window mode, etc.). No-op if the keyboard already fits.
-     */
-    public void scaleHorizontally(int newWidth) {
-        if (newWidth <= 0 || mTotalWidth <= 0 || newWidth >= mTotalWidth) return;
-        float ratio = (float) newWidth / (float) mTotalWidth;
-        for (Key key : mKeys) {
-            key.x = Math.round(key.x * ratio);
-            key.width = Math.round(key.width * ratio);
-            key.gap = Math.round(key.gap * ratio);
-        }
-        mTotalWidth = newWidth;
-    }
-
     public boolean setShifted(boolean shiftState) {
         if (mShiftKey != null) {
             mShiftKey.on = shiftState;
