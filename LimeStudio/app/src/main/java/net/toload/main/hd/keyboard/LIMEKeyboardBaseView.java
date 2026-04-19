@@ -1092,10 +1092,15 @@ public class LIMEKeyboardBaseView extends View implements PointerTracker.UIProxy
 
                         //portrait keyboard
                         if (key.height > key.width || subLabel.length() > 2 || hasSecondSubLabel) {
-                            baseline = (float) ((key.height + padding.top - padding.bottom) * 2/3)
-                                    + labelHeight * KEY_LABEL_VERTICAL_ADJUSTMENT_FACTOR;
-                            float subBaseline = (float) (key.height + padding.top - padding.bottom) /3
-                                    + subLabelHeight * KEY_LABEL_VERTICAL_ADJUSTMENT_FACTOR;
+                            // Anchor sub-label from top and main label from bottom; split the
+                            // leftover vertical space as top : gap : bottom = 1 : 1 : 1 so the
+                            // inter-text gap scales with free space instead of being the residual
+                            // of rigid H/3 and 2H/3 anchors (fixes label/sub-label crowding after
+                            // labelSizeScale returned to 1.0 in 6.0.2).
+                            float drawableH = key.height - padding.top - padding.bottom;
+                            float stackPad = Math.max(0f, (drawableH - subLabelHeight - labelHeight) / 3f);
+                            baseline = (key.height - padding.bottom) - stackPad;
+                            float subBaseline = padding.top + stackPad + subLabelHeight;
                             paint.setColor(subKeyColor);
 
                             if (hasSecondSubLabel) {
