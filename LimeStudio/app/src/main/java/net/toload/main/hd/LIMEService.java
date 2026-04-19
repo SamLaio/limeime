@@ -255,6 +255,7 @@ public class LIMEService extends InputMethodService
      * Main initialization of the input method component. Be sure to call to
      * super class.
      */
+    @SuppressWarnings("deprecation")
     @Override
     public void onCreate() {
 
@@ -3719,6 +3720,7 @@ public class LIMEService extends InputMethodService
      * Get Vibrator instance compatible with all API levels.
      * Uses VibratorManager for all API levels (recommended approach).
      */
+    @SuppressWarnings("deprecation")
     private Vibrator getVibrator() {
         if (mVibrator == null) {
             Log.w(TAG, "getVibrator() - mVibrator is null, re-initializing, API level: " + android.os.Build.VERSION.SDK_INT);
@@ -3772,6 +3774,7 @@ public class LIMEService extends InputMethodService
      * API 26-28: uses VibrationEffect.createOneShot().
      * API <26: uses deprecated vibrate(long).
      */
+    @SuppressWarnings("deprecation")
     private void vibrate(long duration) {
         if (duration <= 0) {
             Log.w(TAG, "vibrate() called with invalid duration: " + duration);
@@ -4419,6 +4422,7 @@ public class LIMEService extends InputMethodService
      * and pick light/dark nav-bar icons based on the background's luminance so the
      * icons remain visible. Called from onCreateInputView() and onStartInputView().
      */
+    @SuppressWarnings("deprecation")
     private void applyNavigationBarTheme() {
         android.app.Dialog dialog = getWindow();
         if (dialog == null) return;
