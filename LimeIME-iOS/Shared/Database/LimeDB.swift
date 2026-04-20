@@ -62,11 +62,15 @@ final class LimeDB {
     // MARK: - Preference-driven behaviour knobs (mirrors Android LIMEPref fields read by LimeDB)
 
     /// Cap on similar-code (partial-match) candidates per query (mirrors getSimilarCodeCandidates()).
-    /// 0 = no cap (default).
-    var similarCodeCandidatesCap: Int = 0
+    /// Default 20 matches Android's SharedPreferences default ("similiar_list", "20").
+    var similarCodeCandidatesCap: Int = 20
 
     /// When false, `addOrUpdateRelatedPhraseRecord` is a no-op (mirrors getLearnRelatedWord()).
     var learnRelatedWords: Bool = true
+
+    /// When true, sort results by score DESC, basescore DESC (mirrors getSortSuggestions()).
+    /// iOS is always soft-keyboard so this mirrors the softKeyboard=true path in Android.
+    var sortSuggestions: Bool = true
 
     // Thread safety for blackListCache
     private let blackListLock = NSLock()
@@ -153,11 +157,11 @@ final class LimeDB {
             """)
             try db.execute(sql: """
                 CREATE TABLE IF NOT EXISTS related (
-                    _id        INTEGER PRIMARY KEY AUTOINCREMENT,
-                    pword      TEXT,
-                    cword      TEXT,
-                    base_score INTEGER DEFAULT 0,
-                    user_score INTEGER DEFAULT 0
+                    _id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pword     TEXT,
+                    cword     TEXT,
+                    basescore INTEGER DEFAULT 0,
+                    score     INTEGER DEFAULT 0
                 )
             """)
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS related_idx_pword ON related (pword)")
@@ -204,6 +208,17 @@ final class LimeDB {
         let version = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
         guard version < LimeDB.CURRENT_DB_VERSION else { return }
 
+        // Fix related table column names if created with wrong names (base_score/user_score).
+        // This covers any device that ran the app before the DDL was corrected.
+        let relatedCols = try Row.fetchAll(db, sql: "PRAGMA table_info(related)").map {
+            $0["name"] as String? ?? "" }
+        if relatedCols.contains("base_score") {
+            try db.execute(sql: "ALTER TABLE related RENAME COLUMN base_score TO basescore")
+        }
+        if relatedCols.contains("user_score") {
+            try db.execute(sql: "ALTER TABLE related RENAME COLUMN user_score TO score")
+        }
+
         // Version < 102: add basescore column to mapping tables if missing;
         //                insert wb and hs rows into keyboard table if absent.
         if version < 102 {
@@ -236,7 +251,7 @@ final class LimeDB {
                         VALUES (?, ?, ?, 'phone', '',
                             'lime_\(code)', 'lime_\(code)',
                             'lime_abc', 'lime_abc_shift',
-                            'lime_number_symbol', 'lime_number_symbol_shift',
+                            'symbols1', 'symbols2',
                             '', '', '', '', 0)
                     """, arguments: [code, code.uppercased(), code.uppercased() + " 輸入法鍵盤"])
                 }
@@ -366,7 +381,7 @@ final class LimeDB {
     func tableHasData(_ name: String) -> Bool {
         guard tableExists(name) else { return false }
         return (try? dbQueue.read { db in
-            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM \(name)") ?? 0
+            try Int.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM \(name) LIMIT 1)") ?? 0
         }) ?? 0 > 0
     }
 
@@ -442,89 +457,160 @@ final class LimeDB {
 
     /// Full port of Android getMappingByCode(). Returns nil on DB error.
     func getMappingByCode(_ code: String?, softKeyboard: Bool, getAllRecords: Bool) -> [Mapping]? {
+        // Jeremy '12,5,1 !checkDBConnection() when db is restoring or replaced.
         guard !checkDBConnection() else { return nil }
         guard let code = code, !code.isEmpty else { return nil }
-        let originalCode = code   // preserve original case for codeorig field
-        let limit = getAllRecords ? LimeDB.FINAL_RESULT_LIMIT : LimeDB.INITIAL_RESULT_LIMIT
+
+        let codeOrig = code
+
+        // Extension on multi table query. Jeremy '11,6,15
+        // lastCode set to original code BEFORE any pre-processing (mirrors Java line 1796)
+        lastCode = code
+        lastValidDualCodeList = nil
+
         let table = currentTableName
         guard isValidTableName(table) else { return nil }
         guard tableExists(table) else { return nil }
 
-        // Step 1: Remap code for phonetic keyboard type
-        var queryCode = preProcessingRemappingCode(code.lowercased())
+        // Step 1: Code re-mapping (mirrors Java line 1802)
+        var queryCode = preProcessingRemappingCode(code)
+        // Jeremy '12,4,1 toLowerCase moved from SearchService (mirrors Java line 1803)
+        queryCode = queryCode.lowercased()
 
-        // Step 2: Phonetic-specific tone handling (mirrors Java getMappingByCode)
+        // Step 2: Build extra getMappingByCode conditions e.g. dualcode remap (mirrors Java line 1805)
+        let extra = preProcessingForExtraQueryConditions(queryCode)
+        let extraSelectClause = extra?.0 ?? ""
+        let extraExactClause  = extra?.1 ?? ""
+
+        // Step 3: Phonetic-specific tone handling (mirrors Java lines 1828–1842)
+        // Jeremy '15,6,6 always search no tone code for phonetic
         var codeCol = "code"
+        let tonePresent = queryCode.range(of: ".+[3467 ].*", options: .regularExpression) != nil
+        let toneNotLast = queryCode.range(of: ".+[3467 ].+", options: .regularExpression) != nil
         if table == "phonetic" {
-            let tonePresent = queryCode.range(of: ".+[3467 ].*", options: .regularExpression) != nil
-            let toneNotLast = queryCode.range(of: ".+[3467 ].+", options: .regularExpression) != nil
             if tonePresent {
-                // Tone in middle or code too long for a single phonetic syllable: strip tones
+                // LD phrase if tone symbols present but not in last character or length > 4
                 if toneNotLast || queryCode.count > 4 {
                     queryCode = queryCode.replacingOccurrences(of: "[3467 ]", with: "", options: .regularExpression)
                 }
             } else {
-                // No tone symbol: search the no-tone code column (code3r)
+                // no tone symbols present, check NoToneCode column
                 codeCol = "code3r"
             }
             queryCode = queryCode.trimmingCharacters(in: .whitespaces)
         }
+        // Used in buildQueryResult validCodeMap logic below
+        let searchNoToneColumn = table == "phonetic" && !tonePresent
 
-        // Step 3: Dual-code expansion for ETEN26 / HSU (mirrors Java preProcessingForExtraQueryConditions)
-        lastCode = queryCode
-        lastValidDualCodeList = nil
-        let extra = preProcessingForExtraQueryConditions(queryCode)
-        let extraSelectClause   = extra?.0 ?? ""
-        let extraExactClause    = extra?.1 ?? ""
+        // Build SQL (mirrors Java lines 1847–1868)
+        let escapedCode = queryCode.replacingOccurrences(of: "'", with: "''")
+        let codeLen = queryCode.count
+        let limitClause = getAllRecords ? LimeDB.FINAL_RESULT_LIMIT : LimeDB.INITIAL_RESULT_LIMIT
+        let selectClause = expandBetweenSearchClause(column: codeCol, code: queryCode) + extraSelectClause
+        // Mirrors Android: " (" + codeCol + " ='" + escapedCode + "' " + extraExactMatchClause + ") "
+        let exactMatchCondition = " (\(codeCol) ='\(escapedCode)' \(extraExactClause)) "
 
-        return try? dbQueue.read { db in
-            let escapedCode = queryCode.replacingOccurrences(of: "'", with: "''")
-            let selectClause  = expandBetweenSearchClause(column: codeCol, code: queryCode) + extraSelectClause
-            let exactMatchExpr = "(\(codeCol) = '\(escapedCode)'\(extraExactClause))"
-            let sql = """
-                SELECT _id, code, word, score, basescore, code3r, related,
-                       \(exactMatchExpr) AS exactmatch
-                FROM \(table)
-                WHERE word IS NOT NULL AND (\(selectClause))
-                ORDER BY
-                  (exactmatch = 1 AND (score > 0 OR basescore > 0) AND length(word) = 1) DESC,
-                  exactmatch DESC,
-                  (length(\(codeCol)) >= \(queryCode.count)) DESC,
-                  (length(\(codeCol)) <= \(min(queryCode.count, 5))) * length(\(codeCol)) DESC,
-                  (score + basescore) DESC,
-                  _id ASC
-                LIMIT \(limit)
-            """
-            var results = try Row.fetchAll(db, sql: sql).compactMap { row -> Mapping? in
-                guard let word = row.optString("word"), !word.isEmpty else { return nil }
-                var m = Mapping(
-                    id:        (row.optInt64("_id") ?? 0),
-                    code:      (row.optString("code") ?? ""),
-                    word:      word,
-                    score:     (row.optInt("score") ?? 0),
-                    baseScore: (row.optInt("basescore") ?? 0),
-                    code3r:    row["code3r"],
-                    codeorig:  originalCode,
-                    related:   row.optString("related")   // spec §14
-                )
-                let isExact = (row.optInt("exactmatch") ?? 0) == 1
-                m.recordType = isExact ? Mapping.RecordType.exactMatchToCode : Mapping.RecordType.partialMatchToCode
-                return m
-            }
-            // Apply similar-code candidates cap (mirrors getSimilarCodeCandidates())
-            let cap = similarCodeCandidatesCap
-            if cap > 0 {
-                let exactCount = results.filter { $0.isExactMatchToCodeRecord }.count
-                let partialAllowed = max(0, cap - exactCount)
-                var partialSeen = 0
-                results = results.filter { m in
-                    if m.isExactMatchToCodeRecord { return true }
-                    partialSeen += 1
-                    return partialSeen <= partialAllowed
+        // Jeremy '15, 6, 1 between search clause without using related column for better sorting order.
+        var sortClause = "( exactmatch = 1 and ( score > 0 or  basescore >0) and length(word)=1) desc, exactmatch desc,"
+                       + " (length(\(codeCol)) >= \(codeLen) ) desc, "
+                       + "(length(\(codeCol)) <= \(min(codeLen, 5)) )*length(\(codeCol)) desc, "
+        // Jeremy '11,6,11 separated suggestions sorting option for physical keyboard
+        // iOS is always soft keyboard — mirrors Android softKeyboard=true path
+        if sortSuggestions { sortClause += " score desc, basescore desc, " }
+        sortClause += "_id asc"
+
+        // Mirrors Android: "where word is not null and " + selectClause  (no outer parens — AND/OR precedence intentional)
+        let selectString = "select _id, code, code3r, word, score, basescore, \(exactMatchCondition) as exactmatch  "
+                         + " from \(table) where word is not null and \(selectClause)"
+                         + " order by \(sortClause) limit \(limitClause)"
+
+        guard let rows = try? dbQueue.read({ db in try Row.fetchAll(db, sql: selectString) })
+        else { return nil }
+
+        // Build result — mirrors Android buildQueryResult (Java lines 2725–2873)
+        var result: [Mapping] = []
+        var duplicateCheck = Set<String>()  // Jeremy: ignore duplicate words
+        var validCodeMap   = Set<String>()  // Jeremy '11,8,26 build valid code map
+        var rsize = 0
+        let sLimit = similarCodeCandidatesCap   // mirrors getSimilarCodeCandidates()
+        var sCount = 0
+        // Jeremy '11,8,30: only build validCodeList when lastValidDualCodeList is nil
+        // (mirrors Java: final boolean buildValidCodeList = lastValidDualCodeList == null)
+        let buildValidCodeList = lastValidDualCodeList == nil
+
+        for row in rows {
+            guard let word = row.optString("word"), !word.isEmpty else { continue }
+            let rowCode = row.optString("code") ?? ""
+            var m = Mapping(
+                id:        row.optInt64("_id") ?? 0,
+                code:      rowCode,
+                word:      word,
+                score:     row.optInt("score") ?? 0,
+                baseScore: row.optInt("basescore") ?? 0,
+                code3r:    row["code3r"],
+                codeorig:  codeOrig
+            )
+            // Jeremy '15,6,3 new exact or partial record type
+            let exactMatch = (row.optInt("exactmatch") ?? 0) == 1
+            if exactMatch { m.setExactMatchToCodeRecord() } else { m.setPartialMatchToCodeRecord() }
+
+            // Jeremy '11,8,26 build valid code map (mirrors Java buildQueryResult lines 2780–2788)
+            if buildValidCodeList {
+                let noToneCode = (row.optString("code3r") ?? "").trimmingCharacters(in: .whitespaces)
+                let strippedQuery = queryCode.replacingOccurrences(of: "[3467 ]", with: "", options: .regularExpression)
+                if searchNoToneColumn,
+                   !noToneCode.isEmpty,
+                   noToneCode.count == strippedQuery.count,
+                   validCodeMap.count < LimeDB.DUALCODE_COMPOSING_LIMIT {
+                    validCodeMap.insert(noToneCode)
+                } else if !rowCode.isEmpty, rowCode.count == queryCode.count {
+                    validCodeMap.insert(rowCode)
                 }
             }
-            return results
+
+            // 06/Aug/2011 by Art: ignore result when word == keyToKeyName(code) for Array IM
+            if rowCode.count == 1 && table == "array" {
+                if keyToKeyName(rowCode, table, false) == word { continue }
+            }
+
+            // mirrors Android: rsize++ is outside duplicateCheck block
+            let inserted = duplicateCheck.insert(word).inserted
+            if inserted {
+                result.append(m)
+                if m.isPartialMatchToCodeRecord {
+                    sCount += 1
+                    if sCount > sLimit { break }
+                }
+            }
+            rsize += 1
         }
+
+        // Jeremy '11,8,26 build valid code map → lastValidDualCodeList (mirrors Java lines 2817–2832)
+        // Only write when buildValidCodeList is true (mirrors Java: if buildValidCodeList && !validCodeMap.isEmpty)
+        if buildValidCodeList && !validCodeMap.isEmpty {
+            lastValidDualCodeList = validCodeMap.sorted().joined(separator: "|")
+        }
+
+        // Add full shaped punctuation symbol to the third place , and . (mirrors Java lines 2837–2858)
+        if queryCode.count == 1 {
+            if (queryCode == "," || queryCode == "<"), duplicateCheck.insert("，").inserted {
+                let temp = Mapping(id: 0, code: queryCode, word: "，", score: 0, baseScore: 0)
+                result.insert(temp, at: min(3, result.count))
+            }
+            if (queryCode == "." || queryCode == ">"), duplicateCheck.insert("。").inserted {
+                let temp = Mapping(id: 0, code: queryCode, word: "。", score: 0, baseScore: 0)
+                result.insert(temp, at: min(3, result.count))
+            }
+        }
+
+        // hasMore marker (mirrors Java lines 2861–2867)
+        if !getAllRecords && rsize == LimeDB.INITIAL_RESULT_LIMIT {
+            var more = Mapping(id: 0, code: "has_more_records", word: "...", score: 0, baseScore: 0)
+            more.recordType = Mapping.RecordType.hasMoreMark
+            result.append(more)
+        }
+
+        return result
     }
 
     /// GRDB-throws version used internally (keeps SearchServer.swift working).
@@ -571,32 +657,32 @@ final class LimeDB {
         return results
     }
 
-    /// Between-search SQL clause builder (mirrors Android expandBetweenSearchClause).
+    /// Between-search SQL clause builder (mirrors Android expandBetweenSearchClause exactly).
+    /// Android format: `code= 'a' or  (code >= 'ab' and code <'ac') `
     private func expandBetweenSearchClause(column: String, code: String) -> String {
-        let escaped = code.replacingOccurrences(of: "'", with: "''")
-        var clauses: [String] = []
+        guard !code.isEmpty else { return "" }  // safety: empty code produces invalid SQL
+        var selectClause = ""
         let len = code.count
-        // C1 fix: Java uses (len > 5 ? 6 : len), so end = min(len, 5)+1 when len <= 5
-        // yielding prefixes of length 1..min(len,5), same as Java's 0..<(end-1) where end=(len>5?6:len)
+        // Mirrors Java: int end = (len > 5) ? 6 : len;
         let end = len > 5 ? 6 : len
         if len > 1 {
             for j in 0..<(end - 1) {
+                // Mirrors Java: selectClause.append(searchColumn).append("= '").append(prefix).append("' or ");
                 let prefix = String(code.prefix(j + 1)).replacingOccurrences(of: "'", with: "''")
-                clauses.append("\(column) = '\(prefix)'")
+                selectClause += "\(column)= '\(prefix)' or "
             }
         }
-        // Range query for full-code prefix match.
-        // C2 fix: use Unicode scalar arithmetic instead of asciiValue! force-unwrap
-        // to handle non-ASCII remapped codes safely.
-        var nextCode = escaped
+        // Mirrors Java: chArray[code.length()-1]++ — safe: code.isEmpty checked above
+        let escaped = code.replacingOccurrences(of: "'", with: "''")
+        var nextCode = escaped  // fallback (extremely rare: max Unicode scalar)
         if let lastScalar = code.unicodeScalars.last,
-           let incremented = Unicode.Scalar(lastScalar.value + 1) {
+           let inc = Unicode.Scalar(lastScalar.value + 1) {
             let stem = String(code.dropLast()).replacingOccurrences(of: "'", with: "''")
-            let nextChar = String(incremented).replacingOccurrences(of: "'", with: "''")
-            nextCode = stem + nextChar
+            nextCode = stem + String(inc).replacingOccurrences(of: "'", with: "''")
         }
-        clauses.append("(\(column) >= '\(escaped)' AND \(column) < '\(nextCode)')")
-        return clauses.joined(separator: " OR ")
+        // Mirrors Java: " (" + col + " >= '" + escaped + "' and " + col + " <'" + nextCode + "') "
+        selectClause += " (\(column) >= '\(escaped)' and \(column) <'\(nextCode)') "
+        return selectClause
     }
 
     /// Reverse lookup: find all mapping records for a given word.
@@ -675,8 +761,8 @@ final class LimeDB {
                     SELECT _id, pword, cword, basescore, score,
                            length(pword) AS len
                     FROM related
-                    WHERE (pword = ? OR pword = ?)
-                      AND cword IS NOT NULL
+                    WHERE pword = ?
+                       OR pword = ? AND cword IS NOT NULL
                     ORDER BY len DESC, score DESC, basescore DESC
                     LIMIT \(limit)
                 """
@@ -720,52 +806,63 @@ final class LimeDB {
         guard !checkDBConnection() else { return nil }
         guard let pword = pword, !pword.isEmpty else { return nil }
         return try? dbQueue.read { db in
-            let sql: String
-            let args: StatementArguments
-            if let cword = cword, !cword.isEmpty {
-                sql = "SELECT _id, pword, cword, score, basescore FROM related WHERE pword = ? AND cword = ? LIMIT 1"
-                args = [pword, cword]
-            } else {
-                sql = "SELECT _id, pword, cword, score, basescore FROM related WHERE pword = ? AND cword IS NULL LIMIT 1"
-                args = [pword]
-            }
-            guard let row = try Row.fetchOne(db, sql: sql, arguments: args) else { return nil }
-            var m = Mapping(id:        (row.optInt64("_id") ?? 0),
-                            code:      "",
-                            word:      (row.optString("cword") ?? ""),
-                            score:     (row.optInt("score") ?? 0),
-                            baseScore: (row.optInt("basescore") ?? 0))
-            m.recordType = Mapping.RecordType.relatedPhrase
-            return m
+            try isRelatedPhraseExist(pword, cword, db: db)
         }
     }
 
+    /// Inner lookup that works on an already-open Database connection (avoids GRDB reentrance).
+    private func isRelatedPhraseExist(_ pword: String, _ cword: String?, db: Database) throws -> Mapping? {
+        let sql: String
+        let args: StatementArguments
+        if let cword = cword, !cword.isEmpty {
+            sql = "SELECT _id, pword, cword, score, basescore FROM related WHERE pword = ? AND cword = ? LIMIT 1"
+            args = [pword, cword]
+        } else {
+            sql = "SELECT _id, pword, cword, score, basescore FROM related WHERE pword = ? AND cword IS NULL LIMIT 1"
+            args = [pword]
+        }
+        guard let row = try Row.fetchOne(db, sql: sql, arguments: args) else { return nil }
+        var m = Mapping(id:        (row.optInt64("_id") ?? 0),
+                        code:      "",
+                        word:      (row.optString("cword") ?? ""),
+                        score:     (row.optInt("score") ?? 0),
+                        baseScore: (row.optInt("basescore") ?? 0))
+        m.recordType = Mapping.RecordType.relatedPhrase
+        return m
+    }
+
     /// Add or update a pword→cword related phrase. Returns new score or -1.
+    /// Mirrors Android addOrUpdateRelatedPhraseRecord(pword, cword) branch-for-branch.
     @discardableResult
-    func addOrUpdateRelatedPhraseRecord(_ pword: String, _ cword: String) -> Int {
+    func addOrUpdateRelatedPhraseRecord(_ pword: String, _ cword: String?) -> Int {
         guard !checkDBConnection() else { return -1 }
-        guard !pword.isEmpty else { return -1 }
-        // Respect learnRelatedWords preference (mirrors Android getLearnRelatedWord())
-        guard learnRelatedWords else { return -1 }
-        // Filter Chinese punctuation from related-phrase learning (mirrors ChineseSymbol filter)
-        guard !LimeDB.chineseSymbolsToFilter.contains(pword),
-              !LimeDB.chineseSymbolsToFilter.contains(cword) else { return -1 }
+        // Android line 1086: bail only when cword is non-null AND learning is disabled.
+        if !learnRelatedWords && cword != nil { return -1 }
+        // Android lines 1089-1103: strip Chinese symbols from cword (not pword) when learning is on.
+        var effectiveCword = cword
+        if learnRelatedWords {
+            if var cw = cword {
+                for s in LimeDB.chineseSymbolsToFilter {
+                    cw = cw.replacingOccurrences(of: s, with: "")
+                }
+                if cw.isEmpty { return -1 }
+                effectiveCword = cw
+            }
+        }
         var score = 1
         try? dbQueue.write { db in
-            let existing = try Row.fetchOne(db,
-                sql: "SELECT _id, score FROM related WHERE pword = ? AND cword = ?",
-                arguments: [pword, cword])
-            if let ex = existing {
-                let rowId = ex["_id"] as Int64? ?? 0
+            let munit = try isRelatedPhraseExist(pword, effectiveCword, db: db)
+            if let m = munit {
+                let rowId = m.id
                 let cached = relatedScore[rowId]
-                score = (cached ?? (ex["score"] as Int? ?? 0)) + 1
+                score = (cached ?? m.score) + 1
                 relatedScore[rowId] = score
                 try db.execute(sql: "UPDATE related SET score = ? WHERE _id = ?",
                                arguments: [score, rowId])
             } else {
                 try db.execute(
-                    sql: "INSERT INTO related (pword, cword, basescore, score) VALUES (?, ?, 0, 1)",
-                    arguments: [pword, cword])
+                    sql: "INSERT INTO related (pword, cword, score) VALUES (?, ?, ?)",
+                    arguments: [pword, effectiveCword, score])
             }
         }
         return score
@@ -931,24 +1028,44 @@ final class LimeDB {
     }
 
     /// Returns all registered IMs from the im table.
-    /// iOS uses a structured schema (one row per IM, title = display label, keyboard = keyboard ID)
-    /// written by seedDefaultIMs() and registerIM(). Android's key-value schema is not used.
+    /// The im table uses Android's key-value schema. Each IM has a seed/registration row
+    /// (title = display label) plus key-value rows (title = field name, desc = value).
+    /// Keyboard code is stored in the key-value row where title="keyboard", keyboard=code.
+    /// Enabled state is stored in the key-value row where title="disable", desc="true"/"false".
     func getAllImConfigs() throws -> [ImConfig] {
-        let rows = getImConfigList(nil, nil)
-        // Structured rows have a non-empty keyboard column; skip any legacy key-value rows.
-        return rows.compactMap { row in
-            guard !row.code.isEmpty, !row.keyboard.isEmpty else { return nil }
-            return ImConfig(
-                id:                  Int64(row.id),
-                imName:              row.code,
-                tableNick:           row.code,
-                label:               row.title,   // title = display name in iOS structured format
-                keyboardId:          row.keyboard,
-                keyboardLandscapeId: row.keyboard,
-                enabled:             !row.disable,
-                sortOrder:           row.id
-            )
+        // Known key-value field names — rows with these titles are config entries, not IM seed rows.
+        let kvFields: Set<String> = ["keyboard","disable","selkey","endkey","spacestyle",
+                                     "imkeys","imkeynames","name","label"]
+        let allRows = getImConfigList(nil, nil)
+
+        // Group all rows by IM code.
+        var grouped: [String: [LimeImConfigRow]] = [:]
+        for row in allRows where !row.code.isEmpty {
+            grouped[row.code, default: []].append(row)
         }
+
+        return grouped.compactMap { (code, rows) -> ImConfig? in
+            // Seed/registration row: title is the display label, not a config field name.
+            guard let seedRow = rows.first(where: { !kvFields.contains($0.title) && !$0.title.isEmpty })
+            else { return nil }
+            // Keyboard code: from key-value row (title="keyboard"), fall back to seed row column.
+            let kbRow = rows.first(where: { $0.title == "keyboard" })
+            let keyboardId = kbRow?.keyboard.isEmpty == false ? kbRow!.keyboard : seedRow.keyboard
+            guard !keyboardId.isEmpty else { return nil }
+            // Enabled state: from key-value row (title="disable", desc="true"/"false").
+            let disableStr = rows.first(where: { $0.title == "disable" })?.desc ?? "false"
+            let enabled = disableStr != "true"
+            return ImConfig(
+                id:                  Int64(seedRow.id),
+                imName:              code,
+                tableNick:           code,
+                label:               seedRow.title,
+                keyboardId:          keyboardId,
+                keyboardLandscapeId: keyboardId,
+                enabled:             enabled,
+                sortOrder:           seedRow.id
+            )
+        }.sorted { $0.sortOrder < $1.sortOrder }
     }
 
     // MARK: - Keyboard Config
@@ -1077,6 +1194,7 @@ final class LimeDB {
 
     // MARK: - IM Keyboard Assignment
 
+    /// Mirrors Android setIMConfigKeyboard: remove existing key-value row then insert new one.
     func setIMConfigKeyboard(_ imCode: String, _ desc: String, _ keyboardCode: String) {
         guard !checkDBConnection() else { return }
         removeImConfig(imCode, "keyboard")
@@ -1092,7 +1210,6 @@ final class LimeDB {
     }
 
     /// Mirrors Android setImConfig(imCode, "disable", "true"/"false").
-    /// The im table is a key-value store — there is no disable column.
     func updateIMEnabled(imName: String, enabled: Bool) {
         setImConfig(imName, "disable", enabled ? "false" : "true")
     }
@@ -1282,15 +1399,40 @@ final class LimeDB {
     func keyToKeyName(_ code: String?, _ table: String, _ composingText: Bool) -> String {
         guard let code = code else { return "" }
         if composingText && code.count > LimeDB.COMPOSING_CODE_LENGTH_LIMIT { return code }
-        let keyTable = table
+
+        let kbType = phoneticKeyboardType
+        // For ET26/HSU composing display, use a keyboard-type-specific cache slot
+        // so the dual-map tables don't collide with the standard BPMF map.
+        var keyTable = table
+        if composingText && (table == "phonetic" || table == "et41" || table == "et_41" || table == "eten") {
+            if kbType.hasPrefix("eten26") || kbType == "et26" || kbType.hasPrefix("hsu") ||
+               kbType == "et_41" || kbType == "eten" {
+                keyTable = table + kbType
+            }
+        }
+
         // Load key map if not cached
         if keysDefMap[keyTable] == nil || keysDefMap[keyTable]!.isEmpty {
             let keyString: String
             let keynameString: String
+            var finalKeynameString: String? = nil
             switch table {
             case "phonetic", "et41", "et_41", "eten":
-                keyString = LimeDB.BPMF_KEY
-                keynameString = LimeDB.BPMF_CHAR
+                if composingText && (kbType.hasPrefix("eten26") || kbType == "et26") {
+                    keyString          = LimeDB.ETEN26_KEY
+                    keynameString      = LimeDB.ETEN26_CHAR_INITIAL
+                    finalKeynameString = LimeDB.ETEN26_CHAR_FINAL
+                } else if composingText && kbType.hasPrefix("hsu") {
+                    keyString          = LimeDB.HSU_KEY
+                    keynameString      = LimeDB.HSU_CHAR_INITIAL
+                    finalKeynameString = LimeDB.HSU_CHAR_FINAL
+                } else if composingText && (kbType == "et_41" || kbType == "eten") {
+                    keyString     = LimeDB.ETEN_KEY
+                    keynameString = LimeDB.ETEN_CHAR
+                } else {
+                    keyString     = LimeDB.BPMF_KEY
+                    keynameString = LimeDB.BPMF_CHAR
+                }
             case "cj", "scj", "cj5", "ecj":
                 keyString = LimeDB.CJ_KEY
                 keynameString = LimeDB.CJ_CHAR
@@ -1326,8 +1468,21 @@ final class LimeDB {
             }
             km["|"] = "|"
             keysDefMap[keyTable] = km
+            // Build and cache final map for dual-map keyboards
+            if let fns = finalKeynameString {
+                var fkm: [String: String] = [:]
+                let fnames = fns.components(separatedBy: "|")
+                for (i, c) in chars.enumerated() {
+                    if i < fnames.count { fkm[String(c)] = fnames[i] }
+                }
+                fkm["|"] = "|"
+                keysDefMap["final_" + keyTable] = fkm
+            }
         }
         guard let keyMap = keysDefMap[keyTable], !keyMap.isEmpty else { return code }
+        if let finalMap = keysDefMap["final_" + keyTable] {
+            return buildKeyNameDual(code: code, initialMap: keyMap, finalMap: finalMap, kbType: kbType)
+        }
         return buildKeyName(code: code, keyMap: keyMap)
     }
 
@@ -1339,6 +1494,44 @@ final class LimeDB {
         return result.isEmpty ? code : result
     }
 
+    /// Position-dependent dual-map key name conversion for ET26/HSU composing display.
+    /// Mirrors Android keyToKeyName() lines 1677–1726.
+    private func buildKeyNameDual(code: String,
+                                   initialMap: [String: String],
+                                   finalMap: [String: String],
+                                   kbType: String) -> String {
+        if code.count == 1 {
+            // ET26: only "always initial" keys (qwdfjk) show a name for single char
+            // HSU: always use initial map for single char
+            let useInitial: Bool
+            if kbType.hasPrefix("hsu") {
+                useInitial = true
+            } else {
+                useInitial = LimeDB.ETEN26_ALWAYS_INITIAL_CHARS.contains(code)
+            }
+            guard useInitial, let c = initialMap[code] else { return code }
+            return c.trimmingCharacters(in: .whitespaces)
+        }
+        // Multi-char: position 0 = initial map; position i > 0 = check trigger regex
+        let triggerRegex = kbType.hasPrefix("hsu") ? LimeDB.HSU_INITIAL_TRIGGER_REGEX
+                                                    : LimeDB.ETEN26_INITIAL_TRIGGER_REGEX
+        var result = ""
+        let codeChars = Array(code)
+        for i in codeChars.indices {
+            let s = String(codeChars[i])
+            let c: String?
+            if i == 0 {
+                c = initialMap[s]
+            } else {
+                let prefix = String(code.prefix(i))
+                let atInitial = prefix.range(of: triggerRegex, options: .regularExpression) != nil
+                c = atInitial ? initialMap[s] : finalMap[s]
+            }
+            if let c { result += c.trimmingCharacters(in: .whitespaces) }
+        }
+        return result.isEmpty ? code : result
+    }
+
     // MARK: - Code Remapping (spec §5 preProcessingRemappingCode)
 
     // Shifted-key remap for standard Phonetic / Dayi / EZ — from spec §5
@@ -1346,7 +1539,8 @@ final class LimeDB {
     private static let SHIFTED_NUMERIC_KEY    = "!@#$%^&*()"
     private static let SHIFTED_NUMERIC_REMAP  = "1234567890"
     // Shift+symbol keys for phonetic: "<>?_:+\"" → ",./-;='"
-    private static let SHIFTED_SYMBOL_KEY     = "<>?_:\"+\""
+    // Mirrors Android: SHIFTED_SYMBOL_KEY = "<>?_:+\"" (7 chars: < > ? _ : + ")
+    private static let SHIFTED_SYMBOL_KEY     = "<>?_:+\""
     private static let SHIFTED_SYMBOL_REMAP   = ",./-;='"
     // Array IM: shifted-symbol-only remap (no numeric remap)
     // (uses same SHIFTED_SYMBOL_KEY → SHIFTED_SYMBOL_REMAP tables as phonetic)
@@ -1355,6 +1549,9 @@ final class LimeDB {
     // Values ported from LimeDB.java ETEN_KEY / ETEN_KEY_REMAP.
     private static let ETEN_KEY       = "abcdefghijklmnopqrstuvwxyz12347890-=;',./!@#$&*()<>?_+:\""
     private static let ETEN_KEY_REMAP = "81v2uzrc9bdxasiqoknwme,j.l7634f0p;/-yh5tg7634f0p;5tg/yh-"
+    private static let ETEN_CHAR      =
+        "ㄚ|ㄅ|ㄒ|ㄉ|ㄧ|ㄈ|ㄐ|ㄏ|ㄞ|ㄖ|ㄎ|ㄌ|ㄇ|ㄋ|ㄛ|ㄆ|ㄟ|ㄜ|ㄙ|ㄊ|ㄩ|ㄍ|ㄝ|ㄨ|ㄡ|ㄠ" +
+        "|˙|ˊ|ˇ|ˋ|ㄑ|ㄢ|ㄣ|ㄤ|ㄥ|ㄦ|ㄗ|ㄘ|ㄓ|ㄔ|ㄕ|˙|ˊ|ˇ|ˋ|ㄑ|ㄢ|ㄣ|ㄤ|ㄓ|ㄔ|ㄕ|ㄥ|ㄦ|ㄗ|ㄘ"
 
     // ETEN-26 dual-remap: 26-key phonetic, position-dependent.
     // Values ported from LimeDB.java ETEN26_KEY / ETEN26_KEY_REMAP_INITIAL / ETEN26_KEY_REMAP_FINAL.
@@ -1382,6 +1579,16 @@ final class LimeDB {
     private static let HSU_DUALKEY       = "vbf45x/uhecsad763"
     private static let HSU_DUALKEY_REMAP = "g8t5r/-,okip0;n2z"
 
+    // ETEN26 / HSU composing display char tables (mirrors Android ETEN26_CHAR_INITIAL/FINAL, HSU_CHAR_INITIAL/FINAL)
+    private static let ETEN26_CHAR_INITIAL =
+        "(ㄗ/ㄟ)|ㄚ|ㄠ|(ㄘ/ㄝ)|ㄙ|ㄨ|ㄧ|ㄉ|(ㄕ/ㄒ)|ㄜ|ㄈ|(ㄍ/ㄑ)|(ㄊ/ㄤ)|(ㄐ/ㄓ)|ㄅ|ㄔ|(ㄏ/ㄦ)|(ㄋ/ㄣ)|ㄩ|ㄖ|(ㄇ/ㄢ)|ㄞ|ㄎ|ㄛ|(ㄌ/ㄥ)|(ㄆ/ㄡ)|，|。"
+    private static let ETEN26_CHAR_FINAL =
+        "(ㄗ/ㄟ)|ㄚ|ㄠ|(ㄘ/ㄝ)|ㄙ|ㄨ|ㄧ|˙|(ㄕ/ㄒ)|ㄜ|ˊ|(ㄍ/ㄑ)|(ㄊ/ㄤ)|(ㄐ/ㄓ)|ㄅ|ㄔ|(ㄏ/ㄦ)|(ㄋ/ㄣ)|ㄩ|ˇ|(ㄇ/ㄢ)|ㄞ|ˋ|ㄛ|(ㄌ/ㄥ)|(ㄆ/ㄡ)|，|。"
+    private static let HSU_CHAR_INITIAL =
+        "(ㄘ/ㄟ)|ㄗ|ㄠ|ㄙ|ㄨ|(ㄧ/ㄝ)|ㄉ|(ㄕ/ㄒ)|ㄖ|ㄈ|(ㄔ/ㄑ)|ㄊ|(ㄍ/ㄜ)|ㄅ|ㄚ|(ㄏ/ㄛ)|(ㄋ/ㄣ)|ㄩ|(ㄐ/ㄓ)|(ㄇ/ㄢ)|ㄞ|(ㄎ/ㄤ)|ㄡ|(ㄌ/ㄥ/ㄦ)|ㄆ|q|，|。"
+    private static let HSU_CHAR_FINAL =
+        "(ㄘ/ㄟ)|ㄗ|ㄠ|(ㄙ/˙)|ㄨ|(ㄧ/ㄝ)|(ㄉ/ˊ)|(ㄕ/ㄒ)|ㄖ|(ㄈ/ˇ)|(ㄔ/ㄑ)|ㄊ|(ㄍ/ㄜ)|ㄅ|ㄚ|(ㄏ/ㄛ)|(ㄋ/ㄣ)|ㄩ|(ㄐ/ㄓ/ˋ)|(ㄇ/ㄢ)|ㄞ|(ㄎ/ㄤ)|ㄡ|(ㄥ/ㄦ)|ㄆ|q|，|。"
+
     /// Converts a raw input code string to the canonical form expected by the current
     /// phonetic table, based on `phoneticKeyboardType`. Called in getMappingByCode()
     /// for phonetic-family IMs. (spec §5)
@@ -1395,17 +1602,25 @@ final class LimeDB {
         // Apply shifted-key remap for phonetic / dayi / ez / array IMs
         let shiftedCode = applyShiftedKeyRemap(code, tableName: table)
 
-        switch kbType {
-        case "et_41", "eten":
+        // Phonetic key remapping (ETEN / HSU etc.) only applies when the *current table*
+        // is a phonetic-family IM. Without this guard, a saved phoneticKeyboardType of
+        // e.g. "eten26" would be applied to Dayi/Array codes and corrupt the query.
+        let isPhoneticFamily = table.hasPrefix("phonetic") || table.hasPrefix("et") ||
+                               table.hasPrefix("hsu") || table == "ez"
+        guard isPhoneticFamily else { return shiftedCode }
+
+        // Match Android's startsWith-based branching so the `_symbol` variants
+        // (eten26_symbol, hsu_symbol) route to the same dual-map remap as their
+        // non-`_symbol` counterparts.
+        if kbType == "et_41" || kbType == "eten" {
             // ETEN 41-key: single remap table
             let map = buildOrGetSingleMap(
                 cacheKey: cacheKey,
                 keys: LimeDB.ETEN_KEY,
                 remap: LimeDB.ETEN_KEY_REMAP)
             return applyCharMap(shiftedCode, map: map)
-
-        case "et26", "eten26":
-            // ETEN 26-key: dual remap with position detection
+        } else if kbType.hasPrefix("eten26") || kbType == "et26" {
+            // ETEN 26-key (incl. eten26_symbol): dual remap with position detection
             let initMap  = buildOrGetDualMap(cacheKey: cacheKey + "|I",
                                               keys: LimeDB.ETEN26_KEY,
                                               remap: LimeDB.ETEN26_REMAP_INITIAL,
@@ -1418,9 +1633,8 @@ final class LimeDB {
                                   initial: initMap, final: finalMap,
                                   alwaysInitial: LimeDB.ETEN26_ALWAYS_INITIAL_CHARS,
                                   triggerRegex: LimeDB.ETEN26_INITIAL_TRIGGER_REGEX)
-
-        case "hsu":
-            // HSU: dual remap with position detection
+        } else if kbType.hasPrefix("hsu") {
+            // HSU (incl. hsu_symbol): dual remap with position detection
             let initMap  = buildOrGetDualMap(cacheKey: cacheKey + "|I",
                                               keys: LimeDB.HSU_KEY,
                                               remap: LimeDB.HSU_REMAP_INITIAL,
@@ -1433,8 +1647,7 @@ final class LimeDB {
                                   initial: initMap, final: finalMap,
                                   alwaysInitial: LimeDB.HSU_ALWAYS_INITIAL_CHARS,
                                   triggerRegex: LimeDB.HSU_INITIAL_TRIGGER_REGEX)
-
-        default:
+        } else {
             // Standard phonetic: shifted-key remap only
             return shiftedCode
         }
@@ -1578,20 +1791,19 @@ final class LimeDB {
         let kbType = phoneticKeyboardType
         let mapCacheKey = table + kbType
 
-        // Build dual map if not cached
+        // Build dual map if not cached. Match Android's startsWith-based routing so
+        // `eten26_symbol` / `hsu_symbol` receive the same dual-code expansion as
+        // `eten26` / `hsu`.
         if keysDualMap[mapCacheKey] == nil {
             var dualKey = ""
             var dualKeyRemap = ""
             if table == "phonetic" {
-                switch kbType {
-                case "et26", "eten26":
+                if kbType.hasPrefix("eten26") || kbType == "et26" {
                     dualKey = LimeDB.ETEN26_DUALKEY
                     dualKeyRemap = LimeDB.ETEN26_DUALKEY_REMAP
-                case "hsu":
+                } else if kbType.hasPrefix("hsu") {
                     dualKey = LimeDB.HSU_DUALKEY
                     dualKeyRemap = LimeDB.HSU_DUALKEY_REMAP
-                default:
-                    break
                 }
             }
             var map: [Character: Character] = [:]
@@ -2017,27 +2229,80 @@ final class LimeDB {
         importDb(sourceFile: sourceFile, tableNames: [], overwriteExisting: true, includeRelated: true)
     }
 
-    // MARK: - Import: ATTACH DATABASE (for SearchServer compatibility)
+    // MARK: - Ensure mapping table exists
+
+    /// Creates the standard (code, word, score, basescore, code3r) mapping table if missing.
+    /// The bundled lime.db ships with all mapping tables as empty shells, but a freshly
+    /// created App Group DB only has im/related/keyboard/custom from migrate(), so an
+    /// import targeting e.g. "dayi" hits "no such table: dayi" on the leading DELETE/INSERT.
+    /// Also covers per-IM `_user` tables (same schema).
+    private func ensureMappingTable(_ tableName: String) throws {
+        guard isValidTableName(tableName) else {
+            throw LimeDBError.invalidTableName(tableName)
+        }
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS \(tableName) (
+                    _id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code      TEXT,
+                    word      TEXT,
+                    score     INTEGER DEFAULT 0,
+                    basescore INTEGER DEFAULT 0,
+                    code3r    TEXT
+                )
+            """)
+        }
+    }
+
+    // MARK: - Import: separate-connection copy (was ATTACH DATABASE)
 
     func importFromAttachedDB(sourcePath: String, tableName: String) throws {
         guard isValidTableName(tableName) else { throw LimeDBError.invalidTableName(tableName) }
-        try dbQueue.write { db in
-            try db.execute(sql: "ATTACH DATABASE ? AS src", arguments: [sourcePath])
-            defer { try? db.execute(sql: "DETACH DATABASE src") }
-            try db.execute(sql: "DELETE FROM \(tableName)")
-            let srcCols = try Row.fetchAll(db, sql: "PRAGMA src.table_info(\(tableName))").map { $0["name"] as String? ?? "" }
-            let hasCode3r  = srcCols.contains("code3r")
-            let hasBasescore = srcCols.contains("basescore")
-            var selCols = ["code", "word", "COALESCE(score, 0) AS score"]
-            var insCols = ["code", "word", "score"]
-            if hasBasescore { selCols.append("COALESCE(basescore, 0) AS basescore"); insCols.append("basescore") }
-            if hasCode3r   { selCols.append("code3r");  insCols.append("code3r") }
-            try db.execute(sql: """
-                INSERT INTO \(tableName) (\(insCols.joined(separator: ", ")))
+        try ensureMappingTable(tableName)
+        // Open source as a separate read-only DatabaseQueue instead of using ATTACH DATABASE.
+        // GRDB caches compiled statements that reference "src.*"; SQLite refuses DETACH while
+        // those statements are live (even after execution), producing "database src is locked".
+        // A separate connection avoids the issue entirely.
+        var srcConfig = Configuration()
+        srcConfig.readonly = true
+        let srcQueue = try DatabaseQueue(path: sourcePath, configuration: srcConfig)
+
+        // Detect available columns in the source table
+        let srcCols = try srcQueue.read { db in
+            try Row.fetchAll(db, sql: "PRAGMA table_info(\(tableName))").map { $0["name"] as String? ?? "" }
+        }
+        let hasCode3r    = srcCols.contains("code3r")
+        let hasBasescore = srcCols.contains("basescore")
+
+        var selCols = ["code", "word", "COALESCE(score, 0) AS score"]
+        var insCols = ["code", "word", "score"]
+        if hasBasescore { selCols.append("COALESCE(basescore, 0) AS basescore"); insCols.append("basescore") }
+        if hasCode3r   { selCols.append("code3r");  insCols.append("code3r") }
+
+        // Fetch source rows into memory (array10 ≈ 32 K rows, ~1–2 MB — acceptable)
+        let srcRows = try srcQueue.read { db in
+            try Row.fetchAll(db, sql: """
                 SELECT \(selCols.joined(separator: ", "))
-                FROM src.\(tableName)
+                FROM \(tableName)
                 WHERE code IS NOT NULL AND word IS NOT NULL
             """)
+        }
+
+        // Write into the main DB in a single transaction
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM \(tableName)")
+            let placeholders = insCols.map { _ in "?" }.joined(separator: ", ")
+            let insertSQL = "INSERT INTO \(tableName) (\(insCols.joined(separator: ", "))) VALUES (\(placeholders))"
+            for row in srcRows {
+                var args: [DatabaseValueConvertible?] = [
+                    row["code"] as String?,
+                    row["word"] as String?,
+                    row["score"] as Int? ?? 0
+                ]
+                if hasBasescore { args.append(row["basescore"] as Int? ?? 0) }
+                if hasCode3r   { args.append(row["code3r"] as String?) }
+                try db.execute(sql: insertSQL, arguments: StatementArguments(args))
+            }
         }
     }
 
@@ -2103,6 +2368,7 @@ final class LimeDB {
     func importTxtFile(at path: String, tableName: String,
                        progress: ((Int) -> Void)? = nil) throws {
         guard isValidTableName(tableName) else { throw LimeDBError.invalidTableName(tableName) }
+        try ensureMappingTable(tableName)
         guard let reader = StreamReader(path: path) else { throw LimeDBError.fileNotFound(path) }
         importCancelled = false
 
@@ -2202,44 +2468,8 @@ final class LimeDB {
         }
     }
 
-    func seedDefaultIMs() throws {
-        // Seed the im table for any IM data table that has rows but no im entry yet.
-        let knownIMs: [(name: String, title: String, keyboard: String)] = [
-            ("phonetic", "注音",     "lime_phonetic"),
-            ("dayi",     "大易",     "lime_dayi"),
-            ("cj",       "倉頡",     "lime_cj"),
-            ("cj5",      "倉頡五代", "lime_cj"),
-            ("array",    "行列",     "lime_array"),
-            ("array10",  "行列十",   "lime_array"),
-            ("wb",       "筆順五碼", "lime_wb"),
-            ("hs",       "許氏",     "lime_hs"),
-            ("ez",       "輕鬆",     "lime_ez"),
-            ("scj",      "速成",     "lime_cj"),
-            ("ecj",      "易倉頡",   "lime_cj"),
-        ]
-        try dbQueue.write { db in
-            for im in knownIMs {
-                guard let cnt = try? Int.fetchOne(db,
-                    sql: "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-                    arguments: [im.name]), cnt > 0 else { continue }
-                let hasData = (try? Int.fetchOne(db,
-                    sql: "SELECT COUNT(*) FROM \(im.name)") ?? 0) ?? 0 > 0
-                guard hasData else { continue }
-                let exists = (try? Int.fetchOne(db,
-                    sql: "SELECT COUNT(*) FROM im WHERE code = ?",
-                    arguments: [im.name]) ?? 0) ?? 0 > 0
-                guard !exists else { continue }
-                try db.execute(sql: """
-                    INSERT INTO im (code, title, desc, keyboard, disable, selkey, endkey, spacestyle)
-                    VALUES (?, ?, '', ?, 0, '', '', '')
-                """, arguments: [im.name, im.title, im.keyboard])
-            }
-        }
-    }
-
     /// Registers the "custom" (自建) IM in the im table if it is not already present.
-    /// Unlike seedDefaultIMs (which only seeds IMs with data), custom IM is always seeded
-    /// on explicit user action — even when the custom table is empty.
+    /// Always seeded on explicit user action — even when the custom table is empty.
     func seedCustomIM() throws {
         try dbQueue.write { db in
             let exists = (try? Int.fetchOne(db,

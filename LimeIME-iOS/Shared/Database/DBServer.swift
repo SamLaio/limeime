@@ -23,8 +23,8 @@ final class DBServer {
     private static let appGroupID      = "group.net.toload.limeime"
     static let databaseName            = "lime.db"
     static let databaseJournal         = "lime.db-journal"
-    static let sharedPrefsBackupName   = "sharedprefs_backup.plist"
-    static let databaseBackupName      = "lime_backup.zip"
+    static let sharedPrefsBackupName   = "shared_prefs.bak"
+    static let databaseBackupName      = "backup.zip"
     static let databaseExt             = ".db"
     static let dbTableRelated          = "related"
     static let bufferSize4KB: Int      = 4096
@@ -372,6 +372,53 @@ final class DBServer {
         } catch {
             print("[DBServer] restoreDatabase: extract failed — \(error)")
             try? FileManager.default.removeItem(at: tempDBPath)
+        }
+    }
+
+    // MARK: - Restore bundled DB (factory reset — copies lime.db from app bundle to App Group)
+    func restoreBundledDatabase() throws {
+        guard let bundledURL = Bundle.main.url(forResource: "lime", withExtension: "db") else {
+            throw DBServerError.fileNotFound("lime.db (bundled)")
+        }
+        guard let ds = datasource else { throw DBServerError.datasourceUnavailable }
+
+        let dataDir = dataDirURL
+        let dbURL = dataDir.appendingPathComponent(DBServer.databaseName)
+        let tempDBPath = dataDir.appendingPathComponent(DBServer.databaseName + ".restore_tmp")
+
+        ds.holdDBConnection()
+        closeDatabase()
+
+        var restoreSucceeded = false
+        defer {
+            ds.unHoldDBConnection()
+            // Release old datasource — GRDB checkpoints its WAL into the OLD lime.db.
+            datasource = nil
+            if restoreSucceeded {
+                try? FileManager.default.removeItem(at: dbURL)
+                try? FileManager.default.removeItem(at: dataDir.appendingPathComponent("lime.db-wal"))
+                try? FileManager.default.removeItem(at: dataDir.appendingPathComponent("lime.db-shm"))
+                if FileManager.default.fileExists(atPath: tempDBPath.path) {
+                    try? FileManager.default.moveItem(at: tempDBPath, to: dbURL)
+                }
+            }
+            print("[DBServer] restoreBundledDatabase defer: reopening at \(dbURL.path), restoreSucceeded=\(restoreSucceeded)")
+            datasource = try? LimeDB(path: dbURL.path)
+            if restoreSucceeded {
+                datasource?.checkAndUpdateRelatedTable()
+            }
+        }
+
+        try? FileManager.default.removeItem(at: tempDBPath)
+        do {
+            try FileManager.default.copyItem(at: bundledURL, to: tempDBPath)
+            try? FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.complete], ofItemAtPath: tempDBPath.path)
+            restoreSucceeded = true
+        } catch {
+            print("[DBServer] restoreBundledDatabase: copy failed — \(error)")
+            try? FileManager.default.removeItem(at: tempDBPath)
+            throw error
         }
     }
 
@@ -779,11 +826,6 @@ final class DBServer {
     func exportDB(to destPath: String) throws {
         guard let ds = datasource else { throw DBServerError.datasourceUnavailable }
         try ds.exportDB(to: destPath)
-    }
-
-    func seedDefaultIMs() throws {
-        guard let ds = datasource else { throw DBServerError.datasourceUnavailable }
-        try ds.seedDefaultIMs()
     }
 
     func tableHasData(_ name: String) -> Bool {

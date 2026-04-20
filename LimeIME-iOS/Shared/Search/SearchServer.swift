@@ -6,7 +6,7 @@
 
 final class SearchServer {
 
-    private let db: LimeDB
+    private let db: any LimeDBProtocol
     private var currentTableName: String = ""
 
     // MARK: - IM Capability Flags (spec §13 setTableName)
@@ -18,6 +18,28 @@ final class SearchServer {
     /// When true, candidates are ordered by (score + basescore) DESC (default DB behaviour).
     /// When false, candidates are returned in DB insertion order (code-alphabetical).
     var sortSuggestions: Bool = true
+
+    // MARK: - Prefs (spec §15) — pushed by KeyboardViewController after loadSettings()
+    /// Gates makeRunTimeSuggestion (spec §15 smart_chinese_input).
+    var smartChineseInput: Bool = true
+    /// Gates learnRelatedPhrase (spec §15 candidate_suggestion).
+    var candidateSuggestion: Bool = true
+    /// Gates LD phrase learning trigger inside learnRelatedPhrase (spec §15 learn_phrase).
+    var learnPhrasePref: Bool = true
+    /// When false, similar-code candidates are suppressed (spec §15 similiar_enable).
+    var similiarEnable: Bool = true
+    /// Max similar-code candidates per query (spec §15 similiar_list).
+    var similiarList: Int = 20
+
+    /// Sync pref-driven config to LimeDB under cacheLock.
+    /// Call this after setting all pref vars (avoids ordering bugs and threading races).
+    func applyPrefsToDatabase() {
+        cacheLock.lock()
+        db.learnRelatedWords        = candidateSuggestion
+        db.similarCodeCandidatesCap = similiarEnable ? similiarList : 0
+        db.sortSuggestions          = sortSuggestions   // mirrors Android LimeDB.sort from getSortSuggestions()
+        cacheLock.unlock()
+    }
 
     // MARK: - Caches
     private var mappingCache:   [String: [Mapping]] = [:]
@@ -32,14 +54,13 @@ final class SearchServer {
     private let minScoreThreshold        = 120
 
     // MARK: - Learning State (spec §9)
-    private var lastCommittedMapping: Mapping? = nil   // previous commit for RP learning
     private var ldPhraseList:      [Mapping]    = []   // current accumulating LD phrase
     private var ldPhraseListArray: [[Mapping]]  = []   // completed LD phrases pending write
     private let learnLock = NSLock()
 
     private var prefetchThread: Thread?
 
-    init(db: LimeDB) {
+    init(db: any LimeDBProtocol) {
         self.db = db
     }
 
@@ -61,6 +82,10 @@ final class SearchServer {
         db.setTableName(name)
         guard name != currentTableName else { return }
         currentTableName = name
+        // mirrors Android: if (tablename.startsWith(LIME.DB_TABLE_CJ)) maxCodeLength = 5
+        if name.hasPrefix("cj") {
+            maxCodeLength = 5
+        }
         clearAllCaches()
         triggerPrefetch()
     }
@@ -68,11 +93,12 @@ final class SearchServer {
     /// Backwards-compatible alias used by database setup.
     func setCurrentIM(tableName: String) { setTableName(tableName) }
 
-    /// True if current table is a phonetic (tone-based) IM — enables code3r fallback.
-    /// Note: Dayi is shape-based, not phonetic — excluded (L2 fix).
+    /// True if current table is the phonetic (tone-based) IM.
+    /// Mirrors Android: tablename.equals(LIME.DB_TABLE_PHONETIC) — exact equality only.
+    /// ETEN/HSU variants use sub-type remapping within the same "phonetic" table;
+    /// they are not separate top-level tables, so we do not broaden this check.
     var isPhoneticTable: Bool {
-        currentTableName.hasPrefix("phonetic") || currentTableName.hasPrefix("eten") ||
-        currentTableName.hasPrefix("hsu")
+        currentTableName == "phonetic"
     }
 
     /// True if current table is Stroke5 / WB — enforces 5-character code limit (spec §5).
@@ -96,16 +122,61 @@ final class SearchServer {
 
     /// Returns the code length consumed by the selected mapping in the composing buffer.
     /// For phonetic IMs, strips tone symbols [3467 space] to find the actual boundary.
+    /// Also prunes suggestionLoL/bestSuggestionStack and triggers LD learning for runtime phrases.
+    /// Mirrors Android SearchServer.getRealCodeLength() lines 1024-1108.
     func getRealCodeLength(mapping: Mapping, composing: String) -> Int {
         let mappingCode = mapping.code
-        guard composing.count > mappingCode.count else { return min(mappingCode.count, composing.count) }
+        var realCodeLen = mappingCode.count
         if isPhoneticTable {
             let toneChars: Set<Character> = ["3", "4", "6", "7", " "]
-            // Stripped code length gives the base length without tone markers
-            let stripped = mappingCode.filter { !toneChars.contains($0) }
-            return max(stripped.count, 1)
+            let noToneCode = mappingCode.filter { !toneChars.contains($0) }
+            if mappingCode != noToneCode {
+                if !composing.hasPrefix(mappingCode) && composing.hasPrefix(noToneCode) {
+                    realCodeLen = noToneCode.count
+                } else {
+                    realCodeLen = composing.count // unexpected condition
+                }
+            } else {
+                realCodeLen = mappingCode.count
+            }
         }
-        return min(mappingCode.count, composing.count)
+        realCodeLen = min(realCodeLen, composing.count)
+        if realCodeLen < 1 { realCodeLen = 1 }
+
+        // Prune suggestionLoL and bestSuggestionStack: remove entries whose code length
+        // exceeds (currentCode.length - realCodeLen). Mirrors Android lines 1052-1072.
+        if realCodeLen < composing.count {
+            let maxAllowed = composing.count - realCodeLen
+            suggestionLock.lock()
+            suggestionLoL = suggestionLoL.compactMap { list in
+                let pruned = list.filter { $0.code.count <= maxAllowed }
+                return pruned.isEmpty ? nil : pruned
+            }
+            bestSuggestionStack = bestSuggestionStack.filter { $0.code.count <= maxAllowed }
+            suggestionLock.unlock()
+        }
+
+        // LD phrase learning for runtime-built phrase selection. Mirrors Android lines 1075-1103.
+        if mapping.isRuntimeBuiltPhraseRecord {
+            suggestionLock.lock()
+            let bestList = suggestionLoL.last ?? []
+            suggestionLock.unlock()
+            if !bestList.isEmpty {
+                let selectedWord = mapping.word
+                let tableName = currentTableName
+                DispatchQueue.global(qos: .background).async { [weak self] in
+                    guard let self = self else { return }
+                    for pair in bestList {
+                        guard selectedWord.hasPrefix(pair.mapping.word) else { continue }
+                        if pair.mapping.word.count > 8 { break }
+                        try? self.db.addOrUpdateMappingRecord(code: pair.code, word: pair.mapping.word, tableName: tableName)
+                        self.removeRemappedCodeCachedMappings(pair.code)
+                    }
+                }
+            }
+        }
+
+        return realCodeLen
     }
 
     // MARK: - Core Search (spec §13 getMappingByCode)
@@ -125,7 +196,6 @@ final class SearchServer {
             // Cache key uses the raw lowercased input (remap is deterministic, so this is stable).
             let cacheKey = "\(currentTableName):\(code.lowercased()):\(effectiveLimit)"
             cacheLock.lock()
-            if blacklistCache.contains(cacheKey) { cacheLock.unlock(); return [] }
             if let cached = mappingCache[cacheKey] { cacheLock.unlock(); return cached }
             cacheLock.unlock()
 
@@ -133,13 +203,14 @@ final class SearchServer {
                                                 getAllRecords: getAllRecords) ?? []
             let echo = Mapping(id: 0, code: code.lowercased(), word: code.lowercased(),
                                score: 0, baseScore: 0, recordType: Mapping.RecordType.composingCode)
-            let list = dbResults.isEmpty ? [] : ([echo] + dbResults)
-            cacheLock.lock()
-            evictIfNeeded()
-            if dbResults.isEmpty { blacklistCache.insert(cacheKey) }
-            else                  { mappingCache[cacheKey] = list  }
-            cacheLock.unlock()
-            return list
+            if dbResults.isEmpty { return [] }
+            // Run runtime suggestion (only when smart_chinese_input enabled — spec §15)
+            if smartChineseInput {
+                makeRunTimeSuggestion(code: code, completeCodeResultList: dbResults)
+            }
+            let finalList = assembleResultList(echo: echo, dbResults: dbResults)
+            cacheLock.lock(); evictIfNeeded(); mappingCache[cacheKey] = finalList; cacheLock.unlock()
+            return finalList
         }
 
         // Non-phonetic path: delegate to db.getMappingByCode(softKeyboard:getAllRecords:),
@@ -148,109 +219,294 @@ final class SearchServer {
         let cacheKey = "\(currentTableName):\(lowered):\(effectiveLimit)"
 
         cacheLock.lock()
-        if blacklistCache.contains(cacheKey) { cacheLock.unlock(); return [] }
         if let cached = mappingCache[cacheKey] { cacheLock.unlock(); return cached }
         cacheLock.unlock()
 
         var dbResults: [Mapping] = db.getMappingByCode(
             code, softKeyboard: isSoftKeyboard, getAllRecords: getAllRecords) ?? []
 
-        // Apply sortSuggestions: false → DB insertion order (by id) instead of score order (spec §15)
-        if !sortSuggestions {
-            dbResults.sort { $0.id < $1.id }
-        }
-
         // Prepend composing-code echo (spec §6 — index 0 always = typed code)
         let echo = Mapping(id: 0, code: code, word: code,
                            score: 0, baseScore: 0, recordType: Mapping.RecordType.composingCode)
-        let list = dbResults.isEmpty ? [] : ([echo] + dbResults)
+        if dbResults.isEmpty { return [] }
+        // Run runtime suggestion (only when smart_chinese_input enabled — spec §15)
+        if smartChineseInput {
+            makeRunTimeSuggestion(code: code, completeCodeResultList: dbResults)
+        }
+        let finalList = assembleResultList(echo: echo, dbResults: dbResults)
+        cacheLock.lock(); evictIfNeeded(); mappingCache[cacheKey] = finalList; cacheLock.unlock()
+        return finalList
+    }
 
-        cacheLock.lock()
-        evictIfNeeded()
-        if dbResults.isEmpty { blacklistCache.insert(cacheKey) }
-        else                  { mappingCache[cacheKey] = list  }
-        cacheLock.unlock()
+    /// Assemble final candidate list: echo at 0, optional bestSuggestion/englishSuggestion at 1,
+    /// then dbResults. Mirrors Android getMappingByCode lines 876-917.
+    private func assembleResultList(echo: Mapping, dbResults: [Mapping]) -> [Mapping] {
+        var englishSuggestion: Mapping? = nil
+        if echo.code.count > maxCodeLength {
+            if let es = getEnglishSuggestions(echo.code).first {
+                englishSuggestion = Mapping(id: es.id, code: echo.code, word: es.word,
+                                            score: es.score, baseScore: es.baseScore,
+                                            recordType: Mapping.RecordType.englishSuggestion)
+            }
+        }
 
-        return list
+        let bestPair = bestSuggestionStack.last
+        let bestSuggestion = bestPair?.mapping
+        var averageScore = 0
+        var bestLen = 0
+        if let bs = bestSuggestion {
+            bestLen = bs.word.count
+            if bestLen > 0 { averageScore = bs.baseScore / bestLen }
+        }
+
+        var result: [Mapping] = [echo]
+        if let bs = bestSuggestion,
+           !abandonPhraseSuggestion,
+           !bs.isExactMatchToCodeRecord,
+           bestLen > 1,
+           (englishSuggestion == nil && averageScore > minScoreThreshold)
+             || (englishSuggestion != nil && averageScore > maxScoreThreshold) {
+            result.append(bs)
+        } else if let es = englishSuggestion, averageScore <= maxScoreThreshold {
+            clearRunTimeSuggestion(abandonSuggestion: true)
+            result.append(es)
+        }
+        result.append(contentsOf: dbResults)
+        return result
     }
 
     // MARK: - Runtime Phrase Suggestion (spec §6, §13 makeRunTimeSuggestion)
 
-    // Each entry is (committed Mapping, code it was typed with).
-    // Mirrors Android's List<Pair<Mapping, String>> suggestionLoL.
-    private var suggestionContext: [(mapping: Mapping, code: String)] = []
+    // Runtime phrase suggestion state (mirrors Android suggestionLoL / bestSuggestionStack)
+    private var suggestionLoL: [[(mapping: Mapping, code: String)]] = []
+    private var bestSuggestionStack: [(mapping: Mapping, code: String)] = []
+    private var lastCode: String = ""   // mirrors Android's static lastCode
     private let suggestionLock = NSLock()
 
-    /// Build incremental runtime phrase suggestions (spec §6 step 9).
-    ///
-    /// For each candidate in `currentList`, checks whether that candidate forms
-    /// a valid phrase pair with any previously-committed word (via the `related` table).
-    /// Matching candidates are promoted to just after the first real result.
-    ///
-    /// Called after `getMappingByCode()` on the background thread; gated by `smartChineseInput`.
-    func makeRunTimeSuggestion(code: String, currentList: [Mapping]) -> [Mapping] {
+    // MARK: - Runtime Phrase Suggestion (mirrors Android makeRunTimeSuggestion)
+
+    /// Clears the runtime suggestion state. mirrors Android clearRunTimeSuggestion(boolean).
+    private func clearRunTimeSuggestion(abandonSuggestion: Bool) {
+        suggestionLoL.removeAll()
+        bestSuggestionStack.removeAll()
+        abandonPhraseSuggestion = abandonSuggestion
+    }
+
+    /// Full port of Android SearchServer.makeRunTimeSuggestion(code, completeCodeResultList).
+    /// Called internally from getMappingByCode. Updates suggestionLoL and bestSuggestionStack.
+    /// Must be called with suggestionLock NOT held — acquires it internally.
+    private func makeRunTimeSuggestion(code: String, completeCodeResultList: [Mapping]) {
         suggestionLock.lock()
-        let context = suggestionContext
-        suggestionLock.unlock()
-
-        guard !context.isEmpty else { return currentList }
-
-        // Build set of words that are valid follow-ons from any committed word.
-        // Use the related cache (populated by getRelatedByWord) so it's fast.
-        var validNext = Set<String>()
-        for entry in context {
-            let related = getRelatedByWord(entry.mapping.word)
-            for r in related { validNext.insert(r.word) }
+        defer { suggestionLock.unlock() }
+        // Stage 0: session-state maintenance based on lastCode (mirrors Android lines 363-395)
+        if !suggestionLoL.isEmpty {
+            if code.count == 1 {
+                clearRunTimeSuggestion(abandonSuggestion: false)
+            } else if code.count == lastCode.count - 1 {
+                // User pressed backspace — trim trailing entries matching lastCode
+                for i in 0..<suggestionLoL.count {
+                    if let last = suggestionLoL[i].last, last.code == lastCode {
+                        suggestionLoL[i].removeLast()
+                    }
+                }
+                if let last = bestSuggestionStack.last, last.code == lastCode {
+                    bestSuggestionStack.removeLast()
+                }
+                if suggestionLoL.allSatisfy({ $0.isEmpty }) {
+                    bestSuggestionStack.removeAll()
+                }
+            }
         }
-        guard !validNext.isEmpty else { return currentList }
+        lastCode = code
 
-        // Partition currentList: promoted (in validNext) vs. the rest.
-        // Preserve original order within each partition.
-        var promoted: [Mapping] = []
-        var rest:     [Mapping] = []
-        for var m in currentList {
-            if validNext.contains(m.word) {
-                m.recordType = Mapping.RecordType.runtimeBuiltPhrase
-                promoted.append(m)
-            } else {
-                rest.append(m)
+        let firstIsExact = completeCodeResultList.first?.isExactMatchToCodeRecord ?? false
+        if firstIsExact {
+            // Stage A: exact-match phrase building (mirrors Android do-while k < 5)
+            var k = 0
+            var highestScore = 0
+            var highestScoreIndex = suggestionLoL.count
+            let initialSize = suggestionLoL.count
+            var snapshot: [[(mapping: Mapping, code: String)]]? = nil
+
+            while k < 5 && k < completeCodeResultList.count {
+                var em = completeCodeResultList[k]
+                guard em.isExactMatchToCodeRecord else { break }
+                guard em.baseScore > 0 else { k += 1; continue }
+
+                var emScore = em.baseScore
+                if emScore < minScoreThreshold { emScore = minScoreThreshold }
+                if emScore > maxScoreThreshold { emScore = maxScoreThreshold }
+                let wordLen = em.word.count
+                let codeLenBonus = (wordLen > 0 ? em.code.count / wordLen : 0) * codeLengthBonusMultiplier
+                let newScore = emScore + codeLenBonus
+                let adjustedBaseScore = newScore * wordLen
+                let emAdj = Mapping(id: em.id, code: em.code, word: em.word, score: em.score,
+                                    baseScore: adjustedBaseScore, recordType: em.recordType, pword: em.pword)
+
+                if adjustedBaseScore > 0 {
+                    if k == 0 && wordLen > 1 {
+                        // Multi-char exact match on first result — snapshot and restart
+                        snapshot = suggestionLoL
+                        suggestionLoL.removeAll()
+                        highestScoreIndex = 0
+                    }
+                    if newScore > highestScore {
+                        highestScore = newScore
+                        highestScoreIndex = k + (snapshot != nil ? 0 : initialSize)
+                    }
+                    var suggestionList: [(mapping: Mapping, code: String)] = []
+                    if let snap = snapshot {
+                        // Carry forward matching chains from snapshot
+                        for snapList in snap {
+                            if let first = snapList.first,
+                               emAdj.word.hasPrefix(first.mapping.word) {
+                                for pair in snapList {
+                                    if emAdj.word.hasPrefix(pair.mapping.word) {
+                                        suggestionList.append(pair)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    suggestionList.append((mapping: emAdj, code: code))
+                    suggestionLoL.append(suggestionList)
+                }
+                k += 1
+            }
+
+            // Promote best to tail
+            if !suggestionLoL.isEmpty && highestScoreIndex != suggestionLoL.count - 1
+               && highestScoreIndex < suggestionLoL.count {
+                let best = suggestionLoL.remove(at: highestScoreIndex)
+                suggestionLoL.append(best)
+            }
+
+        } else if !suggestionLoL.isEmpty {
+            // Stage B: remaining-code search (mirrors Android lines 473-582)
+            var highestScore = 0
+            var highestRelatedScore = 0
+            var highestScoreIndex = 0
+            let snapshot = suggestionLoL
+
+            for seedSuggestionList in snapshot {
+                let lolSizeBefore = suggestionLoL.count
+                // Remove this list from front of suggestionLoL
+                if let idx = suggestionLoL.firstIndex(where: { list in
+                    guard list.count == seedSuggestionList.count else { return false }
+                    return zip(list, seedSuggestionList).allSatisfy { a, b in
+                        a.code == b.code && a.mapping.word == b.mapping.word
+                    }
+                }) {
+                    suggestionLoL.remove(at: idx)
+                    // Only shift the tracked index when the removed entry was at or before it
+                    if idx <= highestScoreIndex && highestScoreIndex > 0 { highestScoreIndex -= 1 }
+                }
+
+                for pair in seedSuggestionList {
+                    let pCode = pair.code
+                    guard pCode.count < code.count,
+                          code.hasPrefix(pCode),
+                          code.count - pCode.count <= maxCodeLength else { continue }
+
+                    let remainingCode = String(code.dropFirst(pCode.count))
+                    let resultList = getMappingByCodeFromCacheOrDB(remainingCode, getAllRecords: false)
+                    guard let rem = resultList.first(where: { $0.isExactMatchToCodeRecord }) else { continue }
+
+                    let remWordLen = rem.word.count
+                    guard remWordLen >= 1, rem.baseScore >= 2 else { continue }
+
+                    let phrase = pair.mapping.word + rem.word
+                    let phraseLen = phrase.count
+                    guard phraseLen >= 2 else { continue }
+
+                    var remScore = rem.baseScore
+                    let remCodeLenBonus = (remWordLen > 0 ? rem.code.count / remWordLen : 0) * codeLengthBonusMultiplier
+                    // Android line 528: if (remainingScore > MIN_SCORE_THRESHOLD) remainingScore = MIN_SCORE_THRESHOLD;
+                    // Only a ceiling at MIN_SCORE_THRESHOLD (120), no floor — exact Android port.
+                    if remScore > minScoreThreshold { remScore = minScoreThreshold }
+                    remScore = remScore / remWordLen + remCodeLenBonus
+
+                    let prevWordLen = pair.mapping.word.count
+                    let prevScore = prevWordLen > 0 ? pair.mapping.baseScore / prevWordLen : 0
+                    let averageScore = (prevScore + remScore) / 2
+
+                    // Check related table for suffix pairs (k=3..1)
+                    var relatedMapping: Mapping? = nil
+                    let checkLen = min(phraseLen - 1, 3)
+                    for k in stride(from: checkLen, through: 1, by: -1) {
+                        let pIdx = phrase.index(phrase.startIndex, offsetBy: phraseLen - k - 1)
+                        let cIdx = phrase.index(phrase.startIndex, offsetBy: phraseLen - k)
+                        let pword = String(phrase[pIdx..<cIdx])
+                        let cword = String(phrase[cIdx...])
+                        if let rm = db.isRelatedPhraseExist(pword, cword) {
+                            relatedMapping = rm
+                            break
+                        }
+                    }
+
+                    if let rm = relatedMapping,
+                       rm.baseScore >= highestRelatedScore,
+                       (averageScore + scoreAdjustmentIncrement) > highestScore {
+                        highestRelatedScore = rm.baseScore
+                        highestScore = averageScore + scoreAdjustmentIncrement
+                        let suggest = Mapping(id: 0, code: code, word: phrase,
+                                              score: highestRelatedScore,
+                                              baseScore: highestScore * phraseLen,
+                                              recordType: Mapping.RecordType.runtimeBuiltPhrase)
+                        var newList = seedSuggestionList
+                        newList.append((mapping: suggest, code: code))
+                        suggestionLoL.append(newList)
+                        highestScoreIndex = suggestionLoL.count - 1
+                    } else if averageScore > highestScore {
+                        highestScore = averageScore
+                        let suggest = Mapping(id: 0, code: code, word: phrase,
+                                              score: 0,
+                                              baseScore: highestScore * phraseLen,
+                                              recordType: Mapping.RecordType.runtimeBuiltPhrase)
+                        var newList = seedSuggestionList
+                        newList.append((mapping: suggest, code: code))
+                        suggestionLoL.append(newList)
+                        highestScoreIndex = suggestionLoL.count - 1
+                    }
+                }
+
+                // If no new entries were added, keep the seed list
+                if suggestionLoL.count == lolSizeBefore - 1 {
+                    suggestionLoL.append(seedSuggestionList)
+                }
+            }
+
+            // Promote best to tail
+            if !suggestionLoL.isEmpty && highestScoreIndex != suggestionLoL.count - 1
+               && highestScoreIndex < suggestionLoL.count {
+                let best = suggestionLoL.remove(at: highestScoreIndex)
+                suggestionLoL.append(best)
             }
         }
 
-        guard !promoted.isEmpty else { return currentList }
-
-        // Insert promoted candidates right after the composing-echo (index 0),
-        // keeping the rest in their original positions.
-        if let echoIdx = rest.firstIndex(where: { $0.isComposingCodeRecord }) {
-            rest.insert(contentsOf: promoted, at: echoIdx + 1)
-            return rest
+        // Stage C: push tail of last list to bestSuggestionStack
+        if let lastList = suggestionLoL.last, let lastPair = lastList.last {
+            bestSuggestionStack.append(lastPair)
         }
-        return promoted + rest
     }
 
-    /// Record a committed candidate so future composing can be cross-checked (spec §6).
-    func addToSuggestionContext(_ candidate: Mapping, code: String) {
-        suggestionLock.lock()
-        defer { suggestionLock.unlock() }
-        suggestionContext.append((mapping: candidate, code: code))
-        // Keep at most 4 entries to bound memory
-        if suggestionContext.count > 4 { suggestionContext.removeFirst() }
-    }
+    /// Deprecated iOS-only API — Android has no equivalent.
+    /// Runtime suggestion state is now managed entirely by makeRunTimeSuggestion via getMappingByCode.
+    /// Kept for source compatibility; body is a no-op.
+    func addToSuggestionContext(_ candidate: Mapping, code: String) {}
 
-    /// Clear runtime suggestion context (spec §6 — on composing restart at length 1).
+    /// Resets runtime suggestion state. Mirrors Android clearRunTimeSuggestion(false).
     func clearSuggestionContext() {
         suggestionLock.lock()
-        suggestionContext = []
+        clearRunTimeSuggestion(abandonSuggestion: false)
         suggestionLock.unlock()
     }
-
-    // No pruneSuggestionOnBackspace: suggestionContext holds committed words, not composing
-    // chains. Backspace shortens mComposing; makeRunTimeSuggestion reruns with the new code.
 
     // MARK: - Related Phrases (spec §13 getRelatedByWord)
 
     /// Returns related-phrase candidates following parentWord as Mapping objects.
     func getRelatedByWord(_ word: String, getAllRecords: Bool = false) -> [Mapping] {
+        guard similiarEnable else { return [] }
         cacheLock.lock()
         if let cached = relatedCache[word] { cacheLock.unlock(); return cached }
         cacheLock.unlock()
@@ -268,47 +524,65 @@ final class SearchServer {
 
     // MARK: - Learning (spec §9 learnRelatedPhraseAndUpdateScore)
 
-    /// Records a committed candidate selection for score update and related-phrase learning.
-    /// Matches spec §9: score learning + RP learning + LD trigger when RP score > 20.
+    /// Records a committed candidate for session-end batch RP learning and updates score.
+    /// Mirrors Android: score update inline, learnRelatedPhrase batched at postFinishInput.
     func learnRelatedPhraseAndUpdateScore(_ candidate: Mapping) {
-        let parent = lastCommittedMapping
-        lastCommittedMapping = candidate
-        let tableName = currentTableName
+        // Append to scorelist for batch learning at session end (mirrors Android)
+        scorelistLock.lock()
+        scorelist.append(candidate)
+        scorelistLock.unlock()
 
+        let tableName = currentTableName
         DispatchQueue.global(qos: .background).async { [weak self] in
             guard let self = self else { return }
-
-            // Update score for the committed candidate.
-            // H3 fix: increment by 1 (matches Java addScore/updateScoreCache),
-            // fall back to candidate's own score (not a fabricated threshold constant).
+            // Score update
             if candidate.id > 0 {
-                let cacheKeyBase = "\(tableName):\(candidate.code.lowercased())"
-                self.cacheLock.lock()
-                let cached = self.mappingCache[cacheKeyBase]
-                self.cacheLock.unlock()
-                let currentScore = cached?.first(where: { $0.id == candidate.id })?.score
-                    ?? candidate.score
+                let currentScore = candidate.score
                 let newScore = currentScore + 1
                 try? self.db.updateScore(id: candidate.id, score: newScore, tableName: tableName)
-                // Invalidate cache for this code and similar prefix codes
                 self.removeRemappedCodeCachedMappings(candidate.code.lowercased())
-                self.updateSimilarCodeCache(candidate.code.lowercased())
-            }
-
-            // Learn related phrase from consecutive pair (spec §9 RP Learning)
-            if let p = parent, !p.word.isEmpty, !candidate.word.isEmpty,
-               p.isRealCandidate, candidate.isRealCandidate {
-                let score = (try? self.db.learnRelatedPhrase(
-                    parentWord: p.word, childWord: candidate.word)) ?? 0
-                // Invalidate related cache
-                self.cacheLock.lock()
-                self.relatedCache.removeValue(forKey: p.word)
-                self.cacheLock.unlock()
-                // LD trigger: if RP score > 20 → feed into LD learning (spec §9)
-                if score > 20 {
-                    self.addLDPhrase(p, ending: false)
-                    self.addLDPhrase(candidate, ending: true)
+                let evictedPrefixes = self.updateSimilarCodeCache(candidate.code.lowercased())
+                // Re-warm all evicted entries on this background thread so the next
+                // composition is still a cache hit — with the updated score order from DB.
+                let snapshotTable = self.currentTableName
+                guard self.currentTableName == snapshotTable else { return }
+                _ = self.getMappingByCode(candidate.code.lowercased())
+                for prefix in evictedPrefixes {
+                    guard self.currentTableName == snapshotTable else { return }
+                    _ = self.getMappingByCode(prefix)
                 }
+            }
+        }
+    }
+
+    /// Batch related-phrase learning over the session's committed word pairs.
+    /// Mirrors Android SearchServer.learnRelatedPhrase(List<Mapping>) lines 1272-1322.
+    /// Called from postFinishInput via background task.
+    private func learnRelatedPhrase(_ localScorelist: [Mapping]) {
+        guard candidateSuggestion && localScorelist.count > 1 else { return }
+        for i in 0..<localScorelist.count - 1 {
+            let unit  = localScorelist[i]
+            let unit2 = localScorelist[i + 1]
+            guard !unit.word.isEmpty, !unit2.word.isEmpty else { continue }
+            // Android unit type checks (note: intentional use of `unit` not `unit2` in some checks)
+            let unitOK = unit.isExactMatchToCodeRecord
+                || unit.isPartialMatchToCodeRecord
+                || unit.isRelatedPhraseRecord
+            let unit2OK = unit2.isExactMatchToCodeRecord
+                || unit2.isPartialMatchToCodeRecord
+                || unit.isRelatedPhraseRecord   // Android bug preserved: uses unit not unit2
+                || unit2.isChinesePunctuationRecord
+                || unit.isEmojiRecord           // Android bug preserved: uses unit not unit2
+                || unit2.isEmojiRecord
+            guard unitOK && unit2OK else { continue }
+            let score = db.addOrUpdateRelatedPhraseRecord(unit.word, unit2.word)
+            // Invalidate related cache
+            cacheLock.lock()
+            relatedCache.removeValue(forKey: unit.word)
+            cacheLock.unlock()
+            if score > 20 && learnPhrasePref {
+                addLDPhrase(unit, ending: false)
+                addLDPhrase(unit2, ending: true)
             }
         }
     }
@@ -326,38 +600,109 @@ final class SearchServer {
         }
     }
 
-    /// Process accumulated LD phrases and write learned multi-character codes to DB.
-    /// Called from KeyboardViewController on session end (postFinishInput equivalent, spec §9).
+    /// Called from postFinishInput — drains current ldPhraseListArray (deprecated direct path).
     func learnLDPhrase() {
         learnLock.lock()
         let toLearn = ldPhraseListArray
         ldPhraseListArray = []
         learnLock.unlock()
+        learnLDPhraseList(toLearn)
+    }
 
+    /// Port of Android SearchServer.learnLDPhrase(ArrayList<List<Mapping>>) lines 1333-1491.
+    /// Each phraselist is a sequence of committed mappings forming a multi-char phrase.
+    private func learnLDPhraseList(_ toLearn: [[Mapping]]) {
         let tableName = currentTableName
+        let tones: Set<Character> = ["3", "4", "6", "7", " "]
+
         for phrase in toLearn {
-            guard phrase.count > 1, phrase.count <= 4 else { continue }
-            var ldCode   = ""
-            var qpCode   = ""
-            var baseWord = ""
-            for m in phrase {
-                ldCode   += m.code
-                if let first = m.code.first { qpCode += String(first) }
-                baseWord += m.word
+            guard phrase.count > 1, phrase.count < 5 else { continue }
+            guard let unit1 = phrase.first, !unit1.word.isEmpty,
+                  unit1.code != unit1.word else { continue }
+
+            var baseCode = unit1.code
+            var qpCode = ""
+            var baseWord = unit1.word
+
+            // Reverse-lookup if unit1 has no reliable code
+            if unit1.id == 0 || unit1.isPartialMatchToCodeRecord
+               || unit1.code.isEmpty || unit1.isRelatedPhraseRecord {
+                if let first = db.getMappingByWord(unit1.word, table: tableName)?.first {
+                    baseCode = first.code
+                } else { continue }
             }
-            if isPhoneticTable {
-                // Strip tone symbols (spec §9 QPCode / LDCode)
-                let tones: Set<Character> = ["3", "4", "6", "7", " "]
-                let stripped = ldCode.filter { !tones.contains($0) }
-                if stripped.count > 1 {
-                    try? db.addOrUpdateMappingRecord(code: stripped, word: baseWord, tableName: tableName)
-                }
-                if qpCode.count > 1 {
-                    try? db.addOrUpdateMappingRecord(code: qpCode, word: baseWord, tableName: tableName)
-                }
+
+            if baseWord.count == 1 {
+                guard !baseCode.isEmpty, let fc = baseCode.first else { continue }
+                qpCode.append(fc)
             } else {
-                if ldCode.count > 1 {
-                    try? db.addOrUpdateMappingRecord(code: ldCode, word: baseWord, tableName: tableName)
+                // Rebuild baseCode per-char for multi-char unit1
+                baseCode = ""
+                var abort = false
+                for ch in baseWord {
+                    guard let first = db.getMappingByWord(String(ch), table: tableName)?.first else {
+                        abort = true; break
+                    }
+                    baseCode += first.code
+                    if let fc = first.code.first { qpCode.append(fc) }
+                }
+                if abort { continue }
+            }
+
+            for i in 0..<phrase.count {
+                guard i + 1 < phrase.count else { break }
+                let unit2 = phrase[i + 1]
+                if unit2.word.isEmpty || unit2.isComposingCodeRecord
+                   || unit2.isEnglishSuggestionRecord { break }
+                let word2 = unit2.word
+                var code2 = unit2.code
+                baseWord += word2
+
+                if word2.count == 1 && baseWord.count < 5 {
+                    if unit2.id == 0 || unit2.isPartialMatchToCodeRecord
+                       || code2.isEmpty || unit2.isRelatedPhraseRecord {
+                        if let first = db.getMappingByWord(word2, table: tableName)?.first {
+                            code2 = first.code
+                        } else { break }
+                    }
+                    guard !code2.isEmpty, let fc = code2.first else { break }
+                    baseCode += code2
+                    qpCode.append(fc)
+                } else if word2.count > 1 && baseWord.count < 5 {
+                    var fail = false
+                    for ch in word2 {
+                        guard let first = db.getMappingByWord(String(ch), table: tableName)?.first else {
+                            fail = true; break
+                        }
+                        baseCode += first.code
+                        if let fc = first.code.first { qpCode.append(fc) }
+                    }
+                    if fail { break }
+                } else {
+                    break
+                }
+
+                // Write on the last pair only (mirrors Android i+1 == phraselist.size - 1)
+                if i + 1 == phrase.count - 1 {
+                    if isPhoneticTable {
+                        let ldCode = baseCode.filter { !tones.contains($0) }.lowercased()
+                        let qpLower = qpCode.lowercased()
+                        if ldCode.count > 1 {
+                            try? db.addOrUpdateMappingRecord(code: ldCode, word: baseWord, tableName: tableName)
+                            removeRemappedCodeCachedMappings(ldCode)
+                            updateSimilarCodeCache(ldCode)
+                        }
+                        if qpLower.count > 1 {
+                            try? db.addOrUpdateMappingRecord(code: qpLower, word: baseWord, tableName: tableName)
+                            removeRemappedCodeCachedMappings(qpLower)
+                            updateSimilarCodeCache(qpLower)
+                        }
+                    } else if baseCode.count > 1 {
+                        let bc = baseCode.lowercased()
+                        try? db.addOrUpdateMappingRecord(code: bc, word: baseWord, tableName: tableName)
+                        removeRemappedCodeCachedMappings(bc)
+                        updateSimilarCodeCache(bc)
+                    }
                 }
             }
         }
@@ -365,18 +710,71 @@ final class SearchServer {
 
     // MARK: - Emoji (spec §6, §13 emojiConvert)
 
-    /// Inject emoji candidates into a candidate list at the given position (spec §6 step 5).
-    /// `type`: LimeDB.EMOJI_TW / EMOJI_CN / EMOJI_EN
-    /// `insertAt`: 0-based index in the real (non-echo) candidate list.
-    func injectEmoji(into list: [Mapping], code: String, type: Int, insertAt: Int = 3) -> [Mapping] {
-        let emojiCandidates = db.emojiConvert(code, type)
-        guard !emojiCandidates.isEmpty else { return list }
+    /// Inject emoji candidates using Android-exact word-based lookup.
+    /// Mirrors LIMEService.java lines 2461-2523 exactly.
+    ///
+    /// - `list` must include the composing-code echo at index 0 (same structure as getMappingByCode output).
+    /// - Looks up emoji by list[0].word if it is pure English letters (EMOJI_EN),
+    ///   else by list[1].word if multi-byte and length < 4 (EMOJI_TW, fallback EMOJI_CN).
+    /// - Deduplicates within the emoji results using a Set<String> (mirrors Android emojiCheck HashMap).
+    /// - Inserts at `insertAt` (0-based index into `list`). Clamped to list.count.
+    func injectEmoji(into list: [Mapping], insertAt: Int = 3) -> [Mapping] {
+        guard !list.isEmpty else { return list }
 
-        // Deduplicate: drop emoji whose word is already in the list
+        var emojiList: [Mapping] = []
+        var emojiCheck: Set<String> = []
+
+        // Android: if (list.get(0).getWord().matches("[A-Za-z]+"))
+        let echoWord = list[0].word
+        var item1: [Mapping] = []
+        if echoWord.range(of: "^[A-Za-z]+$", options: .regularExpression) != nil {
+            item1 = db.emojiConvert(echoWord, LimeDB.EMOJI_EN)
+            for m in item1 {
+                if emojiCheck.insert(m.word).inserted { emojiList.append(m) }
+            }
+        }
+
+        if item1.isEmpty {
+            // Android: list.get(1).getWord().getBytes().length > 1 && length() < 4
+            if list.count > 1 {
+                let word2 = list[1].word
+                if !word2.isEmpty, word2.utf8.count > 1, word2.count < 4 {
+                    let item2 = db.emojiConvert(word2, LimeDB.EMOJI_TW)
+                    if !item2.isEmpty {
+                        for m in item2 {
+                            if emojiCheck.insert(m.word).inserted { emojiList.append(m) }
+                        }
+                    } else {
+                        let item3 = db.emojiConvert(word2, LimeDB.EMOJI_CN)
+                        for m in item3 {
+                            if emojiCheck.insert(m.word).inserted { emojiList.append(m) }
+                        }
+                    }
+                }
+            }
+        }
+
+        guard !emojiList.isEmpty else { return list }
+
+        // Drop emoji whose word is already in the candidate list (avoid visible duplicates)
         let existingWords = Set(list.map { $0.word })
-        let unique = emojiCandidates.filter { !existingWords.contains($0.word) }
+        let unique = emojiList.filter { !existingWords.contains($0.word) }
         guard !unique.isEmpty else { return list }
 
+        var result = list
+        let idx = min(insertAt, result.count)
+        result.insert(contentsOf: unique, at: idx)
+        return result
+    }
+
+    /// Direct emoji injection by explicit word and type.
+    /// Used for the English prediction path where the lookup word is known directly.
+    func injectEmoji(into list: [Mapping], word: String, type: Int, insertAt: Int = 3) -> [Mapping] {
+        let candidates = db.emojiConvert(word, type)
+        guard !candidates.isEmpty else { return list }
+        let existingWords = Set(list.map { $0.word })
+        let unique = candidates.filter { !existingWords.contains($0.word) }
+        guard !unique.isEmpty else { return list }
         var result = list
         let idx = min(insertAt, result.count)
         result.insert(contentsOf: unique, at: idx)
@@ -387,15 +785,35 @@ final class SearchServer {
 
     /// Returns a formatted string of all codes for a given word, with key names applied.
     func getCodeListStringFromWord(_ word: String) -> String? {
-        db.getCodeListStringByWord(word)
+        db.getCodeListStringByWord(word, table: nil)
     }
 
     // MARK: - Finish Input (spec §13 postFinishInput)
 
     /// Flush all pending learning when the text field loses focus.
     func postFinishInput() {
+        scorelistLock.lock()
+        let snapshot = scorelist
+        scorelist.removeAll()
+        scorelistLock.unlock()
+
+        // Snapshot continuous-typing LD phrases accumulated so far.
+        learnLock.lock()
+        let continuousLD = ldPhraseListArray
+        ldPhraseListArray = []
+        learnLock.unlock()
+
         DispatchQueue.global(qos: .background).async { [weak self] in
-            self?.learnLDPhrase()
+            guard let self = self else { return }
+            // learnRelatedPhrase runs first — may call addLDPhrase for high-score RP pairs.
+            // Mirrors Android postFinishInput ordering (SearchServer.java lines 1250–1259).
+            self.learnRelatedPhrase(snapshot)
+            // Snapshot RP-triggered LD phrases added by learnRelatedPhrase.
+            self.learnLock.lock()
+            let rpLD = self.ldPhraseListArray
+            self.ldPhraseListArray = []
+            self.learnLock.unlock()
+            self.learnLDPhraseList(continuousLD + rpLD)
         }
     }
 
@@ -423,7 +841,9 @@ final class SearchServer {
         prefetchThread?.cancel()
         let snapshotTable = currentTableName
         let t = Thread { [weak self] in
-            let keys = "abcdefghijklmnopqrstuvwxyz1234567890"
+            var keys = "abcdefghijklmnoprstuvwxyz"  // NOTE: no 'q' — mirrors Android
+            if self?.hasNumberMapping == true { keys += "01234567890" }
+            if self?.hasSymbolMapping == true { keys += ",./;" }
             for ch in keys {
                 guard !Thread.current.isCancelled else { return }
                 guard let self = self else { return }
@@ -439,24 +859,29 @@ final class SearchServer {
 
     // MARK: - Additional Cache / State Fields (mirrors Java scorelist, coderemapcache, etc.)
 
-    private var scoreList: [Mapping] = []
+    // Session-level score list (mirrors Android's static scorelist)
+    private var scorelist: [Mapping] = []
+    private let scorelistLock = NSLock()
+
+    private var abandonPhraseSuggestion: Bool = false
+    private var maxCodeLength: Int = 4
+    // CODE_LENGTH_BONUS_MULTIPLIER (mirrors Android constant = 30)
+    private let codeLengthBonusMultiplier = 30
+
     private var coderemap: [String: [String]] = [:]
     private var englishCache: [String: [Mapping]] = [:]
     private var emojiCache: [String: [Mapping]] = [:]
     private var keynameCache: [String: String] = [:]
     private var lastEnglishWord: String? = nil
     private var noSuggestionsForLastEnglishWord: Bool = false
-    private var abandonPhraseSuggestion: Bool = false
-    private var maxCodeLength: Int = 4
-    private let scoreListLock = NSLock()
 
     // MARK: - Cache Initialisation (mirrors Java initialCache())
 
     /// Reinitialise all caches — mirrors Java SearchServer.initialCache().
     func initialCache() {
-        scoreListLock.lock()
-        scoreList.removeAll()
-        scoreListLock.unlock()
+        scorelistLock.lock()
+        scorelist.removeAll()
+        scorelistLock.unlock()
         cacheLock.lock()
         mappingCache.removeAll()
         relatedCache.removeAll()
@@ -466,16 +891,22 @@ final class SearchServer {
         englishCache.removeAll()
         emojiCache.removeAll()
         keynameCache.removeAll()
-        clearSuggestionContext()
+        suggestionLock.lock()
+        clearRunTimeSuggestion(abandonSuggestion: false)
+        lastCode = ""
+        suggestionLock.unlock()
+        scorelistLock.lock()
+        scorelist.removeAll()
+        scorelistLock.unlock()
     }
 
     // MARK: - Clear (mirrors Java clear())
 
     /// Clear all runtime caches — mirrors Java SearchServer.clear().
     func clear() {
-        scoreListLock.lock()
-        scoreList.removeAll()
-        scoreListLock.unlock()
+        scorelistLock.lock()
+        scorelist.removeAll()
+        scorelistLock.unlock()
         cacheLock.lock()
         mappingCache.removeAll()
         relatedCache.removeAll()
@@ -485,6 +916,13 @@ final class SearchServer {
         emojiCache.removeAll()
         keynameCache.removeAll()
         coderemap.removeAll()
+        suggestionLock.lock()
+        clearRunTimeSuggestion(abandonSuggestion: false)
+        lastCode = ""
+        suggestionLock.unlock()
+        scorelistLock.lock()
+        scorelist.removeAll()
+        scorelistLock.unlock()
     }
 
     // MARK: - Longest Common Substring (mirrors Java lcs())
@@ -540,19 +978,29 @@ final class SearchServer {
         cacheLock.unlock()
     }
 
-    private func updateSimilarCodeCache(_ code: String) {
+    /// Evicts cache entries for all prefix codes of `code` (up to length 5).
+    /// Returns the prefix codes that were actually present in cache and evicted,
+    /// so the caller can re-warm them without an extra dispatch hop.
+    @discardableResult
+    private func updateSimilarCodeCache(_ code: String) -> [String] {
         let len = min(code.count, 5)
-        guard len > 1 else { return }
+        guard len > 1 else { return [] }
+        var evictedPrefixes: [String] = []
         for k in 1..<len {
             let key = String(code.prefix(code.count - k))
-            let cacheKeyFull = "\(currentTableName):\(key.lowercased())"
+            let cacheKeyBase = "\(currentTableName):\(key.lowercased())"
             cacheLock.lock()
-            if mappingCache[cacheKeyFull] != nil {
-                mappingCache.removeValue(forKey: cacheKeyFull)
-            }
+            // Check all possible limit-suffix variants that getMappingByCode may store.
+            let wasInCache = mappingCache[cacheKeyBase] != nil
+                          || mappingCache["\(cacheKeyBase):50"] != nil
+                          || mappingCache["\(cacheKeyBase):210"] != nil
             cacheLock.unlock()
-            removeRemappedCodeCachedMappings(key)
+            removeRemappedCodeCachedMappings(key)  // clears plain + :50 + :210 variants
+            if wasInCache {
+                evictedPrefixes.append(key)
+            }
         }
+        return evictedPrefixes
     }
 
     // MARK: - English Suggestions (mirrors Java getEnglishSuggestions())
@@ -781,5 +1229,17 @@ final class SearchServer {
     internal var _testMappingCache:      [String: [Mapping]]                { mappingCache }
     internal var _testRelatedCache:      [String: [Mapping]]                { relatedCache }
     internal var _testBlacklistCache:    Set<String>                        { blacklistCache }
-    internal var _testSuggestionContext: [(mapping: Mapping, code: String)] { suggestionContext }
+    internal var _testBestSuggestionStack: [(mapping: Mapping, code: String)] { bestSuggestionStack }
+    /// Backwards-compat alias for tests written against the old suggestionContext API.
+    /// addToSuggestionContext is now a no-op; state lives in bestSuggestionStack.
+    internal var _testSuggestionContext: [Mapping] { bestSuggestionStack.map { $0.mapping } }
+    /// Exposes db.learnRelatedWords for pref-wiring tests.
+    internal var _testLearnRelatedWords: Bool { db.learnRelatedWords }
+    /// Exposes db.similarCodeCandidatesCap for pref-wiring tests.
+    internal var _testSimilarCodeCandidatesCap: Int { db.similarCodeCandidatesCap }
+    /// Exposes ldPhraseListArray for postFinishInput path tests.
+    internal var _testLdPhraseListArray: [[Mapping]] {
+        learnLock.lock(); defer { learnLock.unlock() }
+        return ldPhraseListArray
+    }
 }

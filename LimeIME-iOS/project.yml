@@ -23,6 +23,10 @@ targets:
     sources:
       - path: LimeIME
       - path: Shared
+        excludes:
+          - "Database/lime.db"
+          - "Database/phonetic.db"
+          - "Database/emoji.db"
     preBuildScripts:
       - name: Copy lime.db to bundle
         script: |
@@ -71,6 +75,10 @@ targets:
     sources:
       - path: LimeIMEKeyboard
       - path: Shared
+        excludes:
+          - "Database/lime.db"
+          - "Database/phonetic.db"
+          - "Database/emoji.db"
     resources:
       - path: LimeIMEKeyboard/Layouts
     preBuildScripts:

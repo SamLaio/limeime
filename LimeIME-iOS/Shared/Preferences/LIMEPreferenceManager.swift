@@ -142,11 +142,6 @@ final class LIMEPreferenceManager {
         set { defaults.set(newValue, forKey: "auto_chinese_symbol") }
     }
 
-    var selkeyOption: Int {
-        get { intValue("selkey_option", default: 0) }
-        set { defaults.set(newValue, forKey: "selkey_option") }
-    }
-
     var autoCommit: Int {
         get { intValue("auto_commit", default: 0) }
         set { defaults.set(newValue, forKey: "auto_commit") }
@@ -230,6 +225,23 @@ final class LIMEPreferenceManager {
     var persistentLanguageMode: Bool {
         get { boolValue("persistent_language_mode", default: false) }
         set { defaults.set(newValue, forKey: "persistent_language_mode") }
+    }
+
+    /// Stored Chinese/English state: "yes" = English-only, "no" = Chinese (spec §15).
+    /// Written by setLanguageMode when persistentLanguageMode is enabled.
+    var languageMode: String {
+        get { stringValue("language_mode", default: "no") }
+        set { defaults.set(newValue, forKey: "language_mode") }
+    }
+
+    var displayNumberKeypads: Bool {
+        get { boolValue("display_number_keypads", default: false) }
+        set { defaults.set(newValue, forKey: "display_number_keypads") }
+    }
+
+    var autoCap: Bool {
+        get { boolValue("auto_cap", default: true) }
+        set { defaults.set(newValue, forKey: "auto_cap") }
     }
 
     // MARK: - §8.11 Reverse Lookup

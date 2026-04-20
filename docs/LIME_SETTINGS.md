@@ -25,23 +25,22 @@ A fifth area — **App Setup** — handles one-time activation and app-level inf
 | `IMStoreView` / cloud download | IM Manager — download | 輸入法 |
 | `SetupImFragment` (import file) | IM Manager — import | 輸入法 |
 | `ManageImFragment` (record CRUD) | IM Table Editor — mapping records | 輸入法 drill-down |
-| `ManageRelatedFragment` | IM Table Editor — related phrases | 關聯字 |
-| `SetupImFragment` (backup/restore) | DB Manager | 資料 |
-| `LIMEPreference` (`preference.xml`) | IM Preferences | 偏好設定 |
+| `ManageRelatedFragment` | IM Table Editor — related phrases | 輸入法 (drill-down via 聯想詞庫) |
+| `SetupImFragment` (backup/restore) | DB Manager | 資料庫 |
+| `LIMEPreference` (`preference.xml`) | IM Preferences | 喜好設定 |
 
 ---
 
 ## 2. App Structure
 
-The container app uses a `TabView` with **five tabs**. This collapses the Android navigation drawer + separate Preference activity into a flat tab bar per iOS HIG.
+The container app uses a `TabView` with **four tabs**. This collapses the Android navigation drawer + separate Preference activity into a flat tab bar per iOS HIG. Related-phrase editing (formerly a standalone tab) is now accessed via the 聯想詞庫 entry inside the 輸入法 tab.
 
 ```
 TabView
-├── [1] 設定       systemImage: "gearshape"          (App Setup)
-├── [2] 輸入法      systemImage: "list.bullet"         (IM Manager + IM Table Editor)
-├── [3] 關聯字      systemImage: "textformat.alt"      (IM Table Editor — related phrases)
-├── [4] 偏好設定    systemImage: "slider.horizontal.3" (IM Preferences)
-└── [5] 資料        systemImage: "archivebox"          (DB Manager)
+├── [0] 設定       systemImage: "gearshape"          (App Setup)
+├── [1] 輸入法      systemImage: "list.bullet"         (IM Manager + IM Table Editor + 聯想詞庫)
+├── [3] 喜好設定    systemImage: "slider.horizontal.3" (IM Preferences)
+└── [4] 資料庫      systemImage: "archivebox"          (DB Manager)
 ```
 
 Each tab has its own `NavigationStack` (iOS 16+) or `NavigationView` (iOS 15) so drill-down navigation stays scoped to its tab.
@@ -143,7 +142,7 @@ The View layer is the **only layer that deviates** from the Android source. Subs
 | `NavigationDrawerFragment` | `TabView` (§2) | Same IM navigation items, different platform widget |
 | `SetupImFragment` | `SetupTabView` + `IMListView` + `IMInstallView` | Setup guide + IM list + download flows |
 | `ManageImFragment` | `RecordListView` + `AddRecordView` + `EditRecordView` | Per-IM record CRUD |
-| `ManageRelatedFragment` | `RelatedListView` + `AddRelatedView` + `EditRelatedView` | Related phrase CRUD |
+| `ManageRelatedFragment` | `RelatedListView(isEmbedded:)` + `AddRelatedView` + `EditRelatedView` | Related phrase CRUD — embedded in IMDetailView via 聯想詞庫 entry |
 | `LIMEPreference` Activity + `PrefsFragment` | `PreferencesTabView` with `Form` sections | All 11 preference sections |
 | `ImportDialog` / `SetupImLoadDialog` | SwiftUI `.sheet` + `.fileImporter` | File selection and import options |
 | `ShareDialog` | SwiftUI `.sheet` + `ShareLink` | IM export format selection |
@@ -192,13 +191,10 @@ NavigationStack
     │   └── Status banner (colour-coded: green / yellow / red)
     ├── Section "步驟 1 — 啟用鍵盤"
     │   ├── Text "前往「設定 → 一般 → 鍵盤 → 鍵盤 → 新增鍵盤」，選擇 LimeIME。"
-    │   └── Button "前往系統設定"  → UIApplication.openSettingsURLString
+    │   └── Button "前往系統設定"  → `App-Prefs:root=General&path=Keyboard` (falls back to `openSettingsURLString`)
     ├── Section "步驟 2 — 允許完整取用"
-    │   ├── Text "在剛才的鍵盤設定頁面，開啟「允許完整取用」。"
-    │   └── Note "完整取用是讀取偏好設定 App Group 所必需。"
-    ├── Section "初始資料庫"
-    │   ├── Button "預載預設輸入法"  → db.seedDefaultIMs() on background thread
-    │   └── Text (inline status: progress / success / skip message)
+    │   ├── Text "在鍵盤設定頁面，點選 LimeIME 並開啟「允許完整取用」。"
+    │   └── Button "前往鍵盤設定"  → `App-Prefs:…/net.toload.limeime.LimeKeyboard` (LimeIME keyboard settings page); disabled when keyboard not yet added
     └── Section "關於"
         ├── LabeledContent "版本"   CFBundleShortVersionString + build number
         ├── LabeledContent "授權"   "GPL-3.0"
@@ -208,19 +204,15 @@ NavigationStack
 ### 4.2 Status Banner
 
 - Re-checks on `.onAppear` and whenever `scenePhase` transitions to `.active`.
-- Polls `UITextInputMode.activeInputModes` for the keyboard bundle ID; also checks for the App Group `UserDefaults` being accessible (proxy for Full Access).
+- Reads two flags written by the keyboard extension to the shared App Group (`group.net.toload.limeime`):
+  - `keyboard_extension_loaded` (Bool) — written `true` in `viewDidLoad`; indicates the extension has been enabled and loaded at least once.
+  - `keyboard_has_full_access` (Bool) — written from `hasFullAccess` in `viewWillAppear`; reflects current Full Access state.
 
 | Condition | Colour | Message |
 |---|---|---|
 | Keyboard enabled + Full Access on | Green | "LimeIME 鍵盤已啟用 ✓" |
 | Keyboard enabled, Full Access off | Yellow | "鍵盤已啟用，但尚未允許完整取用" |
 | Keyboard not in active list | Red | "尚未啟用 LimeIME 鍵盤" |
-
-### 4.3 初始資料庫 Button
-
-- Calls `db.seedDefaultIMs()` on a background thread (replicates Android's `l3_initial_btn_load_preload_db`).
-- Shows inline progress text while running; dismisses overlay when done.
-- Result messages: "✅ 預設輸入法已初始化" or "⚠️ 輸入法已存在，略過".
 
 ---
 
@@ -242,9 +234,12 @@ NavigationStack
     │       │   └── Toggle("", isOn: $row.enabled)
     │       │       .onChange → db.updateIMEnabled(id:enabled:)
     │       └── NavigationLink → IMDetailView(im: row)
-    └── Section "輸入法庫"
-        └── NavigationLink "下載 / 匯入輸入法" → IMInstallView
-.toolbar { EditButton() }
+    └── Section "聯想詞庫"
+        └── NavigationLink "關聯詞庫" → IMDetailView(im: synthetic IMRow(tableNick: "related"))
+.toolbar {
+    ToolbarItem(.navigationBarLeading) { EditButton() }
+    ToolbarItem(.navigationBarTrailing) { NavigationLink → IMInstallView  [+ button] }
+}
 .navigationTitle("管理輸入法")
 ```
 
@@ -254,27 +249,55 @@ NavigationStack
 
 ### 5.2 IM Detail Screen
 
-Drill-down from any IM row. Shows metadata, allows changing the soft keyboard layout, and links to the Table Editor.
+Drill-down from any IM row **or** from the synthetic 聯想詞庫 entry. Shows metadata, allows changing the soft keyboard layout, and links to the Table Editor. Sections are conditionally shown based on `im.tableNick`.
 
 ```
 NavigationStack (continued)
 └── IMDetailView(im: IMRow)
     └── List
-        ├── Section "輸入法資訊"
-        │   ├── LabeledContent "代碼"    im.tableNick
+        ├── Section "輸入法資訊"  (hidden when im.tableNick == "related")
+        │   ├── LabeledContent "名稱"    im.label
         │   ├── LabeledContent "版本"    UserDefaults[tableNick + "mapping_version"] ?? "—"
-        │   ├── LabeledContent "字數"    UserDefaults[tableNick + "total_record"]    ?? "—"
-        │   └── LabeledContent "狀態"    "已安裝" / "未安裝"
-        ├── Section "軟鍵盤配置"
-        │   └── NavigationLink "鍵盤佈局：\(currentKeyboard)" → KeyboardPickerView(im:)
+        │   └── LabeledContent "筆數"    manageImController.countRecords(table: im.tableNick) — fetched in .task
+        ├── Section "軟鍵盤配置"  (hidden when im.tableNick == "related")
+        │   └── NavigationLink "鍵盤佈局：\(currentKeyboard.name)" → KeyboardPickerView(im:)
+        │       (resolved via loadKeyboards; falls back to code string if name unavailable)
+        ├── Section "注音鍵盤類型"  (shown only when im.tableNick == "phonetic")
+        │   └── Picker "鍵盤類型"  pref: phonetic_keyboard_type  default: "standard"
+        │       (see §5.2.2 for the 6 options; onChange writes the `im` table row)
+        ├── Section "電話鍵盤設定"  (shown only when im.tableNick == "array10")
+        │   └── Picker "自動上屏"  pref: auto_commit  default: 0  — 0=無 4–10=Nth stroke auto-commit
         ├── Section "字根對應設定"  (shown only when im.tableNick == "custom")
-        │   ├── Toggle "數字字根對應"  pref: accept_number_index  default: false
-        │   └── Toggle "符號字根對應"  pref: accept_symbol_index  default: false
-        └── Section "字根對應表"
-            └── NavigationLink "瀏覽 / 編輯對應表" → RecordListView(table: im.tableNick)
+        │   ├── Toggle "數字字根對應"  pref: accept_number_index  default: false  — 允許使用數字為輸入法字根
+        │   └── Toggle "符號字根對應"  pref: accept_symbol_index  default: false  — 允許使用符號為輸入法字根
+        ├── Section "字根資料表"  (header = "聯想詞庫" when im.tableNick == "related")
+        │   ├── [tableNick != "related"] NavigationLink "瀏覽 / 編輯資料表" → RecordListView(table: im.tableNick)
+        │   └── [tableNick == "related"] NavigationLink "瀏覽 / 編輯聯想詞庫" → RelatedListView(isEmbedded: true)
+        └── Section (no header)  (hidden when im.tableNick == "related")
+            └── Button "移除輸入法" role: .destructive
+                → confirmAlert("此操作將清除「…」的所有對應資料，無法還原。確定繼續？")
+                → manageImController.clearTable(tableNick:)
+                   ├── SearchServer.clearTable → LimeDB.clearTable (DELETE records + resetImConfig)
+                   ├── LIMEPreferenceManager.syncIMActivatedState (rebuilds keyboard_state)
+                   ├── markKeyboardCacheDirty
+                   └── invalidate (triggers IMListView reload)
+                → dismiss IMDetailView; onRefresh()
 ```
 
+**Synthetic 聯想詞庫 row**: `IMRow(id: -1, imName: "related", label: "關聯詞庫", tableNick: "related", ...)` — constructed inline in `IMListView`; `.task` skips keyboard loading for this row.
+
+**Share / Export** (toolbar `square.and.arrow.up` button, all rows including 聯想詞庫):
+- Tapping opens a `confirmationDialog` with format choices.
+- Non-related IMs: `.lime（文字）` → `SetupImController.exportIMAsText` → `DBServer.exportTxtTable`; `.limedb（資料庫）` → `exportIMAsLimedb` → `DBServer.exportZippedDb`.
+- 聯想詞庫: only `.limedb` → `exportRelatedAsLimedb` → `DBServer.exportZippedDbRelated`.
+- A `ProgressView` overlay shows during export; on success, `ShareSheet` (UIActivityViewController) is presented.
+
+> `keyboard_list` (last-used IM) is **not** cleared after remove — mirrors Android behaviour.
+> The keyboard extension will naturally find no candidates if the cleared IM is still active.
+
 > The "字根對應設定" section is exclusive to the custom IM (`im.tableNick == "custom"`). All built-in IMs hardcode their own `hasNumberMapping` / `hasSymbolMapping` values in `initializeIMKeyboard()` and ignore these prefs.
+
+> The "注音鍵盤類型" section is exclusive to the phonetic IM (`im.tableNick == "phonetic"`). It lives on the IM detail page (not the global 喜好設定 tab) because `phonetic_keyboard_type` only affects the phonetic IM — both the DB-level letter-to-bopomofo remap and the visible keyboard layout. See §5.2.2 for details.
 
 #### 5.2.1 KeyboardPickerView — Soft Keyboard Selection
 
@@ -284,15 +307,45 @@ Equivalent to Android's `ManageImKeyboardDialog`.
 NavigationStack (continued)
 └── KeyboardPickerView
     └── List
-        └── ForEach keyboards (from db.getKeyboards() or static list)
-            └── HStack { Text(kb.description), Spacer(),
+        └── ForEach keyboards (from loadKeyboards; filtered to !isDisabled)
+            └── HStack { Text(kb.name), Spacer(),
                         Image(systemName: "checkmark").hidden(!isSelected) }
-               .onTapGesture → db.setIMKeyboard(table:description:code:); dismiss
+               .onTapGesture → manageImController.setKeyboard(forIM:keyboard:); dismiss
+               selectedCode seeded from im.keyboardId so checkmark shows immediately
 .navigationTitle("選擇鍵盤佈局")
 ```
 
 - Selection is persisted via `db.setIMKeyboard(table:description:code:)`.
 - For the **注音** IM specifically, changing the layout here must also update the `phonetic_keyboard_type` preference so the keyboard extension picks up the correct layout.
+
+#### 5.2.2 注音鍵盤類型 (Phonetic Keyboard Type)
+
+Shown only when `im.tableNick == "phonetic"`. A single `Picker` bound to the `phonetic_keyboard_type` preference.
+
+| UI Control | Pref Key | Type | Default | Notes |
+|---|---|---|---|---|
+| `Picker` "鍵盤類型" | `phonetic_keyboard_type` | String | `"standard"` | See options below |
+
+**Phonetic keyboard type options**:
+
+| Value | Display Label |
+|---|---|
+| `standard` | 標準 |
+| `et_41` | 倚天 41 鍵 |
+| `eten26` | 倚天 26 鍵 (英文鍵盤) |
+| `eten26_symbol` | 倚天 26 鍵 (符號鍵盤) |
+| `hsu` | 許氏 (英文鍵盤) |
+| `hsu_symbol` | 許氏 (符號鍵盤) |
+
+**Live update**: when this picker value changes, call `DBServer.setImConfigKeyboard("phonetic", kb)` to update the `im` table immediately (mirrors Android's `onSharedPreferenceChanged` in `LIMEPreference`). Use SwiftUI's `.onChange(of: phoneticKeyboardType)`:
+
+```swift
+.onChange(of: phoneticKeyboardType) { newType in
+    updatePhoneticKeyboard(type: newType)   // writes im table
+}
+```
+
+The keyboard extension re-reads both the pref and the DB row at the top of `initOnStartInput()` via `refreshPhoneticKeyboardPrefs()`, so the visible layout and the DB-level remap update on the next keyboard show — no extension restart required.
 
 ### 5.3 IM Install Screen — Download & Import
 
@@ -362,6 +415,8 @@ NavigationStack (continued)
         ├── DisclosureGroup "自建 (custom)"
         │   ├── Button "匯入 .limedb"     → fileImporter → importFromAttachedDB(table: "custom") → seedCustomIM()
         │   └── Button "匯入 .cin / .lime"  → fileImporter → importTxtTable(table: "custom") → seedCustomIM()
+        ├── DisclosureGroup "聯想詞庫"  systemImage: "text.bubble"
+        │   └── Button "匯入 .limedb"     → fileImporter → DBServer.importDbRelated(sourcedb:) → manageRelatedController.invalidate()
         └── Section "狀態"  (visible only when statusMessage is non-empty)
             └── Text(statusMessage).font(.footnote).foregroundColor(.secondary)
 ```
@@ -394,7 +449,7 @@ When import or download is running, show a centred `ProgressView("匯入中…")
 
 ### 6.1 Mapping Record List — RecordListView
 
-Reached via NavigationLink from §5.2 ("瀏覽 / 編輯對應表").
+Reached via NavigationLink from §5.2 ("瀏覽 / 編輯資料表").
 
 ```
 NavigationStack (continued)
@@ -437,7 +492,7 @@ NavigationStack (continued)
 
 ```
 Form
-├── Section "新增對應"
+├── Section "新增資料列"
 │   ├── TextField "字根 (code)"
 │   ├── TextField "文字 (word)"
 │   └── Stepper "分數: \(score)"   in: 0...9999, step: 1; default: 0
@@ -451,7 +506,7 @@ Form
 
 ```
 Form
-├── Section "編輯對應"
+├── Section "編輯資料列"
 │   ├── TextField "字根"  binding: code
 │   ├── TextField "文字"  binding: word
 │   └── HStack "分數" {
@@ -467,13 +522,13 @@ Form
 
 Validation on Save: code and word must not be empty.
 
-### 6.2 Related Phrase List — RelatedListView (關聯字 Tab)
+### 6.2 Related Phrase List — RelatedListView (embedded in §5.2)
 
-The **關聯字** tab hosts the full-screen related-phrase editor. Equivalent to Android's `ManageRelatedFragment`.
+The related-phrase editor is reached via **輸入法 → 聯想詞庫 → 瀏覽 / 編輯聯想詞庫**. It is no longer a standalone tab. `RelatedListView` accepts `isEmbedded: Bool`; when `true` the inner `NavigationView` wrapper is omitted so it can be pushed as a navigation destination without nesting. Equivalent to Android's `ManageRelatedFragment`.
 
 ```
-NavigationStack
-└── RelatedListView
+NavigationStack (continued from §5.2)
+└── RelatedListView(isEmbedded: true)
     ├── .searchable(text: $query, prompt: "搜尋詞彙")
     ├── List
     │   └── ForEach relatedList (page of 100)
@@ -521,7 +576,7 @@ Form
 
 ---
 
-## 7. Feature: DB Manager (資料 Tab)
+## 7. Feature: DB Manager (資料庫 Tab)
 
 **Purpose**: Backup the entire `lime.db` file and restore from a previous backup. Corresponds to the backup/restore buttons in Android's `SetupImFragment`.
 
@@ -543,9 +598,11 @@ NavigationStack
     │   │   → performRestore(url:)
     │   └── Text "還原後鍵盤將重新載入資料庫。"
     │         .font(.footnote).foregroundColor(.secondary)
+    ├── Section "初始資料庫"
+    │   └── Button "還原預設資料庫"  → restoreBundledDatabase() (uses isWorking / statusMessage)
     └── Section "狀態" (visible when statusMessage non-empty)
         └── Text(statusMessage).font(.footnote).foregroundColor(.secondary)
-.navigationTitle("資料管理")
+.navigationTitle("資料庫管理")
 ```
 
 ### 7.2 Backup Behaviour
@@ -571,7 +628,7 @@ When backup export or restore copy is running, show a centred `ProgressView` ove
 
 ---
 
-## 8. Feature: IM Preferences (偏好設定 Tab)
+## 8. Feature: IM Preferences (喜好設定 Tab)
 
 **Purpose**: Replicate all settings from Android's `LIMEPreference` (`preference.xml`). All values persist to `UserDefaults(suiteName: "group.net.toload.limeime")` so the keyboard extension can read them without IPC.
 
@@ -582,7 +639,7 @@ Use `@AppStorage(key, store: UserDefaults(suiteName: "group.net.toload.limeime")
 | UI Control | Pref Key | Type | Default | Values / Notes |
 |---|---|---|---|---|
 | `Picker` "鍵盤樣式" | `keyboard_theme` | Int | 0 | 0=淺色 1=深色 2=粉紅 3=科技藍 4=時尚紫 5=放鬆綠 6=系統設定 *(iOS only)* |
-| `Toggle` "顯示 Emoji" | `enable_emoji` | Bool | true | |
+| `Toggle` "顯示 Emoji" | `enable_emoji` | Bool | true | 依字根或中文組字顯示圖示，由於字型支援的差異所以部份圖示可能無法正確顯示 |
 | `Picker` "Emoji 顯示位置" | `enable_emoji_position` | Int | 3 | 2–10 (position after Nth candidate); disabled when `enable_emoji` = false |
 | `Picker` "鍵盤大小" | `keyboard_size` | String | "1.1" | "1.2"=特大 "1.1"=大 "1"=一般 "0.9"=小 "0.8"=特小 |
 | `Picker` "顯示方向鍵" | `show_arrow_key` | Int | 0 | 0=無 1=鍵盤上方 2=鍵盤下方 |
@@ -608,78 +665,53 @@ Use `@AppStorage(key, store: UserDefaults(suiteName: "group.net.toload.limeime")
 | UI Control | Pref Key | Type | Default | Notes |
 |---|---|---|---|---|
 | `Slider` or `Stepper` "候選字字型大小" | `font_size` | String | "1.1" | Scale string, same values as `keyboard_size`; also exposed as raw `candidateFontSize` Double (14–28 pt) |
-| `Toggle` "數字列英文鍵盤" | `number_row_in_english` | Bool | true | Show number row on the English keyboard layout |
+| `Toggle` "數字列英文鍵盤" | `number_row_in_english` | Bool | true | 在英文鍵盤顯示數字列(5列鍵盤) |
 
 ### 8.4 Section 輸入法行為 (IM Behaviour)
 
 | UI Control | Pref Key | Type | Default | Values / Notes |
 |---|---|---|---|---|
-| `Toggle` "智慧組詞" | `smart_chinese_input` | Bool | false | |
-| `Toggle` "自動中文標點" | `auto_chinese_symbol` | Bool | false | Show Chinese punctuation candidates when composing buffer is empty |
-| `Picker` "選字鍵預選順序" | `selkey_option` | Int | 0 | 0=混打英文優先 1=第一中文優先 2=第二中文優先 |
-| `Picker` "電話鍵盤自動上屏" | `auto_commit` | Int | 0 | 0=無 4/5/6/7/8/9/10=Nth stroke auto-commit |
-| `Toggle` "滑動選取候選字" | `candidate_switch` | Bool | true | Swipe on candidate bar to commit |
+| `Toggle` "智慧組詞" | `smart_chinese_input` | Bool | true | 部份輸入法可能會影響中英混打功能 |
+| `Toggle` "自動中文標點" | `auto_chinese_symbol` | Bool | true | 無候選字詞時顯示中文標點選項 |
+| `Toggle` "滑動選取候選字" | `candidate_switch` | Bool | true | 開啟：跟手滑動 關閉：滑動翻頁 |
 
-### 8.5 Section 注音鍵盤 (Phonetic Keyboard)
-
-| UI Control | Pref Key | Type | Default | Notes |
-|---|---|---|---|---|
-| `Picker` "鍵盤類型" | `phonetic_keyboard_type` | String | `"standard"` | See options below |
-
-**Phonetic keyboard type options**:
-
-| Value | Display Label |
-|---|---|
-| `standard` | 標準 |
-| `et_41` | 倚天 41 鍵 |
-| `eten26` | 倚天 26 鍵 (英文鍵盤) |
-| `eten26_symbol` | 倚天 26 鍵 (符號鍵盤) |
-| `hsu` | 許氏 (英文鍵盤) |
-| `hsu_symbol` | 許氏 (符號鍵盤) |
-
-**Live update**: when this picker value changes, call `db.setIMKeyboard("phonetic", description:, code:)` to update the `im` table immediately (mirrors Android's `onSharedPreferenceChanged` in `LIMEPreference`). Use SwiftUI's `.onChange(of: phoneticKeyboardType)` modifier:
-
-```swift
-.onChange(of: phoneticKeyboardType) { newType in
-    updatePhoneticKeyboard(type: newType)   // writes im table + refreshes SearchServer
-}
-```
-
-### 8.6 Section 漢字轉換 (Han Conversion)
+### 8.5 Section 漢字轉換 (Han Conversion)
 
 | UI Control | Pref Key | Type | Default | Notes |
 |---|---|---|---|---|
 | `Picker` "簡繁轉換" (`.segmented`) | `han_convert_option` | Int | 0 | 0=不轉換 1=繁→簡 2=簡→繁 |
-| `Toggle` "轉換提示" | `han_convert_notify` | Bool | true | Show reminder when active conversion mode has been idle > 60 s |
+| `Toggle` "轉換提示" | `han_convert_notify` | Bool | true | 輸入間隔時間超過60s時提示轉換的設定 |
 
 > On iOS, the keyboard extension must implement the 60 s idle reminder as an in-candidate-bar banner (not a system notification — keyboard extensions cannot post those).
 
-### 8.7 Section 關聯字與學習 (Related Phrases & Learning)
+### 8.6 Section 關聯字與學習 (Related Phrases & Learning)
 
 | UI Control | Pref Key | Type | Default | Notes |
 |---|---|---|---|---|
-| `Toggle` "啟用關聯字典" | `similiar_enable` | Bool | true | Master switch for related-word display |
+| `Toggle` "啟用關聯字典" | `similiar_enable` | Bool | true | 啟用關聯字典功能 |
 | `Picker` "建議字顯示數量" | `similiar_list` | Int | 20 | Options: 0 / 10 / 20 / 30 / 40 / 50 |
-| `Toggle` "自動學習關聯字" | `candidate_suggestion` | Bool | true | Gates `learnRelatedPhraseAndUpdateScore()` in `SearchServer` |
-| `Toggle` "自動學習新詞" | `learn_phrase` | Bool | true | Gates `addLDPhrase()` / `learnLDPhrase()` |
-| `Toggle` "依選取次數排序" | `learning_switch` | Bool | true | Sort candidates by accumulated score |
+| `Toggle` "自動學習關聯字" | `candidate_suggestion` | Bool | true | 依輸入文字自動建立關聯字 |
+| `Toggle` "自動學習新詞" | `learn_phrase` | Bool | true | 從常用關聯字學習新詞 |
+| `Toggle` "啟動選取排序" | `learning_switch` | Bool | true | 依選取次數排序選字清單 |
 
-### 8.8 Section 英文字典 (English Dictionary)
+### 8.7 Section 英文字典 (English Dictionary)
 
 | UI Control | Pref Key | Type | Default | Notes |
 |---|---|---|---|---|
-| `Toggle` "啟用英文建議字" | `english_dictionary_enable` | Bool | true | |
+| `Toggle` "啟用英文建議字" | `english_dictionary_enable` | Bool | true | 當使用英文輸入模式時，顯示英文建議字 |
 
-### 8.9 Section 進階 (Advanced)
+### 8.8 Section 進階 (Advanced)
 
 | UI Control | Pref Key | Type | Default | Notes |
 |---|---|---|---|---|
 | `Toggle` "字根反查提示" | `reverse_lookup_notify` | Bool | true | Show popup when reverse lookup result is used |
-| `Toggle` "記憶中英模式" | `persistent_language_mode` | Bool | false | Keep Chinese/English mode across sessions |
+| `Toggle` "記憶中英模式" | `persistent_language_mode` | Bool | false | 下次切換前保持中英模式 |
 
 > `accept_number_index` and `accept_symbol_index` are surfaced in §5.2 `IMDetailView` under the "字根對應設定" section, shown only when the custom IM is active (`im.tableNick == "custom"`). They are omitted from here because all built-in IMs hardcode their own number/symbol mapping behaviour.
 
-### 8.10 Section 字根反查 (Reverse Lookup) — Sub-screen
+> `auto_commit` is surfaced in §5.2 `IMDetailView` under the "電話鍵盤設定" section, shown only when `im.tableNick == "array10"`. It is IM-specific because it only applies to array10's phone-numpad keyboard layout. Android incorrectly also fires for phonetic (substring match bug); iOS uses `activeIM == "array10"` (correct intent).
+
+### 8.9 Section 字根反查 (Reverse Lookup) — Sub-screen
 
 A `NavigationLink` opens a dedicated sub-screen. Configures which IM provides the reverse-lookup annotation for each main IM when no candidate is found.
 
@@ -750,8 +782,7 @@ All stored in `UserDefaults(suiteName: "group.net.toload.limeime")`.
 | `number_row_in_english` | `number_row_in_english` | Bool | true |
 | `smart_chinese_input` | `smart_chinese_input` | Bool | false |
 | `auto_chinese_symbol` | `auto_chinese_symbol` | Bool | false |
-| `auto_commit` | `auto_commit` | Int | 0 |
-| `selkey_option` | `selkey_option` | Int | 0 |
+| `auto_commit` | `auto_commit` | Int | 0 | Array10 phone-numpad only — shown in IMDetailView, not PreferencesTabView |
 | `phonetic_keyboard_type` | `phonetic_keyboard_type` | String | "standard" |
 | `han_convert_option` | `han_convert_option` | Int | 0 |
 | `han_convert_notify` | `han_convert_notify` | Bool | true |
@@ -847,8 +878,8 @@ guard let db = openDB() else {
 | Constant | Value | Used in |
 |---|---|---|
 | Records per page | 100 | RecordListView (§6.1), RelatedListView (§6.2) |
-| `similiar_list` default | 20 | Related-word candidate count (§8.7) |
-| `similiar_list` options | 0 / 10 / 20 / 30 / 40 / 50 | Picker in §8.7 |
+| `similiar_list` default | 20 | Related-word candidate count (§8.6) |
+| `similiar_list` options | 0 / 10 / 20 / 30 / 40 / 50 | Picker in §8.6 |
 
 ---
 
@@ -907,14 +938,15 @@ guard let db = openDB() else {
 - **Keyboard Appearance** (§8.1): `keyboard_theme` (values 0–5 + **6=系統設定** iOS-only — **§13.2 done**), `enable_emoji`, `enable_emoji_position`, `keyboard_size`, `show_arrow_key`, `display_number_keypads`, `split_keyboard_mode` (iPad)
 - **Feedback** (§8.2): `vibrate_on_keypress`, `vibrate_level`, `sound_on_keypress`
 - **Font & Display** (§8.3): `font_size`, `number_row_in_english`
-- **IM Behaviour** (§8.4): `smart_chinese_input`, `auto_chinese_symbol`, `selkey_option`, `auto_commit`, `candidate_switch`
-- **Phonetic Keyboard** (§8.5): `phonetic_keyboard_type` (6 options) with live IM table update
-- **Han Conversion** (§8.6): `han_convert_option`, `han_convert_notify`
-- **Learning** (§8.7): `similiar_enable`, `similiar_list`, `candidate_suggestion`, `learn_phrase`, `learning_switch`
-- **English Dictionary** (§8.8): `english_dictionary_enable`
-- ~~**External Keyboard** (§8.9): removed — iOS does not allow 3rd-party extensions to intercept physical keyboard input~~ — **§13.1 done**
-- **Advanced** (§8.9): `reverse_lookup_notify`, `persistent_language_mode`
-- **Reverse Lookup** (§8.10): Sub-screen with per-IM picker (13 IMs × 14 lookup source options)
+- **IM Behaviour** (§8.4): `smart_chinese_input`, `auto_chinese_symbol`, `candidate_switch`
+- **Array10 detail page** (§5.2): `auto_commit`
+- **Phonetic IM detail page** (§5.2.2): `phonetic_keyboard_type` (6 options) with live IM table update
+- **Han Conversion** (§8.5): `han_convert_option`, `han_convert_notify`
+- **Learning** (§8.6): `similiar_enable`, `similiar_list`, `candidate_suggestion`, `learn_phrase`, `learning_switch`
+- **English Dictionary** (§8.7): `english_dictionary_enable`
+- ~~**External Keyboard**: removed — iOS does not allow 3rd-party extensions to intercept physical keyboard input~~ — **§13.1 done**
+- **Advanced** (§8.8): `reverse_lookup_notify`, `persistent_language_mode`
+- **Reverse Lookup** (§8.9): Sub-screen with per-IM picker (13 IMs × 14 lookup source options)
 
 ---
 

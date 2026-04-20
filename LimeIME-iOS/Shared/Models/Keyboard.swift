@@ -13,7 +13,7 @@ struct KeyboardConfig {
     let imshiftkb: String      // Portrait IM shift keyboard layout id
     let engkb: String          // English keyboard layout id
     let engshiftkb: String     // English shift keyboard layout id
-    let symbolkb: String       // Symbol keyboard layout id
+    let symbolkb: String       // Symbol keyboard layout id (e.g. lime_dayi_sym)
     let symbolshiftkb: String  // Symbol shift keyboard layout id
     let isDisabled: Bool       // Whether this keyboard entry is hidden
 }
