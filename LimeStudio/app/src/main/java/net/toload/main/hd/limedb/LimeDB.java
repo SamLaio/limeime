@@ -1853,13 +1853,23 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                     //if(betweenSearch){
                     selectClause = expandBetweenSearchClause(codeCol, code) + extraSelectClause;
                     String exactMatchCondition = " (" + codeCol + " ='" + escapedCode + "' " + extraExactMatchClause + ") ";
+                    // Sort key order (issue #49 follow-up):
+                    //   1. exactmatch-with-score single-char priority
+                    //   2. exactmatch DESC                      -- exact hits always above partial hits
+                    //   3. length(code) >= codeLen              -- at-least-as-long-as-typed first
+                    //   4. score DESC / basescore DESC          -- when `sort` pref is on, score now
+                    //                                              dominates over code-length so picks
+                    //                                              from the partial-match list can
+                    //                                              float to the top after score bumps
+                    //   5. (length(code) <= 5) * length(code)   -- tiebreaker among equal-score rows
+                    //   6. _id ASC
                     sortClause = "( exactmatch = 1 and ( score > 0 or  basescore >0) and length(word)=1) desc, exactmatch desc,"
-                            + " (length(" + codeCol + ") >= " + codeLen + " ) desc, "
-                            + "(length(" + codeCol + ") <= " + (Math.min(codeLen, 5)) + " )*length(" + codeCol + ") desc, ";
+                            + " (length(" + codeCol + ") >= " + codeLen + " ) desc, ";
 
 
                     StringBuilder sortClauseBuilder = new StringBuilder(sortClause);
                     if (sort) sortClauseBuilder.append(" score desc, basescore desc, ");
+                    sortClauseBuilder.append("(length(" + codeCol + ") <= " + (Math.min(codeLen, 5)) + " )*length(" + codeCol + ") desc, ");
                     sortClauseBuilder.append("_id asc");
                     String finalSortClause = sortClauseBuilder.toString();
 

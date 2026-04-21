@@ -303,25 +303,29 @@ public class SearchServer {
      * @return A unique string key for the cache.
      */
     private String cacheKey(String code) {
-        String key;
-        if(mLIMEPref==null || dbadapter==null){
+        // Snapshot non-volatile fields — teardown/reinit on other threads can null
+        // them between the check below and later reads, causing NPE in orphan
+        // prefetch threads during test process shutdown.
+        LIMEPreferenceManager pref = mLIMEPref;
+        LimeDB db = dbadapter;
+        if (pref == null || db == null) {
             Log.e(TAG, "cacheKey() mLIMEPref or dbadapter is null");
             return "";
         }
+        String key;
         //Jeremy '11,6,17 Separate physical keyboard cache with keyboardtype
         if (isPhysicalKeyboardPressed) {
             if (tablename.equals(LIME.DB_TABLE_PHONETIC)) {
-
-                key = mLIMEPref.getPhysicalKeyboardType() + dbadapter.getTableName()
-                        + mLIMEPref.getPhoneticKeyboardType() + code;
+                key = pref.getPhysicalKeyboardType() + db.getTableName()
+                        + pref.getPhoneticKeyboardType() + code;
             } else {
-                key = mLIMEPref.getPhysicalKeyboardType() + dbadapter.getTableName() + code;
+                key = pref.getPhysicalKeyboardType() + db.getTableName() + code;
             }
         } else {
             if (tablename.equals(LIME.DB_TABLE_PHONETIC))
-                key = dbadapter.getTableName() + mLIMEPref.getPhoneticKeyboardType() + code;
+                key = db.getTableName() + pref.getPhoneticKeyboardType() + code;
             else
-                key = dbadapter.getTableName() + code;
+                key = db.getTableName() + code;
         }
         return key;
     }
@@ -1151,45 +1155,31 @@ public class SearchServer {
         if (!cachedMapping.isRelatedPhraseRecord()) {
             String code = cachedMapping.getCode().toLowerCase(Locale.US);
             String cachekey = cacheKey(code);
-            List<Mapping> cachedList = cache.get(cachekey);
-            // null id denotes target is selected from the related list (not exact match)
-            if ((cachedMapping.getId() == null || cachedMapping.isPartialMatchToCodeRecord()) //Jeremy '15,6,3 new record type to identify partial match
-                    && cachedList != null && !cachedList.isEmpty()) {
-                if (DEBUG) Log.i(TAG, "updateScoreCache(): updating related list");
-                if (cache.remove(cachekey) == null) {
-                    removeRemappedCodeCachedMappings(code);
-                }
-                // non null id denotes target is in exact match result list.
-            } else if ((cachedMapping.getId() != null || cachedMapping.isExactMatchToCodeRecord()) //Jeremy '15,6,3 new record type to identify exact match
-                    && cachedList != null && !cachedList.isEmpty()) {
 
-                // Evict exact-match entry; DB already has the updated score.
-                if (cache.remove(cachekey) == null) {
-                    removeRemappedCodeCachedMappings(code);
-                }
-                // Jeremy '11,7,31
-                // exact match score was changed, related list in similar codes should be rebuilt
-                // (eg. d, de, and def for code, defg)
-                List<String> evictedPrefixes = updateSimilarCodeCache(code);
-                // Re-warm DB on this background thread so the next lookup hits a fresh cache
-                // ordered by the authoritative DB ORDER BY.
-                try {
-                    getMappingByCode(code, !isPhysicalKeyboardPressed, false, true);
-                    for (String prefix : evictedPrefixes) {
-                        getMappingByCode(prefix, !isPhysicalKeyboardPressed, false, true);
-                    }
-                } catch (RemoteException e) {
-                    Log.e(TAG, "updateScoreCache(): re-warm failed", e);
-                }
-
-
-            } else {//Jeremy '12,6,5 code not in cache do removeRemappedCodeCachedMappings and removed cached items of  ramped codes.
-
+            // Always evict the full-code cache entry (harmless if not cached) and the
+            // remapped-code mappings for this code. DB score just changed, so any
+            // in-memory copy under this key is stale.
+            if (cache.remove(cachekey) == null) {
                 removeRemappedCodeCachedMappings(code);
             }
+
+            // Always evict every prefix cache entry and re-warm each from the DB.
+            // This is required even when the full-code cache has no entry — which
+            // is the common partial-match case: user typed "g", picked 也
+            // (code="gds"). The stale score lives in cache["g"], not cache["gds"].
+            // Without this, the next lookup of "g" returns the stale Mapping and
+            // addScore() writes back the same stale score + 1, so the DB appears
+            // "stuck" at the first bump. Issue #49 follow-up.
+            List<String> evictedPrefixes = updateSimilarCodeCache(code);
+            try {
+                getMappingByCode(code, !isPhysicalKeyboardPressed, false, true);
+                for (String prefix : evictedPrefixes) {
+                    getMappingByCode(prefix, !isPhysicalKeyboardPressed, false, true);
+                }
+            } catch (RemoteException e) {
+                Log.e(TAG, "updateScoreCache(): re-warm failed", e);
+            }
         }
-
-
     }
 
 // '11,8,1 renamed from updateuserdict()

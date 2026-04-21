@@ -981,6 +981,12 @@ public class SearchServerTest {
     public void test_3_1_10_8_remapcache_updates_on_exact_match() throws Exception {
         ConcurrentHashMap<String, List<String>> coderemapcache = getStatic("coderemapcache", ConcurrentHashMap.class);
         coderemapcache.clear();
+        // Issue #49 follow-up: updateScoreCache now always re-warms cache for
+        // non-related-phrase records, which can leak entries across tests. Clear
+        // the main cache so getMappingByCodeFromCacheOrDB below actually queries
+        // the stub instead of short-circuiting on a stale cache hit.
+        Map<String, List<Mapping>> cache = getStatic("cache", Map.class);
+        cache.clear();
         Mapping remap = new Mapping();
         remap.setWord("remapWord");
         remap.setCode("remapped");
@@ -2009,9 +2015,12 @@ public class SearchServerTest {
 
         method.invoke(searchServer, relatedPhrase);
 
-        // Verify cache was removed
+        // Issue #49 follow-up: the unified evict-and-re-warm path always re-queries
+        // the DB after evicting. The stub returns an empty list, so cache.get may
+        // be null (eviction without re-populate) or [] (re-warmed empty). Either
+        // way the stale mapping is gone.
         List<Mapping> resultList = cache.get("customab");
-        assertNull(resultList);
+        assertTrue(resultList == null || resultList.isEmpty());
 
         setStatic("dbadapter", original);
     }
@@ -2089,9 +2098,13 @@ public class SearchServerTest {
 
         method.invoke(searchServer, notInCache);
 
-        // Verify no exception, cache empty for that code
+        // After issue #49 follow-up: updateScoreCache unconditionally re-warms
+        // the full-code cache key from the DB. The stub returns an empty list,
+        // so cache.get may be null OR an empty list. Either is acceptable — the
+        // invariant is "no stale mapping is cached".
         List<Mapping> resultList = cache.get("customzz");
-        assertNull(resultList);
+        assertTrue(resultList == null || resultList.isEmpty());
+        assertTrue(stub.addScoreCalled);
 
         setStatic("dbadapter", original);
     }
@@ -2433,8 +2446,11 @@ public class SearchServerTest {
 
         method.invoke(searchServer, related);
 
+        // Issue #49 follow-up: unified evict-and-re-warm always re-queries the DB;
+        // the stub returns empty so cache may be null or []. Either confirms the
+        // stale mapping was removed.
         List<Mapping> resultList = cache.get("customphrase");
-        assertNull(resultList);  // Cache entry should be removed
+        assertTrue(resultList == null || resultList.isEmpty());
 
         setStatic("dbadapter", original);
     }
@@ -2978,14 +2994,35 @@ public class SearchServerTest {
 
     @Test(timeout = 5000)
     public void test_3_3_5_17_updateScoreCache_related_removal_path() throws Exception {
+        // Use a StubLimeDBRuntime so the re-warm step below returns an empty list
+        // deterministically instead of hitting the real DB (which may be in a
+        // torn-down state when this test runs).
+        LimeDB originalDb = getStatic("dbadapter", LimeDB.class);
+        StubLimeDBRuntime stub = new StubLimeDBRuntime(appContext);
+        setStatic("dbadapter", stub);
+
         searchServer.setTableName("custom", false, false);
 
         Map<String, List<Mapping>> originalCache = getStatic("cache", Map.class);
+        // Custom map that forces the removeRemappedCodeCachedMappings fallback by
+        // returning null from remove(), and drops puts so the subsequent re-warm
+        // cannot repopulate the entry. Without ignoring puts, the unified
+        // evict-and-re-warm path (issue #49 follow-up) would always write the
+        // re-queried list back, defeating the removal assertion below.
         Map<String, List<Mapping>> fakeCache = new ConcurrentHashMap<String, List<Mapping>>() {
+            boolean seeded = false;
             @Override
             public List<Mapping> remove(Object key) {
                 super.remove(key);
-                return null; // force removal branch to call removeRemappedCodeCachedMappings
+                return null; // force fallback branch
+            }
+            @Override
+            public List<Mapping> put(String key, List<Mapping> value) {
+                if (!seeded) {
+                    seeded = true;
+                    return super.put(key, value);
+                }
+                return null; // drop re-warm writes
             }
         };
         setStatic("cache", fakeCache);
@@ -3014,6 +3051,7 @@ public class SearchServerTest {
             assertFalse(fakeCache.containsKey(key));
         } finally {
             setStatic("cache", originalCache);
+            setStatic("dbadapter", originalDb);
         }
     }
 
@@ -4757,14 +4795,22 @@ public class SearchServerTest {
 
     /**
      * Test updateScoreCache() with partial match record
-     * Covers the partial match branch (cachedMapping.isPartialMatchToCodeRecord)
+     * Covers the partial match branch (cachedMapping.isPartialMatchToCodeRecord).
+     * <p>
+     * After the issue #49 follow-up, the partial-match branch mirrors the exact-match
+     * branch: it evicts the selected full-code cache entry AND all prefix cache entries
+     * via {@code updateSimilarCodeCache}, then re-warms them from the DB. This test
+     * asserts the selected full-code entry and every prefix entry are evicted; the
+     * re-warm repopulates them with the DB-authoritative list (possibly empty on this
+     * test DB, which is acceptable — the invariant is "not stale").
      */
     @Test(timeout = 5000)
     public void test_3_3_5_19_updateScoreCache_partial_match() throws Exception {
         searchServer.setTableName(LIME.DB_TABLE_PHONETIC, true, false);
         ConcurrentHashMap<String, List<Mapping>> cache = getStatic("cache", ConcurrentHashMap.class);
-        
-        // Create and cache a mapping
+
+        // Seed the full-code entry and every prefix entry with stale data so we can
+        // verify each is evicted.
         String code = "test";
         String cacheKey = cacheKey(code);
         List<Mapping> mappingList = new ArrayList<>();
@@ -4775,21 +4821,50 @@ public class SearchServerTest {
         m1.setScore(10);
         mappingList.add(m1);
         cache.put(cacheKey, mappingList);
-        
+
+        List<String> prefixes = new ArrayList<>();
+        prefixes.add("tes");
+        prefixes.add("te");
+        prefixes.add("t");
+        for (String prefix : prefixes) {
+            List<Mapping> staleList = new ArrayList<>();
+            Mapping stale = new Mapping();
+            stale.setCode(prefix);
+            stale.setWord("stale");
+            stale.setId("stale-" + prefix);
+            stale.setScore(1);
+            staleList.add(stale);
+            cache.put(cacheKey(prefix), staleList);
+        }
+
         // Create partial match mapping
         Mapping partialMatch = new Mapping();
         partialMatch.setCode(code);
         partialMatch.setWord("測試2");
         partialMatch.setId(null); // null id with isPartialMatchToCodeRecord
         partialMatch.setScore(5);
-        
+
         // Call updateScoreCache with partial match
         Method method = SearchServer.class.getDeclaredMethod("updateScoreCache", Mapping.class);
         method.setAccessible(true);
         method.invoke(searchServer, partialMatch);
-        
-        // Cache should be removed for partial match
-        assertNull("Cache should be removed for partial match", cache.get(cacheKey));
+
+        // Full-code entry: evicted (re-warm may repopulate with DB results, possibly empty).
+        // The stale list we seeded must be gone either way.
+        List<Mapping> fullResult = cache.get(cacheKey);
+        assertTrue("Full-code cache entry should be evicted or re-warmed with DB result",
+                fullResult == null || fullResult != mappingList);
+
+        // Every prefix entry: evicted (and possibly re-warmed). The stale list we seeded
+        // must be gone either way.
+        for (String prefix : prefixes) {
+            List<Mapping> prefixResult = cache.get(cacheKey(prefix));
+            assertTrue(
+                    "Prefix cache entry for '" + prefix + "' should be evicted or re-warmed",
+                    prefixResult == null
+                            || prefixResult.isEmpty()
+                            || !"stale".equals(prefixResult.get(0).getWord()));
+        }
     }
 
     /**
