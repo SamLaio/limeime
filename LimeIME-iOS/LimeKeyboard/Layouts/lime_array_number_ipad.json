@@ -26,14 +26,14 @@
           "codes": [
             49
           ],
-          "label": "1",
+          "label": "!\\n1",
           "sublabel": "",
           "widthPercent": 7.0,
           "icon": "",
           "isModifier": false,
           "isRepeatable": false,
           "isSticky": false,
-          "longPressCode": 0,
+          "longPressCode": 33,
           "popupKeyboard": "",
           "popupCharacters": ""
         },
@@ -42,14 +42,14 @@
           "codes": [
             50
           ],
-          "label": "2",
+          "label": "@\\n2",
           "sublabel": "",
           "widthPercent": 7.0,
           "icon": "",
           "isModifier": false,
           "isRepeatable": false,
           "isSticky": false,
-          "longPressCode": 0,
+          "longPressCode": 64,
           "popupKeyboard": "",
           "popupCharacters": ""
         },
@@ -58,14 +58,14 @@
           "codes": [
             51
           ],
-          "label": "3",
+          "label": "#\\n3",
           "sublabel": "",
           "widthPercent": 7.0,
           "icon": "",
           "isModifier": false,
           "isRepeatable": false,
           "isSticky": false,
-          "longPressCode": 0,
+          "longPressCode": 35,
           "popupKeyboard": "",
           "popupCharacters": ""
         },
@@ -74,14 +74,14 @@
           "codes": [
             52
           ],
-          "label": "4",
+          "label": "$\\n4",
           "sublabel": "",
           "widthPercent": 7.0,
           "icon": "",
           "isModifier": false,
           "isRepeatable": false,
           "isSticky": false,
-          "longPressCode": 0,
+          "longPressCode": 36,
           "popupKeyboard": "",
           "popupCharacters": ""
         },
@@ -90,14 +90,14 @@
           "codes": [
             53
           ],
-          "label": "5",
+          "label": "%\\n5",
           "sublabel": "",
           "widthPercent": 7.0,
           "icon": "",
           "isModifier": false,
           "isRepeatable": false,
           "isSticky": false,
-          "longPressCode": 0,
+          "longPressCode": 37,
           "popupKeyboard": "",
           "popupCharacters": ""
         },
@@ -106,14 +106,14 @@
           "codes": [
             54
           ],
-          "label": "6",
+          "label": "^\\n6",
           "sublabel": "",
           "widthPercent": 7.0,
           "icon": "",
           "isModifier": false,
           "isRepeatable": false,
           "isSticky": false,
-          "longPressCode": 0,
+          "longPressCode": 94,
           "popupKeyboard": "",
           "popupCharacters": ""
         },
@@ -122,14 +122,14 @@
           "codes": [
             55
           ],
-          "label": "7",
+          "label": "&\\n7",
           "sublabel": "",
           "widthPercent": 7.0,
           "icon": "",
           "isModifier": false,
           "isRepeatable": false,
           "isSticky": false,
-          "longPressCode": 0,
+          "longPressCode": 38,
           "popupKeyboard": "",
           "popupCharacters": ""
         },
@@ -138,14 +138,14 @@
           "codes": [
             56
           ],
-          "label": "8",
+          "label": "*\\n8",
           "sublabel": "",
           "widthPercent": 7.0,
           "icon": "",
           "isModifier": false,
           "isRepeatable": false,
           "isSticky": false,
-          "longPressCode": 0,
+          "longPressCode": 42,
           "popupKeyboard": "",
           "popupCharacters": ""
         },
@@ -154,14 +154,14 @@
           "codes": [
             57
           ],
-          "label": "9",
+          "label": "(\\n9",
           "sublabel": "",
           "widthPercent": 7.0,
           "icon": "",
           "isModifier": false,
           "isRepeatable": false,
           "isSticky": false,
-          "longPressCode": 0,
+          "longPressCode": 40,
           "popupKeyboard": "",
           "popupCharacters": ""
         },
@@ -170,14 +170,14 @@
           "codes": [
             48
           ],
-          "label": "0",
+          "label": ")\\n0",
           "sublabel": "",
           "widthPercent": 7.0,
           "icon": "",
           "isModifier": false,
           "isRepeatable": false,
           "isSticky": false,
-          "longPressCode": 0,
+          "longPressCode": 41,
           "popupKeyboard": "",
           "popupCharacters": ""
         },

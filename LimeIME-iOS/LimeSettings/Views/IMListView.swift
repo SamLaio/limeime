@@ -76,7 +76,26 @@ struct IMListView: View {
                             Text("尚未匯入任何輸入法")
                                 .foregroundColor(.secondary)
                         } else {
-                            ForEach($imList) { $row in
+                            // NOTE: Use id-based bindings rather than `ForEach($imList)`.
+                            // `ForEach($imList)` produces bindings that subscript the
+                            // array by index. When the array mutates (onMove, refresh,
+                            // delete) SwiftUI's UISwitch may still re-read a stale
+                            // index in the same render cycle, crashing with
+                            // "Fatal error: Index out of range" inside
+                            // Binding<MutableCollection>.subscript.
+                            ForEach(imList) { row in
+                                let rowId = row.id
+                                let enabledBinding = Binding<Bool>(
+                                    get: {
+                                        imList.first(where: { $0.id == rowId })?.enabled ?? false
+                                    },
+                                    set: { newVal in
+                                        if let idx = imList.firstIndex(where: { $0.id == rowId }) {
+                                            imList[idx].enabled = newVal
+                                        }
+                                        toggleIM(imName: row.imName, enabled: newVal)
+                                    }
+                                )
                                 HStack {
                                     VStack(alignment: .leading) {
                                         Text(row.label)
@@ -84,11 +103,8 @@ struct IMListView: View {
                                             .opacity(row.enabled ? 1.0 : 0.5)
                                     }
                                     Spacer()
-                                    Toggle("", isOn: $row.enabled)
+                                    Toggle("", isOn: enabledBinding)
                                         .labelsHidden()
-                                        .onChange(of: row.enabled) { newVal in
-                                            toggleIM(imName: row.imName, enabled: newVal)
-                                        }
                                 }
                                 .tag(DetailSelection.im(row.id))
                             }

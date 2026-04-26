@@ -60,7 +60,10 @@ final class IMDownloadManager: ObservableObject {
             let tables = IMCatalog.allVariants
                 .map { $0.tableName }
                 .filter { server.tableHasData($0) }
-            await MainActor.run { self?.installedTables = Set(tables) }
+            let result = Set(tables)
+            await MainActor.run { [weak self] in
+                self?.installedTables = result
+            }
         }
     }
 
@@ -94,9 +97,11 @@ final class IMDownloadManager: ObservableObject {
                 return
             }
 
-            Task { await MainActor.run { self.states[variantID] = .importing } }
-            let restore = self.restoreLearningFlags[variant.id] ?? false
-            self.importDownloaded(tempURL: tempURL, variant: variant, restoreLearning: restore)
+            Task { await MainActor.run {
+                self.states[variantID] = .importing
+                let restore = self.restoreLearningFlags[variant.id] ?? false
+                self.importDownloaded(tempURL: tempURL, variant: variant, restoreLearning: restore)
+            }}
         }
 
         // Observe download progress

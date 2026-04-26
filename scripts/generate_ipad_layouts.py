@@ -648,24 +648,52 @@ def build_cjk_ipad(lid, phone_name):
                 keys.append(mk(c, label=lbl, sublabel=sub, width=KEY_W))
         return keys
 
+    def _row_digits_dual(tuples):
+        """Non-sym digit row: synthesize 'shift\\ndigit' dual label with longPressCode.
+        Matches English iPad behavior: direct=digit (bottom large), sliding=shift symbol (top small)."""
+        keys = []
+        for c, lbl, sub in tuples:
+            if c in _DIGIT_SHIFT and not sub:
+                sc = _DIGIT_SHIFT[c]
+                keys.append(mk(c, label=f'{_SHIFT_CHAR[sc]}\\n{lbl}', width=KEY_W, lp=sc))
+            else:
+                keys.append(mk(c, label=lbl, sublabel=sub, width=KEY_W))
+        return keys
+
     # Detect number row: ar0 contains digit keys (codes 48–57)
     has_number_row = bool(ar0) and any(48 <= c <= 57 for c, _, _ in ar0)
 
     _tab  = mk(C_TAB,    icon='arrow.forward.to.line', width=9.0,   mod=True)
+    _tab7 = mk(C_TAB,    icon='arrow.forward.to.line', width=KEY_W, mod=True)
     _del  = mk(C_DELETE, icon='delete.backward',       width=KEY_W, mod=True, rep=True)
+    _del9 = mk(C_DELETE, icon='delete.backward',       width=9.0,   mod=True, rep=True)
     # Sliding keys: format 'sliding\\ndirect' — sliding char is small TOP, direct is large BOTTOM.
     _em_dash       = mk(8212, label='…\\n—',  width=KEY_W, lp=8230)  # direct=—, sliding=…
     _ellipsis_only = mk(8230, label='…',       width=KEY_W)
     _slash_tilde       = mk(96,  label='~\\n`', width=KEY_W, lp=126)   # sliding=~(top), direct=`(bottom)
     _slash_tilde_shift = mk(126, label='~',     width=KEY_W)           # shifted: show only ~
 
-    # ---- Row 0 (top/5th from bottom): content(7 each) [+ …/—(7)] + delete(fills) — NO tab ----
+    # Bracket cluster used on r0 (5-row) or split between r0/r1 (4-row).
+    _br_left        = mk(12300, label='『\\n「', width=KEY_W, lp=12302)
+    _br_right       = mk(12301, label='』\\n」', width=KEY_W, lp=12303)
+    _br_pipe        = mk(12289, label='|\\n、',  width=KEY_W, lp=124)
+    _br_left_shift  = mk(12302, label='『', width=KEY_W)
+    _br_right_shift = mk(12303, label='』', width=KEY_W)
+    _br_pipe_shift  = mk(124,   label='|',  width=KEY_W)
+
+    # ---- Row 0 ----
     if has_number_row:
-        r0       = fix_total([_slash_tilde]       + _row(ar0)       + [_em_dash,       _del])
+        # 5-row: digit row at top, NO tab. delete on right edge.
+        # Non-sym family (digits without sublabel) → synthesize dual 'shift\\ndigit' labels.
+        digit_has_sub = any(sub for c, _, sub in ar0 if 48 <= c <= 57)
+        ar0_normal = _row(ar0) if digit_has_sub else _row_digits_dual(ar0)
+        r0       = fix_total([_slash_tilde]       + ar0_normal      + [_em_dash,       _del])
         r0_shift = fix_total([_slash_tilde_shift] + _row_shift(ar0) + [_ellipsis_only, _del])
     else:
-        r0       = fix_total(_row(ar0)       + [_del])
-        r0_shift = fix_total(_row_shift(ar0) + [_del])
+        # 4-row: qwerty row at top with tab(7) + 10 alpha(7) + 2 brackets(7) + delete(9) = 100.
+        # 、/| moves down to r1 (between content and ：/；).
+        r0       = fix_total([_tab7] + _row(ar0)       + [_br_left,       _br_right,       _del9])
+        r0_shift = fix_total([_tab7] + _row_shift(ar0) + [_br_left_shift, _br_right_shift, _del9])
 
     # ---- Row 1 (qwerty, 4th from bottom): tab(9) + content + 3 CJK bracket symbols ----
     # Bracket symbols: format 'sliding\\ndirect' (sliding small top, direct large bottom).
@@ -675,13 +703,19 @@ def build_cjk_ipad(lid, phone_name):
     _sym3_shift = [mk(12302, label='『', width=KEY_W),
                    mk(12303, label='』', width=KEY_W),
                    mk(124,   label='|',  width=KEY_W)]
-    if ar1:
-        # tab(9) + N content(7) + 3 symbols(7) — for N=10 this is exactly 100
-        r1       = fix_total([_tab] + _row(ar1)       + _sym3)
-        r1_shift = fix_total([_tab] + _row_shift(ar1) + _sym3_shift)
+    if has_number_row:
+        if ar1:
+            # tab(9) + N content(7) + 3 symbols(7) — for N=10 this is exactly 100
+            r1       = fix_total([_tab] + _row(ar1)       + _sym3)
+            r1_shift = fix_total([_tab] + _row_shift(ar1) + _sym3_shift)
+        else:
+            r1       = fix_total([_tab] + _sym3       + [spacer(100.0 - 9.0 - 3 * KEY_W)])
+            r1_shift = fix_total([_tab] + _sym3_shift + [spacer(100.0 - 9.0 - 3 * KEY_W)])
     else:
-        r1       = fix_total([_tab] + _sym3       + [spacer(100.0 - 9.0 - 3 * KEY_W)])
-        r1_shift = fix_total([_tab] + _sym3_shift + [spacer(100.0 - 9.0 - 3 * KEY_W)])
+        # 4-row: r1 is the asdf row → abc + ar1(10) + 、/|(7) + ：/；(7) + return.
+        # abc + return split remainder = (100 − 70 − 7 − 7) / 2 = 8 each.
+        r1       = None  # built below alongside r2
+        r1_shift = None
 
     # ---- Row 2 (asdf, 3rd from bottom): abc + content + ：/；+ enter ----
     # ：/；shows only the direct output; shifted shows only ；
@@ -689,45 +723,77 @@ def build_cjk_ipad(lid, phone_name):
     _semicolon   = mk(0xFF1B, label='；', width=KEY_W)
     _enter       = lambda w: mk(C_ENTER, icon='return', width=w, mod=True)
     _abc         = lambda w: mk(C_EN, label='abc',      width=w, mod=True)
-    if ar2:
-        func_w = round((100.0 - len(ar2) * KEY_W - KEY_W) / 2, 4)
-        r2       = fix_total([_abc(func_w)] + _row(ar2)       + [_colon,     _enter(func_w)])
-        r2_shift = fix_total([_abc(func_w)] + _row_shift(ar2) + [_semicolon, _enter(func_w)])
+    if has_number_row:
+        if ar2:
+            func_w = round((100.0 - len(ar2) * KEY_W - KEY_W) / 2, 4)
+            r2       = fix_total([_abc(func_w)] + _row(ar2)       + [_colon,     _enter(func_w)])
+            r2_shift = fix_total([_abc(func_w)] + _row_shift(ar2) + [_semicolon, _enter(func_w)])
+        else:
+            func_w = round((100.0 - KEY_W) / 2, 4)
+            r2       = fix_total([_abc(func_w), _colon,     _enter(func_w)])
+            r2_shift = fix_total([_abc(func_w), _semicolon, _enter(func_w)])
     else:
-        func_w = round((100.0 - KEY_W) / 2, 4)
-        r2       = fix_total([_abc(func_w), _colon,     _enter(func_w)])
-        r2_shift = fix_total([_abc(func_w), _semicolon, _enter(func_w)])
+        # 4-row: build r1 (was-asdf with abc+colon+enter and 、/|) and r2 (was-zxcv with shifts).
+        # r1 = abc(func_w) + ar1(N×7) + 、/|(7) + ：/；(7) + return(func_w)
+        if ar1:
+            func_w_r1 = round((100.0 - len(ar1) * KEY_W - 2 * KEY_W) / 2, 4)
+            r1       = fix_total([_abc(func_w_r1)] + _row(ar1)       + [_br_pipe,       _colon,     _enter(func_w_r1)])
+            r1_shift = fix_total([_abc(func_w_r1)] + _row_shift(ar1) + [_br_pipe_shift, _semicolon, _enter(func_w_r1)])
+        else:
+            func_w_r1 = round((100.0 - 2 * KEY_W) / 2, 4)
+            r1       = fix_total([_abc(func_w_r1), _br_pipe,       _colon,     _enter(func_w_r1)])
+            r1_shift = fix_total([_abc(func_w_r1), _br_pipe_shift, _semicolon, _enter(func_w_r1)])
+        # r2 = L-shift + (ar2 + bottom_alpha) + R-shift  — handled in shift block below using shift_alpha_4row
+        r2 = None
+        r2_shift = None
 
-    # ---- Row 3 (zxcv, 2nd from bottom): shift + content + shift ----
-    if shift_alpha:
-        each_shift = round((100.0 - len(shift_alpha) * KEY_W) / 2, 4)
-        r3 = fix_total(
+    # ---- Shift row (zxcv, 2nd from bottom): shift + content + shift ----
+    # 5-row uses shift_alpha = ar3 + bottom_alpha. 4-row uses ar2 + bottom_alpha (no ar3).
+    shift_row_alpha = shift_alpha if has_number_row else (ar2 + bottom_alpha)
+    if shift_row_alpha:
+        each_shift = round((100.0 - len(shift_row_alpha) * KEY_W) / 2, 4)
+        rS = fix_total(
             [mk(C_SHIFT, icon='shift',      width=each_shift, mod=True, sticky=True)]
-            + _row(shift_alpha)
+            + _row(shift_row_alpha)
             + [mk(C_SHIFT, icon='shift',    width=each_shift, mod=True, sticky=True)])
-        r3_shift = fix_total(
+        rS_shift = fix_total(
             [mk(C_SHIFT, icon='shift.fill', width=each_shift, mod=True, sticky=True)]
-            + _row_shift(shift_alpha)
+            + _row_shift(shift_row_alpha)
             + [mk(C_SHIFT, icon='shift.fill', width=each_shift, mod=True, sticky=True)])
     else:
         each_shift = round((100.0 - KEY_W) / 2, 4)
-        r3 = r3_shift = fix_total([
+        rS = rS_shift = fix_total([
             mk(C_SHIFT, icon='shift', width=each_shift, mod=True, sticky=True),
             spacer(KEY_W),
             mk(C_SHIFT, icon='shift', width=each_shift, mod=True, sticky=True),
         ])
+
+    if has_number_row:
+        r3, r3_shift = rS, rS_shift
+    else:
+        # 4-row: shift row becomes r2.
+        r2, r2_shift = rS, rS_shift
 
     # ---- Row 4 (bottom): CJK bottom row with ，/。right of space ----
     r4       = bottom_row(cjk=True)
     r4_shift = bottom_row(cjk=True, shifted=True)
 
     ipad_id = lid + '_ipad'
-    write_layout(ipad_id, [
-        (r0,       False), (r1,       False), (r2,       False), (r3,       False), (r4,       True),
-    ])
-    write_layout(ipad_id + '_shift', [
-        (r0_shift, False), (r1_shift, False), (r2_shift, False), (r3_shift, False), (r4_shift, True),
-    ])
+    if has_number_row:
+        write_layout(ipad_id, [
+            (r0,       False), (r1,       False), (r2,       False), (r3,       False), (r4,       True),
+        ])
+        write_layout(ipad_id + '_shift', [
+            (r0_shift, False), (r1_shift, False), (r2_shift, False), (r3_shift, False), (r4_shift, True),
+        ])
+    else:
+        write_layout(ipad_id, [
+            (r0,       False), (r1,       False), (r2,       False), (r4,       True),
+        ])
+        write_layout(ipad_id + '_shift', [
+            (r0_shift, False), (r1_shift, False), (r2_shift, False), (r4_shift, True),
+        ])
+
 
 
 # ---------------------------------------------------------------------------

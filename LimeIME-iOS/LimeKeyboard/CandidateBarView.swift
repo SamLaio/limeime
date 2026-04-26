@@ -22,7 +22,44 @@ final class CandidateBarView: UIView {
     /// vertical space). iPhone keeps the strip and leaves this collapsed.
     /// Width is 0 when `composingText` is nil/empty; intrinsic otherwise.
     private let composingLabel = UILabel()
-    private var composingLabelWidth: NSLayoutConstraint!
+    /// Reserved height of the top keyname strip overlaid on the candidate bar.
+    /// Candidates get this much extra top padding so their glyphs sit below
+    /// the keyname instead of overlapping it.
+    /// Public so the expanded-candidates panel (rendered by
+    /// `KeyboardViewController`) can mirror the same metrics and remain
+    /// visually pixel-identical to the unexpanded bar's first row.
+    ///
+    /// Sized to comfortably contain a Bopomofo tone glyph from STHeiti TC at
+    /// `composingStripFont`'s point size (see that property's comment for
+    /// font choice rationale).
+    var composingStripHeight: CGFloat { isPad ? 28 : 22 }
+    /// Font for the small top-strip keyname overlay. Deliberately smaller
+    /// than the main composing/candidate font so it stays a subtle hint.
+    /// Public for the same reason as `composingStripHeight`.
+    ///
+    /// NOTE: Uses **STHeiti TC** rather than PingFang. CoreText measurements
+    /// at 14 pt show:
+    ///   PingFangTC-Regular  ˇ = 3×1  pt   (invisible accent)
+    ///   STHeitiTC-Light     ˇ = 5×3  pt   (≈10x larger area)
+    ///   STSongti-TC         ˇ = 3×2  pt
+    /// SF / SF Mono are even worse — they treat ˇ ˋ ˊ ˙ as Latin
+    /// "spacing modifier letters" and draw them as near-invisible IPA
+    /// accents. STHeiti TC is the only system font on iOS where the
+    /// Bopomofo tone marks render at a glance-readable size without any
+    /// per-character scaling tricks.
+    var composingStripFont: UIFont {
+        let size = (isPad ? 18 : 14) * fontScale
+        return UIFont(name: "STHeitiTC-Light", size: size)
+            ?? UIFont(name: "PingFangTC-Regular", size: size)
+            ?? UIFont.systemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Text shown in the top keyname strip (RC3 Option A — vertical stack).
+    /// When nil/empty the strip is hidden but the reserved padding above
+    /// candidate glyphs is preserved so the bar height never jitters.
+    var composingText: String? {
+        didSet { applyComposingText() }
+    }
 
     // MARK: - Theme
     var theme: Int = 0 {
@@ -81,7 +118,15 @@ final class CandidateBarView: UIView {
     private var baseCandidateFontSize: CGFloat     { isPad ? 26 : 22 }
     private var baseComposingCodeFontSize: CGFloat { isPad ? 22 : 16 }
     private var candidateFont: UIFont     { UIFont.systemFont(ofSize: baseCandidateFontSize * fontScale, weight: .regular) }
-    private var composingCodeFont: UIFont { UIFont.monospacedSystemFont(ofSize: baseComposingCodeFontSize * fontScale, weight: .regular) }
+    // Per-candidate composing-code label font.
+    // Uses PingFang TC for the same reason documented on `composingStripFont`
+    // above: Bopomofo tone marks (ˇ ˋ ˊ ˙) would otherwise render as tiny
+    // IPA accents under SF / SF Mono.
+    private var composingCodeFont: UIFont {
+        let size = baseComposingCodeFontSize * fontScale
+        return UIFont(name: "PingFangTC-Regular", size: size)
+            ?? UIFont.systemFont(ofSize: size, weight: .regular)
+    }
     private let candidateHPad:   CGFloat = 10
     private let dividerWidth:    CGFloat = 1
 
@@ -100,7 +145,9 @@ final class CandidateBarView: UIView {
         backgroundColor = .clear
         moreButton.tintColor = palette.candiText
         moreSep.backgroundColor = palette.candiText.withAlphaComponent(0.2)
-        composingLabel.textColor = palette.candiText
+        composingLabel.font = composingStripFont
+        composingLabel.textColor = palette.candiText.withAlphaComponent(0.75)
+        applyComposingText()
         rebuildButtons()
     }
 
@@ -122,7 +169,10 @@ final class CandidateBarView: UIView {
         // tripping the iOS 15 deprecation warning. The non-Configuration
         // button path is intentional — see makeCandidateButton for the
         // reason (UIButton.Configuration.plain() inflates spacing).
-        moreButton.setValue(NSValue(uiEdgeInsets: UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)),
+        // Match candidate buttons: bias down by half the strip height so the
+        // chevron icon sits at the same vertical center as the glyphs.
+        let chevronBias = composingStripHeight / 2
+        moreButton.setValue(NSValue(uiEdgeInsets: UIEdgeInsets(top: chevronBias, left: 10, bottom: -chevronBias, right: 10)),
                             forKey: "contentEdgeInsets")
         moreButton.isHidden = true
         moreButton.addTarget(self, action: #selector(moreTapped), for: .touchUpInside)
@@ -137,11 +187,16 @@ final class CandidateBarView: UIView {
         moreSep.translatesAutoresizingMaskIntoConstraints = false
         addSubview(moreSep)
 
-        composingLabel.font = composingCodeFont
-        composingLabel.textColor = palette.candiText
-        composingLabel.textAlignment = .center
+        composingLabel.font = composingStripFont
+        composingLabel.textColor = palette.candiText.withAlphaComponent(0.75)
+        composingLabel.textAlignment = .left
         composingLabel.backgroundColor = .clear
         composingLabel.translatesAutoresizingMaskIntoConstraints = false
+        composingLabel.isUserInteractionEnabled = false
+        // Tone marks ˇ ˋ ˊ ˙ are scaled up (see attributedKeyname) so the
+        // glyph extent can briefly exceed the strip's reserved height. Allow
+        // the label to draw outside its frame instead of clipping the tones.
+        composingLabel.clipsToBounds = false
         addSubview(composingLabel)
 
         // Scroll view occupies the bar to the left of the fixed chevron.
@@ -178,13 +233,35 @@ final class CandidateBarView: UIView {
             moreButton.bottomAnchor.constraint(equalTo: bottomAnchor),
             moreButton.widthAnchor.constraint(equalTo: moreButton.heightAnchor),
 
-            // thin separator just left of the chevron
+            // thin separator just left of the chevron, biased down by the
+            // same amount as the candidate glyphs so it stays centered with
+            // the visible row content under the keyname overlay.
             moreSep.trailingAnchor.constraint(equalTo: moreButton.leadingAnchor),
-            moreSep.centerYAnchor.constraint(equalTo: centerYAnchor),
+            moreSep.centerYAnchor.constraint(equalTo: centerYAnchor, constant: composingStripHeight / 2),
             moreSep.widthAnchor.constraint(equalToConstant: dividerWidth),
             moreSep.heightAnchor.constraint(equalToConstant: 20),
 
-            // scroll view fills the rest
+            // composing keyname strip pinned to the top edge, full width up to
+            // the chevron separator. Sits on top of the candidate scroll view
+            // (added later in subview order); does not affect scrollView frame.
+            //
+            // CLIP NOTE: The bar's topAnchor is the input view's top edge,
+            // which is the system's clip boundary. STHeiti TC's Bopomofo tone
+            // glyphs ˇ ˋ ˊ ˙ render at the TOP of the em-box and would
+            // otherwise be sliced off by that boundary. Two adjustments:
+            //   - topAnchor constant +1 pushes the label baseline down by 1 pt
+            //     so the glyph top lands strictly inside the bar.
+            //   - heightAnchor uses the font's full lineHeight (with a small
+            //     pad) instead of composingStripHeight, so the label's own
+            //     frame is large enough that no glyph is clipped by the
+            //     label even though composingStripHeight (which drives the
+            //     candidate `bias` inset) stays tight to save vertical space.
+            composingLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            composingLabel.trailingAnchor.constraint(equalTo: moreSep.leadingAnchor, constant: -4),
+            composingLabel.topAnchor.constraint(equalTo: topAnchor, constant: 0),
+            composingLabel.heightAnchor.constraint(equalToConstant: ceil(composingStripFont.lineHeight) + 2),
+
+            // scroll view fills the bar (composing label overlays its top region)
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: moreSep.leadingAnchor),
             scrollView.topAnchor.constraint(equalTo: topAnchor),
@@ -213,6 +290,37 @@ final class CandidateBarView: UIView {
     /// as the first candidate entry in the bar, so there is no dedicated
     /// left-edge label to update.
     func setComposingCode(_ code: String) { _ = code }
+
+    // MARK: - Composing region (RC3 Option A)
+
+    /// Recompute the composing label's text. Width/height are static;
+    /// the strip simply hides when empty so the candidate area still has
+    /// the same reserved top padding (no bar-height jitter).
+    private func applyComposingText() {
+        let raw = composingText?.trimmingCharacters(in: .whitespaces) ?? ""
+        composingLabel.font = composingStripFont
+        composingLabel.attributedText = nil
+        composingLabel.text = raw.isEmpty ? nil : raw
+        // Ensure the strip floats above the candidate scroll view.
+        bringSubviewToFront(composingLabel)
+    }
+
+    /// Build a plain attributed string for the keyname strip.
+    ///
+    /// Kept as an entry point for callers (expanded panel, toast) so they
+    /// can share the same typography with the in-bar overlay. We deliberately
+    /// **don't** bump the size of the Bopomofo tone marks `ˇ ˋ ˊ ˙` —
+    /// `composingStripFont` already uses STHeiti TC, which renders those
+    /// tone glyphs at a glance-readable size without per-character scaling.
+    /// Earlier scaling experiments caused UILabel to clip the bumped glyphs
+    /// against the line box computed from the base font.
+    static func attributedKeyname(_ text: String, baseFont: UIFont,
+                                  color: UIColor) -> NSAttributedString {
+        return NSAttributedString(string: text, attributes: [
+            .font: baseFont,
+            .foregroundColor: color
+        ])
+    }
 
     /// Replace the candidate list with new results.
     ///
@@ -372,7 +480,15 @@ final class CandidateBarView: UIView {
         // KVC bypasses the iOS 15 deprecation warning while writing the same
         // backing storage — the property is still functional, just deprecated
         // for source code that opts into Configuration (we explicitly do not).
-        btn.setValue(NSValue(uiEdgeInsets: UIEdgeInsets(top: 0, left: candidateHPad, bottom: 0, right: candidateHPad)),
+        // Balanced vertical insets: shift the glyph down by half the strip
+        // height (top +, bottom −) so it visually clears the keyname overlay
+        // without changing the button's overall height. Bar height stays
+        // identical whether composing is active or not.
+        let bias = composingStripHeight / 2
+        btn.setValue(NSValue(uiEdgeInsets: UIEdgeInsets(top: bias,
+                                                        left: candidateHPad,
+                                                        bottom: -bias,
+                                                        right: candidateHPad)),
                      forKey: "contentEdgeInsets")
         btn.addTarget(self, action: #selector(candidateTapped(_:)), for: .touchUpInside)
         // Same 0.01-alpha neutral fill as the bar — see setup() comment.

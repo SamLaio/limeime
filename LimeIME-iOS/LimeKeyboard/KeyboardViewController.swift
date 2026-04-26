@@ -95,6 +95,11 @@ final class KeyboardViewController: UIInputViewController {
     /// mirroring CandidateBarView.moreSep so the reserved zone matches the bar exactly.
     private var expandedMoreSep: UIView?
     private let expandedSepWidth: CGFloat = 1
+    /// Mirror of the candidate bar's keyname strip overlay. Pinned to the
+    /// top of the expanded panel so when the user expands the candidate
+    /// bar the first row stays pixel-identical (same composing keyname,
+    /// same vertical offset for glyphs).
+    private var expandedComposingLabel: UILabel?
 
     // MARK: - Chinese Punctuation (spec §11)
     private var hasChineseSymbolCandidatesShown: Bool = false
@@ -138,7 +143,11 @@ final class KeyboardViewController: UIInputViewController {
     /// an iPad — we must follow the host so the keyboard matches the host UI.
     /// (`UIDevice.current.userInterfaceIdiom` is the wrong signal here.)
     private var isOnPad: Bool { traitCollection.userInterfaceIdiom == .pad }
-    private var effectiveComposingPopupHeight: CGFloat { isOnPad ? 0 : composingPopupHeight }
+    /// Legacy in-keyboard composing strip. Retired on both iPhone and iPad
+    /// now that the keyname renders as a top overlay inside the candidate
+    /// bar (see CandidateBarView.composingText). Kept for API compatibility
+    /// with toast/showComposingPopup paths but always 0 pt and hidden.
+    private var effectiveComposingPopupHeight: CGFloat { 0 }
     /// Estimated width of the Paste button in the iPad assist bar trailing group.
     /// Reverse-popup panels appearing at the top of the keyboard view are clamped
     /// so they start at or right of this zone, avoiding conflict with the Paste icon above.
@@ -146,7 +155,7 @@ final class KeyboardViewController: UIInputViewController {
     private var assistBarComposingLabel: UILabel?
 
     // MARK: - Keyboard Geometry
-    private var baseCandidateBarHeight: CGFloat { isOnPad ? 60 : 44 }
+    private var baseCandidateBarHeight: CGFloat { isOnPad ? 74 : 58 }
     private var candidateBarHeight: CGFloat { baseCandidateBarHeight * candidateFontScale }
     private var candidateBarHeightConstraint: NSLayoutConstraint?
     // keyRowHeight removed — height is now driven by KeyboardView.preferredHeight,
@@ -707,6 +716,8 @@ final class KeyboardViewController: UIInputViewController {
         expandedCandidatesPanel?.backgroundColor = .clear
         expandedCollapseButton?.tintColor = pal.candiText
         expandedMoreSep?.backgroundColor = pal.candiText.withAlphaComponent(0.2)
+        expandedComposingLabel?.font = candidateBar.composingStripFont
+        expandedComposingLabel?.textColor = pal.candiText.withAlphaComponent(0.75)
         if isExpandedCandidatesVisible { reloadExpandedCandidates() }
     }
 
@@ -770,7 +781,7 @@ final class KeyboardViewController: UIInputViewController {
         composingPopupLabel.textColor = pal.candiText
         composingPopupLabel.textAlignment = .left
         composingPopupLabel.backgroundColor = .clear
-        composingPopupLabel.isHidden = isOnPad
+        composingPopupLabel.isHidden = true
         view.addSubview(composingPopupLabel)
 
         // Candidate bar
@@ -860,9 +871,17 @@ final class KeyboardViewController: UIInputViewController {
         let collapseBtn = UIButton(type: .system)
         collapseBtn.setImage(UIImage(systemName: "chevron.up"), for: .normal)
         collapseBtn.tintColor = pal.candiText
-        var collapseBtnConfig = UIButton.Configuration.plain()
-        collapseBtnConfig.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
-        collapseBtn.configuration = collapseBtnConfig
+        // Match candidate-row glyph bias so the chevron stays vertically
+        // aligned with the row 1 candidates and the bar's chevron.
+        // Using KVC `contentEdgeInsets` (not `UIButton.Configuration`) because
+        // Configuration clamps negative insets, breaking the symmetric bias.
+        let chevronBias = candidateBar.composingStripHeight / 2
+        collapseBtn.setValue(NSValue(uiEdgeInsets: UIEdgeInsets(top: chevronBias, left: 10, bottom: -chevronBias, right: 10)),
+                             forKey: "contentEdgeInsets")
+        // 0.01-alpha touch-trap fill so taps in the chevron's padding land on
+        // a non-clear pixel — keyboard extensions drop touches on transparent
+        // pixels (see docs/IOS_CANDI_TOUCH.md §Resolution).
+        collapseBtn.backgroundColor = UIColor(white: 0.5, alpha: 0.01)
         collapseBtn.translatesAutoresizingMaskIntoConstraints = false
         collapseBtn.addTarget(self, action: #selector(collapseExpandedCandidates), for: .touchUpInside)
         panel.addSubview(collapseBtn)
@@ -882,12 +901,39 @@ final class KeyboardViewController: UIInputViewController {
             collapseBtn.heightAnchor.constraint(equalToConstant: candidateBarHeight),
 
             sep.trailingAnchor.constraint(equalTo: collapseBtn.leadingAnchor),
-            sep.centerYAnchor.constraint(equalTo: collapseBtn.centerYAnchor),
+            // Bias separator down to match candidate glyphs (mirrors
+            // CandidateBarView.moreSep so row 1 stays pixel-identical).
+            sep.centerYAnchor.constraint(equalTo: collapseBtn.centerYAnchor, constant: candidateBar.composingStripHeight / 2),
             sep.widthAnchor.constraint(equalToConstant: expandedSepWidth),
             sep.heightAnchor.constraint(equalToConstant: 20),
         ])
         expandedCollapseButton = collapseBtn
         expandedMoreSep = sep
+
+        // Mirror the candidate bar's keyname strip overlay so the user
+        // perceives the expanded panel as the bar growing in place — first
+        // row stays pixel-identical (same composing keyname above, same
+        // glyph baseline below).
+        let stripLabel = UILabel()
+        stripLabel.font = candidateBar.composingStripFont
+        stripLabel.textColor = pal.candiText.withAlphaComponent(0.75)
+        stripLabel.textAlignment = .left
+        stripLabel.backgroundColor = .clear
+        stripLabel.isUserInteractionEnabled = false
+        // Mirror CandidateBarView.composingLabel exactly so the expanded
+        // panel's first row + keyname strip is pixel-identical to the
+        // collapsed bar (same top inset, same label height, same clip behavior).
+        stripLabel.clipsToBounds = false
+        stripLabel.translatesAutoresizingMaskIntoConstraints = false
+        panel.addSubview(stripLabel)
+        NSLayoutConstraint.activate([
+            stripLabel.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 8),
+            stripLabel.trailingAnchor.constraint(equalTo: sep.leadingAnchor, constant: -4),
+            stripLabel.topAnchor.constraint(equalTo: panel.topAnchor, constant: 0),
+            stripLabel.heightAnchor.constraint(equalToConstant: ceil(candidateBar.composingStripFont.lineHeight) + 2),
+        ])
+        panel.bringSubviewToFront(stripLabel)
+        expandedComposingLabel = stripLabel
     }
 
     private func applyHeight() {
@@ -1433,11 +1479,15 @@ final class KeyboardViewController: UIInputViewController {
         // Match CandidateBarView font sizing exactly: iPad = 26/22, iPhone = 22/16.
         // Bar uses `UIDevice` (real iPad hardware); mirror the same source here so
         // the expanded panel has identical glyph size to the unexpanded bar.
+        // IMPORTANT: composing-code records use PingFangTC-Regular (NOT monospaced
+        // system) — same font as CandidateBarView.composingCodeFont — otherwise the
+        // first item's glyph width differs and shifts the whole row horizontally.
         let onPad         = UIDevice.current.userInterfaceIdiom == .pad
         let baseCandSize:  CGFloat = onPad ? 26 : 22
         let baseCompSize:  CGFloat = onPad ? 22 : 16
         let font          = UIFont.systemFont(ofSize: baseCandSize * candidateFontScale, weight: .regular)
-        let composingFont = UIFont.monospacedSystemFont(ofSize: baseCompSize * candidateFontScale, weight: .regular)
+        let composingFont = UIFont(name: "PingFangTC-Regular", size: baseCompSize * candidateFontScale)
+            ?? UIFont.systemFont(ofSize: baseCompSize * candidateFontScale, weight: .regular)
 
         var x: CGFloat = hPad
         var y: CGFloat = vPad
@@ -1455,10 +1505,11 @@ final class KeyboardViewController: UIInputViewController {
             let btn = UIButton(type: .system)
             btn.setTitle(text, for: .normal)
             btn.titleLabel?.font = btnFont
-            // Use KVC to bypass the iOS 15 deprecation warning while writing the
-            // same backing storage — keeps pre-session pixel-exact spacing that
-            // matches CandidateBarView.makeCandidateButton (also uses 10pt insets).
-            btn.setValue(NSValue(uiEdgeInsets: UIEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)),
+            // Mirror CandidateBarView: balanced vertical insets bias the glyph
+            // down by half the strip height so it clears the keyname overlay
+            // without changing the row's vertical footprint.
+            let bias = candidateBar.composingStripHeight / 2
+            btn.setValue(NSValue(uiEdgeInsets: UIEdgeInsets(top: bias, left: 10, bottom: -bias, right: 10)),
                          forKey: "contentEdgeInsets")
             let btnW = btn.intrinsicContentSize.width
 
@@ -1498,9 +1549,14 @@ final class KeyboardViewController: UIInputViewController {
                 let padY: CGFloat = 2
                 let textW  = btnW - 2 * cellHPad
                 let pillW  = textW + 2 * padX
-                let pillH  = min(rowH, ceil(btnFont.lineHeight) + 2 * padY)
+                // Match CandidateButton.layoutSubviews exactly: pill hugs the
+                // title label which UIKit sizes to font.lineHeight (not ceiled).
+                let pillH  = min(rowH, btnFont.lineHeight + 2 * padY)
                 let pillX  = cellHPad - padX
-                let pillY  = max(0, (rowH - pillH) / 2)
+                // The label's vertical center is shifted by the FULL bias
+                // (insets are top:+bias, bottom:-bias → content-rect center
+                // moves by bias). Use bias, not bias/2.
+                let pillY  = max(0, (rowH - pillH) / 2) + bias
                 let pill = UIView(frame: CGRect(x: pillX, y: pillY,
                                                 width: pillW, height: pillH))
                 pill.backgroundColor = highlightColor
@@ -1606,12 +1662,21 @@ final class KeyboardViewController: UIInputViewController {
         let display = name.trimmingCharacters(in: .whitespaces).isEmpty ? raw : name
         composingPopupLabel?.text = " \(display) "
         assistBarComposingLabel?.text = " \(display) "
+        candidateBar.composingText = display
+        if let lbl = expandedComposingLabel {
+            lbl.attributedText = CandidateBarView.attributedKeyname(
+                display, baseFont: candidateBar.composingStripFont,
+                color: lbl.textColor ?? .label)
+        }
     }
 
     private func hideComposingPopup() {
         guard toastTimer == nil else { return }
         composingPopupLabel?.text = nil
         assistBarComposingLabel?.text = nil
+        candidateBar.composingText = nil
+        expandedComposingLabel?.attributedText = nil
+        expandedComposingLabel?.text = nil
     }
 
     // MARK: - Candidate Selection (spec §8)
@@ -1727,7 +1792,32 @@ final class KeyboardViewController: UIInputViewController {
             let word = candidate.word
             DispatchQueue.global(qos: .background).async { [weak self] in
                 guard let result = ss.getCodeListStringFromWord(word, usingTable: lookupTable),
-                      !result.isEmpty else { return }
+                      !result.isEmpty else {
+                    NSLog("[LimeIME] reverseLookup word=\(word) table=\(lookupTable) -> EMPTY")
+                    return
+                }
+                // DEBUG: dump every code point so we can verify tone marks
+                // ˇ(U+02C7) ˊ(U+02CA) ˋ(U+02CB) ˙(U+02D9) survive the
+                // SQL → keyToKeyName → showToast pipeline.
+                let dump = result.unicodeScalars.map {
+                    String(format: "%@(U+%04X)", String($0), $0.value)
+                }.joined(separator: " ")
+                NSLog("[LimeIME] reverseLookup word=\(word) table=\(lookupTable) result=\(result) scalars=\(dump)")
+                // Persist to App Group container so we can read it without
+                // wrestling with the simulator log stream filter.
+                if let dir = FileManager.default.containerURL(
+                    forSecurityApplicationGroupIdentifier: "group.net.toload.limeime") {
+                    let url = dir.appendingPathComponent("debug_reverse.log")
+                    let line = "\(Date()) word=\(word) table=\(lookupTable) result=\(result) scalars=\(dump)\n"
+                    if let data = line.data(using: .utf8) {
+                        if FileManager.default.fileExists(atPath: url.path),
+                           let h = try? FileHandle(forWritingTo: url) {
+                            h.seekToEndOfFile(); h.write(data); try? h.close()
+                        } else {
+                            try? data.write(to: url)
+                        }
+                    }
+                }
                 DispatchQueue.main.async { self?.showToast(result) }
             }
         }
@@ -1970,13 +2060,26 @@ final class KeyboardViewController: UIInputViewController {
 
     /// Briefly display a reverse lookup result in the composing strip (spec §8, §13).
     private func showToast(_ message: String) {
+        let dump = message.unicodeScalars.map {
+            String(format: "%@(U+%04X)", String($0), $0.value)
+        }.joined(separator: " ")
+        NSLog("[LimeIME] showToast message=\(message) scalars=\(dump)")
         toastTimer?.invalidate()
         composingPopupLabel?.text = " \(message) "
         assistBarComposingLabel?.text = " \(message) "
+        candidateBar.composingText = message
+        if let lbl = expandedComposingLabel {
+            lbl.attributedText = CandidateBarView.attributedKeyname(
+                message, baseFont: candidateBar.composingStripFont,
+                color: lbl.textColor ?? .label)
+        }
         toastTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
             guard let self, self.mComposing.isEmpty else { return }
             self.composingPopupLabel?.text = nil
             self.assistBarComposingLabel?.text = nil
+            self.candidateBar.composingText = nil
+            self.expandedComposingLabel?.attributedText = nil
+            self.expandedComposingLabel?.text = nil
             self.toastTimer = nil
         }
     }
@@ -2460,14 +2563,23 @@ extension KeyboardViewController: KeyboardViewDelegate {
         panel.layer.shadowRadius = 8
         panel.layer.shadowOffset = CGSize(width: 0, height: -2)
         panel.translatesAutoresizingMaskIntoConstraints = false
+        panel.clipsToBounds = true
         root.addSubview(panel)
+
+        // Scroll view so the panel can scroll when item count exceeds available height
+        // (e.g. long IM picker list taller than keyboardView + candidate bar).
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.showsVerticalScrollIndicator = true
+        scroll.alwaysBounceVertical = false
+        panel.addSubview(scroll)
 
         // Stack of buttons
         let stack = UIStackView()
         stack.axis = .vertical
         stack.spacing = 0
         stack.translatesAutoresizingMaskIntoConstraints = false
-        panel.addSubview(stack)
+        scroll.addSubview(stack)
 
         for (idx, item) in items.enumerated() {
             let btn = UIButton(type: .system)
@@ -2496,15 +2608,32 @@ extension KeyboardViewController: KeyboardViewDelegate {
         }
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: panel.topAnchor, constant: 8),
-            stack.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -8),
-            stack.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: panel.topAnchor, constant: 8),
+            scroll.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -8),
+            scroll.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
 
             panel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 8),
             panel.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8),
             panel.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -8),
+            // Cap the panel height so a long IM list scrolls instead of getting
+            // clipped above the keyboard view (root) bounds.
+            panel.topAnchor.constraint(greaterThanOrEqualTo: root.topAnchor, constant: 8),
         ])
+
+        // Prefer the panel to be just tall enough to fit content, but allow it
+        // to shrink (and the scroll view to scroll) when content exceeds the
+        // available root height. Use a high but non-required priority so the
+        // greaterThanOrEqualTo top constraint can win.
+        let preferredHeight = scroll.heightAnchor.constraint(equalTo: stack.heightAnchor)
+        preferredHeight.priority = .defaultHigh
+        preferredHeight.isActive = true
 
         // Tap outside to dismiss
         let tap = UITapGestureRecognizer(target: self, action: #selector(dismissInlineMenuGesture))

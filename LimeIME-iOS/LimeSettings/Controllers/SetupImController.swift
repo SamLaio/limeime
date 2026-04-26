@@ -29,17 +29,20 @@ final class SetupImController: BaseController {
         progress.show(status: "匯入中…")
         let server = self.dbServer
         Task.detached(priority: .userInitiated) {
+            // Use a reference holder so the @Sendable progress callback can
+            // mutate the running count without capturing a `var` (Swift 6).
+            final class CountBox: @unchecked Sendable { var value: Int = 0 }
+            let counter = CountBox()
             do {
-                var lastCount = 0
                 try server.importTxtFile(at: url.path, tableName: tableName) { count in
-                    lastCount = count
+                    counter.value = count
                     Task { @MainActor in
                         view?.onProgress(50, status: "已匯入 \(count) 筆…")
                     }
                 }
                 await MainActor.run {
                     self.progress.dismiss()
-                    view?.onProgress(100, status: "文字檔匯入完成，共 \(lastCount) 筆")
+                    view?.onProgress(100, status: "文字檔匯入完成，共 \(counter.value) 筆")
                     view?.refreshImList()
                 }
             } catch {

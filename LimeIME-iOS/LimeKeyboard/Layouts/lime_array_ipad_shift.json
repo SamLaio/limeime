@@ -6,6 +6,22 @@
       "isBottomRow": false,
       "keys": [
         {
+          "code": 9,
+          "codes": [
+            9
+          ],
+          "label": "",
+          "sublabel": "",
+          "widthPercent": 7.0,
+          "icon": "arrow.forward.to.line",
+          "isModifier": true,
+          "isRepeatable": false,
+          "isSticky": false,
+          "longPressCode": 0,
+          "popupKeyboard": "",
+          "popupCharacters": ""
+        },
+        {
           "code": 81,
           "codes": [
             81
@@ -166,13 +182,45 @@
           "popupCharacters": ""
         },
         {
+          "code": 12302,
+          "codes": [
+            12302
+          ],
+          "label": "『",
+          "sublabel": "",
+          "widthPercent": 7.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "longPressCode": 0,
+          "popupKeyboard": "",
+          "popupCharacters": ""
+        },
+        {
+          "code": 12303,
+          "codes": [
+            12303
+          ],
+          "label": "』",
+          "sublabel": "",
+          "widthPercent": 7.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "longPressCode": 0,
+          "popupKeyboard": "",
+          "popupCharacters": ""
+        },
+        {
           "code": -5,
           "codes": [
             -5
           ],
           "label": "",
           "sublabel": "",
-          "widthPercent": 30.0,
+          "widthPercent": 9.0,
           "icon": "delete.backward",
           "isModifier": true,
           "isRepeatable": true,
@@ -187,14 +235,14 @@
       "isBottomRow": false,
       "keys": [
         {
-          "code": 9,
+          "code": -9,
           "codes": [
-            9
+            -9
           ],
-          "label": "",
+          "label": "abc",
           "sublabel": "",
-          "widthPercent": 9.0,
-          "icon": "arrow.forward.to.line",
+          "widthPercent": 8.0,
+          "icon": "",
           "isModifier": true,
           "isRepeatable": false,
           "isSticky": false,
@@ -363,38 +411,6 @@
           "popupCharacters": ""
         },
         {
-          "code": 12302,
-          "codes": [
-            12302
-          ],
-          "label": "『",
-          "sublabel": "",
-          "widthPercent": 7.0,
-          "icon": "",
-          "isModifier": false,
-          "isRepeatable": false,
-          "isSticky": false,
-          "longPressCode": 0,
-          "popupKeyboard": "",
-          "popupCharacters": ""
-        },
-        {
-          "code": 12303,
-          "codes": [
-            12303
-          ],
-          "label": "』",
-          "sublabel": "",
-          "widthPercent": 7.0,
-          "icon": "",
-          "isModifier": false,
-          "isRepeatable": false,
-          "isSticky": false,
-          "longPressCode": 0,
-          "popupKeyboard": "",
-          "popupCharacters": ""
-        },
-        {
           "code": 124,
           "codes": [
             124
@@ -409,6 +425,38 @@
           "longPressCode": 0,
           "popupKeyboard": "",
           "popupCharacters": ""
+        },
+        {
+          "code": 65307,
+          "codes": [
+            65307
+          ],
+          "label": "；",
+          "sublabel": "",
+          "widthPercent": 7.0,
+          "icon": "",
+          "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "longPressCode": 0,
+          "popupKeyboard": "",
+          "popupCharacters": ""
+        },
+        {
+          "code": 10,
+          "codes": [
+            10
+          ],
+          "label": "",
+          "sublabel": "",
+          "widthPercent": 8.0,
+          "icon": "return",
+          "isModifier": true,
+          "isRepeatable": false,
+          "isSticky": false,
+          "longPressCode": 0,
+          "popupKeyboard": "",
+          "popupCharacters": ""
         }
       ]
     },
@@ -416,17 +464,17 @@
       "isBottomRow": false,
       "keys": [
         {
-          "code": -9,
+          "code": -1,
           "codes": [
-            -9
+            -1
           ],
-          "label": "abc",
+          "label": "",
           "sublabel": "",
-          "widthPercent": 11.5,
-          "icon": "",
+          "widthPercent": 15.0,
+          "icon": "shift.fill",
           "isModifier": true,
           "isRepeatable": false,
-          "isSticky": false,
+          "isSticky": true,
           "longPressCode": 0,
           "popupKeyboard": "",
           "popupCharacters": ""
@@ -592,83 +640,14 @@
           "popupCharacters": ""
         },
         {
-          "code": 65307,
-          "codes": [
-            65307
-          ],
-          "label": "；",
-          "sublabel": "",
-          "widthPercent": 7.0,
-          "icon": "",
-          "isModifier": false,
-          "isRepeatable": false,
-          "isSticky": false,
-          "longPressCode": 0,
-          "popupKeyboard": "",
-          "popupCharacters": ""
-        },
-        {
-          "code": 10,
-          "codes": [
-            10
-          ],
-          "label": "",
-          "sublabel": "",
-          "widthPercent": 11.5,
-          "icon": "return",
-          "isModifier": true,
-          "isRepeatable": false,
-          "isSticky": false,
-          "longPressCode": 0,
-          "popupKeyboard": "",
-          "popupCharacters": ""
-        }
-      ]
-    },
-    {
-      "isBottomRow": false,
-      "keys": [
-        {
           "code": -1,
           "codes": [
             -1
           ],
           "label": "",
           "sublabel": "",
-          "widthPercent": 46.5,
-          "icon": "shift",
-          "isModifier": true,
-          "isRepeatable": false,
-          "isSticky": true,
-          "longPressCode": 0,
-          "popupKeyboard": "",
-          "popupCharacters": ""
-        },
-        {
-          "code": 0,
-          "codes": [
-            0
-          ],
-          "label": "",
-          "sublabel": "",
-          "widthPercent": 7.0,
-          "icon": "",
-          "isModifier": false,
-          "isRepeatable": false,
-          "isSticky": false,
-          "longPressCode": 0,
-          "popupKeyboard": "",
-          "popupCharacters": ""
-        },
-        {
-          "code": -1,
-          "codes": [
-            -1
-          ],
-          "label": "",
-          "sublabel": "",
-          "widthPercent": 46.5,
-          "icon": "shift",
+          "widthPercent": 15.0,
+          "icon": "shift.fill",
           "isModifier": true,
           "isRepeatable": false,
           "isSticky": true,
