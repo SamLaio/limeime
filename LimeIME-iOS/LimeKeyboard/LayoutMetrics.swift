@@ -105,9 +105,6 @@ enum LayoutMetrics {
     // sit next to their counterpart. Layout values that happen to be the
     // same on both idioms live directly under `ComposingPopup`.
     //
-    // Two earlier surfaces (the in-keyboard `composingPopupLabel` strip
-    // and the iPad `assistBarComposingLabel`) are retired — see
-    // `Vestigial` below.
     enum ComposingPopup {
 
         /// Sizes used on iPhone hardware / phone-class host.
@@ -158,44 +155,6 @@ enum LayoutMetrics {
         }
         static func barBaseHeight(isPad: Bool) -> CGFloat {
             isPad ? Pad.barBaseHeight : Phone.barBaseHeight
-        }
-    }
-
-    // MARK: - Vestigial composing surfaces
-    //
-    // These two surfaces were tried before the RC3 candidate-bar overlay
-    // (above). Both are retired but their constants are kept because the
-    // controller still instantiates the underlying labels for API
-    // compatibility (toast / showComposingPopup paths).
-    //
-    // (1) In-keyboard `composingPopupLabel` strip — the original iPhone
-    //     composing strip above the candidate bar.
-    //     `effectiveComposingPopupHeight` is hardcoded to 0; the label is
-    //     always hidden. The constants here only size the legacy label.
-    //
-    // (2) iPad `assistBarComposingLabel` — `UIInputViewController.inputAssistantItem`
-    //     is silently ignored on the on-screen iPad shortcut bar. See
-    //     docs/IPAD_ASSIST_BAR.md §8 for the architectural reset. The label
-    //     is never visible.
-    enum Vestigial {
-
-        /// Original iPhone composing strip (in-keyboard, above the
-        /// candidate bar). Height is forced to 0 at runtime; do not rely
-        /// on these for any visible behavior.
-        enum InKeyboardComposingPopup {
-            static let baseHeight: CGFloat = 22
-            static let labelFontSize: CGFloat = 15
-            static let leadingInset: CGFloat = 6
-        }
-
-        /// iPad assist-bar composing label. The bar itself never renders
-        /// for keyboard extensions; the label sizes are inert. Kept only
-        /// because `setupAssistBar()` still instantiates the label for
-        /// API compatibility with the toast/showComposingPopup paths.
-        enum AssistBarLabel {
-            static let composingLabelFontSize: CGFloat = 14
-            static let composingLabelWidth: CGFloat = 220
-            static let composingLabelHeight: CGFloat = 32
         }
     }
 

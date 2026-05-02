@@ -134,29 +134,11 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - Key Preview
     private weak var keyPreviewView: UIView?
 
-    // MARK: - Composing Popup (mirrors Android mComposingTextPopup, spec §6)
-    // A thin strip above the candidate bar showing the IM keyname (e.g. "日月"
-    // for Dayi "dj"). The strip is a PERMANENT reserved region — it always
-    // takes composingPopupHeight of the extension's vertical space, empty when
-    // idle and filled with the keyname during composing. This keeps the
-    // extension height constant across compose/commit cycles, eliminating the
-    // host-app-area jitter. (Overlay into the host app's area is not possible
-    // for third-party keyboard extensions — see docs/IOS_POPUP_COMPOSING.md.)
-    private var composingPopupLabel: UILabel!
-    private var composingPopupHeightConstraint: NSLayoutConstraint?
-    private let baseComposingPopupHeight: CGFloat = LayoutMetrics.Vestigial.InKeyboardComposingPopup.baseHeight
-    private var composingPopupHeight: CGFloat { baseComposingPopupHeight * candidateFontScale }
     /// True when the **host app** is iPad-class. iPhone-only apps running on iPad
     /// in scaled/compatibility mode report `.phone` here even though the device is
     /// an iPad — we must follow the host so the keyboard matches the host UI.
     /// (`UIDevice.current.userInterfaceIdiom` is the wrong signal here.)
     private var isOnPad: Bool { traitCollection.userInterfaceIdiom == .pad }
-    /// Legacy in-keyboard composing strip. Retired on both iPhone and iPad
-    /// now that the keyname renders as a top overlay inside the candidate
-    /// bar (see CandidateBarView.composingText). Kept for API compatibility
-    /// with toast/showComposingPopup paths but always 0 pt and hidden.
-    private var effectiveComposingPopupHeight: CGFloat { 0 }
-    private var assistBarComposingLabel: UILabel?
 
     // MARK: - Keyboard Geometry
     private var baseCandidateBarHeight: CGFloat { LayoutMetrics.ComposingPopup.barBaseHeight(isPad: isOnPad) }
@@ -174,7 +156,6 @@ final class KeyboardViewController: UIInputViewController {
         // Tell LayoutLoader whether the **host app** is iPad-class BEFORE any
         // load() call. iPhone-only apps running on iPad must use phone layouts.
         LayoutLoader.hostIsPad = isOnPad
-        setupAssistBar()
         LayoutLoader.clearCache()
         // Load size/font prefs from UserDefaults synchronously so candidateFontScale
         // and keyboardSize are correct when setupKeyboardUI() creates its height
@@ -203,8 +184,6 @@ final class KeyboardViewController: UIInputViewController {
     /// Called every time the keyboard becomes visible (spec §2 initOnStartInput).
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // Re-apply assist bar on every appearance — iOS can reset it when focus changes.
-        setupAssistBar()
         // Reload database if Settings app performed a restore while the keyboard was inactive.
         // After restore, the keyboard's DatabaseQueue points to the old (replaced) file.
         let restoredAt = UserDefaults(suiteName: "group.net.toload.limeime")?
@@ -238,34 +217,6 @@ final class KeyboardViewController: UIInputViewController {
 
     /// On iPad: replace the default assist bar with [Paste | composing info].
     /// On iPhone: suppress the bar entirely (it's not shown anyway).
-    private func setupAssistBar() {
-        inputAssistantItem.leadingBarButtonGroups = []
-        guard isOnPad else {
-            inputAssistantItem.trailingBarButtonGroups = []
-            return
-        }
-        let pasteImg = UIImage(systemName: "doc.on.clipboard")
-        let pasteBtn = UIBarButtonItem(image: pasteImg, style: .plain,
-                                       target: self, action: #selector(handleAssistBarPaste))
-        let lbl = UILabel()
-        lbl.font = UIFont.systemFont(ofSize: LayoutMetrics.Vestigial.AssistBarLabel.composingLabelFontSize, weight: .medium)
-        lbl.textColor = .label
-        lbl.text = nil
-        lbl.frame = CGRect(x: 0, y: 0,
-                           width: LayoutMetrics.Vestigial.AssistBarLabel.composingLabelWidth,
-                           height: LayoutMetrics.Vestigial.AssistBarLabel.composingLabelHeight)
-        assistBarComposingLabel = lbl
-        let composingBtn = UIBarButtonItem(customView: lbl)
-        let group = UIBarButtonItemGroup(barButtonItems: [pasteBtn, composingBtn],
-                                         representativeItem: nil)
-        inputAssistantItem.trailingBarButtonGroups = [group]
-    }
-
-    @objc private func handleAssistBarPaste() {
-        guard let text = UIPasteboard.general.string else { return }
-        textDocumentProxy.insertText(text)
-    }
-
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
         // The keyboard extension's traitCollection.userInterfaceIdiom may have been
@@ -326,8 +277,6 @@ final class KeyboardViewController: UIInputViewController {
             let t = resolvedKeyboardTheme
             keyboardView?.theme  = t
             candidateBar?.theme  = t
-            let pal = KeyboardPalette.palettes[max(0, min(t, KeyboardPalette.palettes.count - 1))]
-            composingPopupLabel?.textColor = pal.candiText
         }
 
         // Horizontal size class change (e.g. iPad split-screen, landscape):
@@ -729,16 +678,13 @@ final class KeyboardViewController: UIInputViewController {
         // chevron + composingPopup invert when the host's appearance differs
         // from the keyboard theme (light text on light bg, dark on dark).
         let chromeStyle: UIUserInterfaceStyle = (t == 1) ? .dark : .light
-        composingPopupLabel?.overrideUserInterfaceStyle  = chromeStyle
         candidateBar?.overrideUserInterfaceStyle         = chromeStyle
         expandedCandidatesPanel?.overrideUserInterfaceStyle = chromeStyle
-        composingPopupLabel?.font = UIFont.systemFont(ofSize: LayoutMetrics.Vestigial.InKeyboardComposingPopup.labelFontSize * candidateFontScale, weight: .medium)
-        composingPopupLabel?.textColor = pal.candiText
-        composingPopupHeightConstraint?.constant = effectiveComposingPopupHeight
         expandedCandidatesPanel?.backgroundColor = .clear
         expandedCollapseButton?.tintColor = pal.candiText
         expandedMoreSep?.backgroundColor = pal.candiText.withAlphaComponent(LayoutMetrics.CandidateBar.separatorAlpha)
         expandedDismissButton?.tintColor = pal.candiText
+        expandedDismissButton?.backgroundColor = pal.candiText.withAlphaComponent(0.1)
         expandedComposingLabel?.font = candidateBar.composingStripFont
         expandedComposingLabel?.textColor = pal.candiText.withAlphaComponent(LayoutMetrics.ComposingPopup.textAlpha)
         if isExpandedCandidatesVisible { reloadExpandedCandidates() }
@@ -794,19 +740,6 @@ final class KeyboardViewController: UIInputViewController {
         // these at runtime when the resolved theme changes.
         let pal = KeyboardPalette.palettes[max(0, min(resolvedKeyboardTheme, 1))]
 
-        // Composing keyname strip: permanent subview above the candidate bar.
-        // Its height is always composingPopupHeight (included in applyHeight),
-        // so the extension's own height does not change between compose and
-        // commit. Text is set during composing and cleared when idle.
-        composingPopupLabel = UILabel()
-        composingPopupLabel.translatesAutoresizingMaskIntoConstraints = false
-        composingPopupLabel.font = UIFont.systemFont(ofSize: LayoutMetrics.Vestigial.InKeyboardComposingPopup.labelFontSize * candidateFontScale, weight: .medium)
-        composingPopupLabel.textColor = pal.candiText
-        composingPopupLabel.textAlignment = .left
-        composingPopupLabel.backgroundColor = .clear
-        composingPopupLabel.isHidden = true
-        view.addSubview(composingPopupLabel)
-
         // Candidate bar
         candidateBar = CandidateBarView()
         candidateBar.delegate = self
@@ -821,18 +754,7 @@ final class KeyboardViewController: UIInputViewController {
         view.addSubview(keyboardView)
 
         NSLayoutConstraint.activate([
-            composingPopupLabel.topAnchor.constraint(equalTo: view.topAnchor),
-            composingPopupLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor,
-                                                         constant: LayoutMetrics.Vestigial.InKeyboardComposingPopup.leadingInset),
-            composingPopupLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor,
-                                                          constant: -LayoutMetrics.Vestigial.InKeyboardComposingPopup.leadingInset),
-            {
-                let c = composingPopupLabel.heightAnchor.constraint(equalToConstant: effectiveComposingPopupHeight)
-                composingPopupHeightConstraint = c
-                return c
-            }(),
-
-            candidateBar.topAnchor.constraint(equalTo: composingPopupLabel.bottomAnchor),
+            candidateBar.topAnchor.constraint(equalTo: view.topAnchor),
             candidateBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             candidateBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             {
@@ -955,7 +877,9 @@ final class KeyboardViewController: UIInputViewController {
             pointSize: LayoutMetrics.CandidateBar.Chevron.iconSize(isPad: isOnPad), weight: .regular)
         dismissBtn.setImage(UIImage(systemName: "xmark", withConfiguration: xmarkConfig), for: .normal)
         dismissBtn.tintColor = pal.candiText
-        dismissBtn.backgroundColor = LayoutMetrics.TouchTrap.fill
+        dismissBtn.backgroundColor = pal.candiText.withAlphaComponent(0.1)
+        dismissBtn.layer.cornerRadius = 6
+        dismissBtn.layer.masksToBounds = true
         dismissBtn.translatesAutoresizingMaskIntoConstraints = false
         dismissBtn.addTarget(self, action: #selector(dismissExpandedAndComposing), for: .touchUpInside)
         panel.addSubview(dismissBtn)
@@ -1006,9 +930,6 @@ final class KeyboardViewController: UIInputViewController {
         // Use KeyboardView.preferredHeight so the outer extension view is sized to
         // exactly match the sum of each row's actual height (54 pt regular, 56 pt
         // bottom row), rather than a flat per-row constant that would squish keys.
-        // composingPopupHeight is a permanent reserved region above the candidate
-        // bar — including it here once keeps the extension height constant across
-        // compose/commit cycles (eliminating the host-app-area jitter).
         let keysHeight = keyboardView?.preferredHeight
             ?? CGFloat(currentLayout.rows.count) * LayoutMetrics.KeyboardRow.fallbackRowHeight
         let barH = candidateBarHeight
@@ -1020,7 +941,7 @@ final class KeyboardViewController: UIInputViewController {
         // with the Pad value (74×scale), leaving a layout gap.
         candidateBarHeightConstraint?.constant = barH
         expandedCollapseHeightConstraint?.constant = barH
-        let totalHeight = effectiveComposingPopupHeight + barH + keysHeight
+        let totalHeight = barH + keysHeight
         if let existing = keyboardHeightConstraint {
             existing.constant = totalHeight
         } else {
@@ -1812,8 +1733,6 @@ final class KeyboardViewController: UIInputViewController {
         // fallback. Showing the raw code is strictly better than a blank bar —
         // the user is in CJK mode (first guard already excluded English-only).
         let display = name.trimmingCharacters(in: .whitespaces).isEmpty ? raw : name
-        composingPopupLabel?.text = " \(display) "
-        assistBarComposingLabel?.text = " \(display) "
         candidateBar.composingText = display
         if let lbl = expandedComposingLabel {
             lbl.attributedText = CandidateBarView.attributedKeyname(
@@ -1824,8 +1743,6 @@ final class KeyboardViewController: UIInputViewController {
 
     private func hideComposingPopup() {
         guard toastTimer == nil else { return }
-        composingPopupLabel?.text = nil
-        assistBarComposingLabel?.text = nil
         candidateBar.composingText = nil
         expandedComposingLabel?.attributedText = nil
         expandedComposingLabel?.text = nil
@@ -2217,8 +2134,6 @@ final class KeyboardViewController: UIInputViewController {
         }.joined(separator: " ")
         NSLog("[LimeIME] showToast message=\(message) scalars=\(dump)")
         toastTimer?.invalidate()
-        composingPopupLabel?.text = " \(message) "
-        assistBarComposingLabel?.text = " \(message) "
         candidateBar.composingText = message
         if let lbl = expandedComposingLabel {
             lbl.attributedText = CandidateBarView.attributedKeyname(
@@ -2227,8 +2142,6 @@ final class KeyboardViewController: UIInputViewController {
         }
         toastTimer = Timer.scheduledTimer(withTimeInterval: LayoutMetrics.Toast.displayDuration, repeats: false) { [weak self] _ in
             guard let self, self.mComposing.isEmpty else { return }
-            self.composingPopupLabel?.text = nil
-            self.assistBarComposingLabel?.text = nil
             self.candidateBar.composingText = nil
             self.expandedComposingLabel?.attributedText = nil
             self.expandedComposingLabel?.text = nil
