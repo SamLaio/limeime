@@ -1085,7 +1085,7 @@ private final class SpaceKeyButton: KeyButton {
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first, !tapSuppressed else { return }
+        guard let touch = touches.first, (!tapSuppressed || caretFired) else { return }
         let dx = touch.location(in: self).x - touchBeganPoint.x
         guard abs(dx) >= SpaceKeyButton.deadZone else { return }
 
@@ -1095,9 +1095,9 @@ private final class SpaceKeyButton: KeyButton {
             longPressTimer?.invalidate(); longPressTimer = nil
             resetBg()
         }
-        // Emit delta steps since last move event
-        let step = Int((dx - (dx < 0 ? -SpaceKeyButton.deadZone : SpaceKeyButton.deadZone))
-                       / SpaceKeyButton.stepPx)
+        // Emit delta steps since last move event, with acceleration for longer slides
+        let sign = dx < 0 ? -1 : 1
+        let step = sign * SpaceKeyButton.stepsForDisplacement(abs(dx))
         let delta = step - lastCaretStep
         if delta != 0 {
             lastCaretStep = step
@@ -1115,6 +1115,25 @@ private final class SpaceKeyButton: KeyButton {
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         longPressTimer?.invalidate(); longPressTimer = nil
         resetBg()
+    }
+
+    /// Maps absolute horizontal displacement to a total signed step count.
+    /// Three tiers give progressively faster caret movement for longer slides.
+    private static func stepsForDisplacement(_ absDx: CGFloat) -> Int {
+        let travel = absDx - deadZone
+        guard travel > 0 else { return 0 }
+        // Tier boundaries (pt beyond dead zone) and step sizes per tier
+        let t1: CGFloat = 60            // slow zone: 7pt / step
+        let t2: CGFloat = 140           // medium zone: 3.5pt / step → fast zone: 1.75pt / step
+        let steps: CGFloat
+        if travel <= t1 {
+            steps = travel / stepPx
+        } else if travel <= t2 {
+            steps = t1 / stepPx + (travel - t1) / (stepPx / 2)
+        } else {
+            steps = t1 / stepPx + (t2 - t1) / (stepPx / 2) + (travel - t2) / (stepPx / 4)
+        }
+        return Int(steps)
     }
 
     private func resetBg() {
