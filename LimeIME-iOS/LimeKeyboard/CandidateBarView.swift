@@ -70,6 +70,26 @@ final class CandidateBarView: UIView {
     private var palette: KeyboardPalette {
         KeyboardPalette.palettes[max(0, min(theme, KeyboardPalette.palettes.count - 1))]
     }
+    // Set by KeyboardViewController before assigning `theme` so effectiveCandiText
+    // can read the real system appearance independently of overrideUserInterfaceStyle.
+    var systemUserInterfaceStyle: UIUserInterfaceStyle = .light {
+        didSet { guard oldValue != systemUserInterfaceStyle else { return }; applyTheme() }
+    }
+
+    // The candidate bar backdrop is a transparent system blur — always contrast the
+    // system backdrop regardless of keyboard theme:
+    //   Dark system  → white label for every theme (all palette.candiText values are dark)
+    //   Light system → theme 1's candiText is frozen-white (wrong), override to dark;
+    //                  all other themes have dark palette.candiText, use as-is.
+    private var effectiveCandiText: UIColor {
+        if systemUserInterfaceStyle == .dark {
+            return KeyboardPalette.iosDark(.label)
+        }
+        if theme == 1 {
+            return KeyboardPalette.iosLight(.label)
+        }
+        return palette.candiText
+    }
 
     // MARK: - Feedback
     var feedbackVibration: Bool = false
@@ -142,12 +162,12 @@ final class CandidateBarView: UIView {
     // MARK: - Setup
     private func applyTheme() {
         backgroundColor = .clear
-        moreButton.tintColor = palette.candiText
-        moreSep.backgroundColor = palette.candiText.withAlphaComponent(LayoutMetrics.CandidateBar.separatorAlpha)
-        dismissButton.tintColor = palette.candiText
-        dismissButton.backgroundColor = palette.candiText.withAlphaComponent(0.1)
+        moreButton.tintColor = effectiveCandiText
+        moreSep.backgroundColor = effectiveCandiText.withAlphaComponent(LayoutMetrics.CandidateBar.separatorAlpha)
+        dismissButton.tintColor = palette.label
+        dismissButton.backgroundColor = palette.normalKey.withAlphaComponent(0.15)
         composingLabel.font = composingStripFont
-        composingLabel.textColor = palette.candiText.withAlphaComponent(LayoutMetrics.ComposingPopup.textAlpha)
+        composingLabel.textColor = effectiveCandiText.withAlphaComponent(LayoutMetrics.ComposingPopup.textAlpha)
         applyComposingText()
         rebuildButtons()
     }
@@ -165,7 +185,7 @@ final class CandidateBarView: UIView {
         let chevronConfig = UIImage.SymbolConfiguration(
             pointSize: LayoutMetrics.CandidateBar.Chevron.iconSize(isPad: isPad), weight: .regular)
         moreButton.setImage(UIImage(systemName: "chevron.down", withConfiguration: chevronConfig), for: .normal)
-        moreButton.tintColor = palette.candiText
+        moreButton.tintColor = effectiveCandiText
         // KVC sets the same backing storage as `contentEdgeInsets` without
         // tripping the iOS 15 deprecation warning. The non-Configuration
         // button path is intentional — see makeCandidateButton for the
@@ -186,7 +206,7 @@ final class CandidateBarView: UIView {
         moreButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(moreButton)
 
-        moreSep.backgroundColor = palette.candiText.withAlphaComponent(LayoutMetrics.CandidateBar.separatorAlpha)
+        moreSep.backgroundColor = effectiveCandiText.withAlphaComponent(LayoutMetrics.CandidateBar.separatorAlpha)
         moreSep.isHidden = true
         moreSep.translatesAutoresizingMaskIntoConstraints = false
         addSubview(moreSep)
@@ -195,19 +215,19 @@ final class CandidateBarView: UIView {
         let dismissConfig = UIImage.SymbolConfiguration(
             pointSize: LayoutMetrics.CandidateBar.Chevron.iconSize(isPad: isPad), weight: .regular)
         dismissButton.setImage(UIImage(systemName: "xmark", withConfiguration: dismissConfig), for: .normal)
-        dismissButton.tintColor = palette.candiText
+        dismissButton.tintColor = palette.label
         dismissButton.isHidden = true
         dismissButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
         // Visible rounded background so the full button extent (restRowH) is apparent.
         // Colour is applied in applyTheme(); corner radius is permanent.
         dismissButton.layer.cornerRadius = 6
         dismissButton.layer.masksToBounds = true
-        dismissButton.backgroundColor = palette.candiText.withAlphaComponent(0.1)
+        dismissButton.backgroundColor = palette.normalKey.withAlphaComponent(0.15)
         dismissButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(dismissButton)
 
         composingLabel.font = composingStripFont
-        composingLabel.textColor = palette.candiText.withAlphaComponent(LayoutMetrics.ComposingPopup.textAlpha)
+        composingLabel.textColor = effectiveCandiText.withAlphaComponent(LayoutMetrics.ComposingPopup.textAlpha)
         composingLabel.textAlignment = .left
         composingLabel.backgroundColor = .clear
         composingLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -537,10 +557,10 @@ final class CandidateBarView: UIView {
         btn.setTitle(mapping.word, for: .normal)
         if isComposingCode {
             btn.titleLabel?.font = composingCodeFont
-            btn.setTitleColor(palette.candiText.withAlphaComponent(LayoutMetrics.CandidateBar.composingCodeDimAlpha), for: .normal)
+            btn.setTitleColor(effectiveCandiText.withAlphaComponent(LayoutMetrics.CandidateBar.composingCodeDimAlpha), for: .normal)
         } else {
             btn.titleLabel?.font = candidateFont
-            btn.setTitleColor(palette.candiText, for: .normal)
+            btn.setTitleColor(effectiveCandiText, for: .normal)
         }
         return btn
     }
@@ -553,8 +573,10 @@ final class CandidateBarView: UIView {
         // Theme 1 (Dark) overrides to an elevated gray pill for Android parity;
         // all other themes (including Light) use the palette's own highlight colour.
         let highlightColor: UIColor
-        if theme == 1 {
-            highlightColor = LayoutMetrics.CandidateBar.darkThemePill
+        if theme == 0 || theme == 1 {
+            highlightColor = systemUserInterfaceStyle == .dark
+                ? LayoutMetrics.CandidateBar.darkThemePill
+                : KeyboardPalette.iosLight(.systemBackground)
         } else {
             highlightColor = palette.candiHighlight
         }
@@ -567,11 +589,11 @@ final class CandidateBarView: UIView {
         if isComposingCode {
             // Selected composing-code gets full opacity (mirrors mColorComposingCodeHighlight).
             let color = isSelected
-                ? palette.candiText
-                : palette.candiText.withAlphaComponent(LayoutMetrics.CandidateBar.composingCodeDimAlpha)
+                ? effectiveCandiText
+                : effectiveCandiText.withAlphaComponent(LayoutMetrics.CandidateBar.composingCodeDimAlpha)
             button.setTitleColor(color, for: .normal)
         } else {
-            button.setTitleColor(palette.candiText, for: .normal)
+            button.setTitleColor(effectiveCandiText, for: .normal)
         }
     }
 

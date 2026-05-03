@@ -275,8 +275,9 @@ final class KeyboardViewController: UIInputViewController {
         // palette switches automatically as the user toggles system appearance.
         if prev.userInterfaceStyle != traitCollection.userInterfaceStyle {
             let t = resolvedKeyboardTheme
-            keyboardView?.theme  = t
-            candidateBar?.theme  = t
+            keyboardView?.theme = t
+            candidateBar?.systemUserInterfaceStyle = traitCollection.userInterfaceStyle
+            candidateBar?.theme = t
         }
 
         // Horizontal size class change (e.g. iPad split-screen, landscape):
@@ -668,25 +669,37 @@ final class KeyboardViewController: UIInputViewController {
         // via a relative constraint off collapseBtn, so no separate update needed.
         expandedCollapseHeightConstraint?.constant = candidateBarHeight
         let t = resolvedKeyboardTheme
+        let pal = KeyboardPalette.palettes[max(0, min(t, KeyboardPalette.palettes.count - 1))]
+        // Candidate bar backdrop is a transparent system blur — text must contrast the
+        // system backdrop, not the keyboard theme. Capture system style before
+        // overrideUserInterfaceStyle locks the bar's traitCollection to the theme.
+        let systemStyle = traitCollection.userInterfaceStyle
+        let adaptedCandiText: UIColor
+        if systemStyle == .dark {
+            adaptedCandiText = KeyboardPalette.iosDark(.label)
+        } else if t == 1 {
+            adaptedCandiText = KeyboardPalette.iosLight(.label)
+        } else {
+            adaptedCandiText = pal.candiText
+        }
         keyboardView?.theme  = t
+        candidateBar?.systemUserInterfaceStyle = systemStyle
         candidateBar?.theme  = t
         if prevScale != keyboardSize || prevFontScale != candidateFontScale { applyHeight() }
-        let pal = KeyboardPalette.palettes[max(0, min(t, KeyboardPalette.palettes.count - 1))]
         // Lock dynamic UIColors (.label etc. baked into palette[0]/[1]) to the
-        // keyboard's chosen theme. Without this, tintColor/textColor on the
-        // chrome re-resolve against the host app's userInterfaceStyle, so
-        // chevron + composingPopup invert when the host's appearance differs
-        // from the keyboard theme (light text on light bg, dark on dark).
+        // keyboard's chosen theme so key chrome (tintColor etc.) doesn't re-resolve
+        // against the host app's appearance. Candidate text is handled separately
+        // via adaptedCandiText above.
         let chromeStyle: UIUserInterfaceStyle = (t == 1) ? .dark : .light
         candidateBar?.overrideUserInterfaceStyle         = chromeStyle
         expandedCandidatesPanel?.overrideUserInterfaceStyle = chromeStyle
         expandedCandidatesPanel?.backgroundColor = .clear
-        expandedCollapseButton?.tintColor = pal.candiText
-        expandedMoreSep?.backgroundColor = pal.candiText.withAlphaComponent(LayoutMetrics.CandidateBar.separatorAlpha)
-        expandedDismissButton?.tintColor = pal.candiText
-        expandedDismissButton?.backgroundColor = pal.candiText.withAlphaComponent(0.1)
+        expandedCollapseButton?.tintColor = adaptedCandiText
+        expandedMoreSep?.backgroundColor = adaptedCandiText.withAlphaComponent(LayoutMetrics.CandidateBar.separatorAlpha)
+        expandedDismissButton?.tintColor = pal.label
+        expandedDismissButton?.backgroundColor = pal.normalKey.withAlphaComponent(0.15)
         expandedComposingLabel?.font = candidateBar.composingStripFont
-        expandedComposingLabel?.textColor = pal.candiText.withAlphaComponent(LayoutMetrics.ComposingPopup.textAlpha)
+        expandedComposingLabel?.textColor = adaptedCandiText.withAlphaComponent(LayoutMetrics.ComposingPopup.textAlpha)
         if isExpandedCandidatesVisible { reloadExpandedCandidates() }
     }
 
@@ -736,12 +749,23 @@ final class KeyboardViewController: UIInputViewController {
 
         // Initial values for composing popup / expanded panel chrome. Clamped to {0,1}
         // so coloured themes (2–5) fall back to Light/Dark chrome instead of
-        // inheriting the theme's tinted candidate bar. refreshRuntimePalette() updates
+        // inheriting the theme's tinted candidate bar. applyFeedbackSettings() updates
         // these at runtime when the resolved theme changes.
-        let pal = KeyboardPalette.palettes[max(0, min(resolvedKeyboardTheme, 1))]
+        let t0 = resolvedKeyboardTheme
+        let pal = KeyboardPalette.palettes[max(0, min(t0, 1))]
+        let setupSystemStyle = traitCollection.userInterfaceStyle
+        let adaptedCandiText: UIColor
+        if setupSystemStyle == .dark {
+            adaptedCandiText = KeyboardPalette.iosDark(.label)
+        } else if t0 == 1 {
+            adaptedCandiText = KeyboardPalette.iosLight(.label)
+        } else {
+            adaptedCandiText = pal.candiText
+        }
 
         // Candidate bar
         candidateBar = CandidateBarView()
+        candidateBar.systemUserInterfaceStyle = setupSystemStyle
         candidateBar.delegate = self
         candidateBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(candidateBar)
@@ -822,7 +846,7 @@ final class KeyboardViewController: UIInputViewController {
             pointSize: LayoutMetrics.CandidateBar.Chevron.iconSize(isPad: isOnPad), weight: .regular)
         collapseBtn.setImage(UIImage(systemName: "chevron.up", withConfiguration: collapseChevronConfig),
                              for: .normal)
-        collapseBtn.tintColor = pal.candiText
+        collapseBtn.tintColor = adaptedCandiText
         // Match candidate-row glyph bias so the chevron stays vertically
         // aligned with the row 1 candidates and the bar's chevron.
         // Using KVC `contentEdgeInsets` (not `UIButton.Configuration`) because
@@ -845,7 +869,7 @@ final class KeyboardViewController: UIInputViewController {
         // CandidateBarView.moreSep so the expanded panel's reserved right-hand
         // zone matches the bar and the first row fits the exact same candidate count.
         let sep = UIView()
-        sep.backgroundColor = pal.candiText.withAlphaComponent(LayoutMetrics.CandidateBar.separatorAlpha)
+        sep.backgroundColor = adaptedCandiText.withAlphaComponent(LayoutMetrics.CandidateBar.separatorAlpha)
         sep.translatesAutoresizingMaskIntoConstraints = false
         panel.addSubview(sep)
 
@@ -876,8 +900,8 @@ final class KeyboardViewController: UIInputViewController {
         let xmarkConfig = UIImage.SymbolConfiguration(
             pointSize: LayoutMetrics.CandidateBar.Chevron.iconSize(isPad: isOnPad), weight: .regular)
         dismissBtn.setImage(UIImage(systemName: "xmark", withConfiguration: xmarkConfig), for: .normal)
-        dismissBtn.tintColor = pal.candiText
-        dismissBtn.backgroundColor = pal.candiText.withAlphaComponent(0.1)
+        dismissBtn.tintColor = pal.label
+        dismissBtn.backgroundColor = pal.normalKey.withAlphaComponent(0.15)
         dismissBtn.layer.cornerRadius = 6
         dismissBtn.layer.masksToBounds = true
         dismissBtn.translatesAutoresizingMaskIntoConstraints = false
@@ -903,7 +927,7 @@ final class KeyboardViewController: UIInputViewController {
         // glyph baseline below).
         let stripLabel = UILabel()
         stripLabel.font = candidateBar.composingStripFont
-        stripLabel.textColor = pal.candiText.withAlphaComponent(LayoutMetrics.ComposingPopup.textAlpha)
+        stripLabel.textColor = adaptedCandiText.withAlphaComponent(LayoutMetrics.ComposingPopup.textAlpha)
         stripLabel.textAlignment = .left
         stripLabel.backgroundColor = .clear
         stripLabel.isUserInteractionEnabled = false
@@ -1302,6 +1326,7 @@ final class KeyboardViewController: UIInputViewController {
 
     /// Cancel composing without touching the document (cursor moved externally).
     private func cancelComposing() {
+        isShowingReverseLookup = false
         mComposing       = ""
         composingLength  = 0
         selectedCandidate = nil
@@ -1505,11 +1530,22 @@ final class KeyboardViewController: UIInputViewController {
         contentView.subviews.forEach { $0.removeFromSuperview() }
 
         let pal = KeyboardPalette.palettes[max(0, min(resolvedKeyboardTheme, KeyboardPalette.palettes.count - 1))]
-        // Theme 1 (Dark) overrides to an elevated gray pill for Android parity;
-        // all other themes (including Light) use the palette's own highlight colour.
+        let t = resolvedKeyboardTheme
+        let systemStyle = traitCollection.userInterfaceStyle
+        let adaptedCandiText: UIColor
+        if systemStyle == .dark {
+            adaptedCandiText = KeyboardPalette.iosDark(.label)
+        } else if t == 1 {
+            adaptedCandiText = KeyboardPalette.iosLight(.label)
+        } else {
+            adaptedCandiText = pal.candiText
+        }
+        // Themes 0 and 1 adapt pill + text to the system backdrop; other themes use their fixed palette colour.
         let highlightColor: UIColor
-        if resolvedKeyboardTheme == 1 {
-            highlightColor = LayoutMetrics.CandidateBar.darkThemePill
+        if t == 0 || t == 1 {
+            highlightColor = systemStyle == .dark
+                ? LayoutMetrics.CandidateBar.darkThemePill
+                : KeyboardPalette.iosLight(.systemBackground)
         } else {
             highlightColor = pal.candiHighlight
         }
@@ -1598,8 +1634,8 @@ final class KeyboardViewController: UIInputViewController {
             let isSelected = (i == expandedSelectedIndex && expandedSelectedIndex >= 0)
             btn.setTitleColor(
                 isComposingCode && !isSelected
-                    ? pal.candiText.withAlphaComponent(LayoutMetrics.CandidateBar.composingCodeDimAlpha)
-                    : pal.candiText,
+                    ? adaptedCandiText.withAlphaComponent(LayoutMetrics.CandidateBar.composingCodeDimAlpha)
+                    : adaptedCandiText,
                 for: .normal)
             btn.frame = CGRect(x: x, y: y, width: btnW, height: rowH)
             btn.tag = i
@@ -1721,8 +1757,7 @@ final class KeyboardViewController: UIInputViewController {
     /// Only the label's text changes — the strip's height is fixed so the
     /// extension never grows/shrinks between compose and commit.
     private func showComposingPopup() {
-        toastTimer?.invalidate()
-        toastTimer = nil
+        isShowingReverseLookup = false
         let raw = mComposing
         guard !raw.isEmpty, !mEnglishOnly else { hideComposingPopup(); return }
 
@@ -1742,7 +1777,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func hideComposingPopup() {
-        guard toastTimer == nil else { return }
+        guard !isShowingReverseLookup else { return }
         candidateBar.composingText = nil
         expandedComposingLabel?.attributedText = nil
         expandedComposingLabel?.text = nil
@@ -1861,33 +1896,8 @@ final class KeyboardViewController: UIInputViewController {
             let word = candidate.word
             DispatchQueue.global(qos: .background).async { [weak self] in
                 guard let result = ss.getCodeListStringFromWord(word, usingTable: lookupTable),
-                      !result.isEmpty else {
-                    NSLog("[LimeIME] reverseLookup word=\(word) table=\(lookupTable) -> EMPTY")
-                    return
-                }
-                // DEBUG: dump every code point so we can verify tone marks
-                // ˇ(U+02C7) ˊ(U+02CA) ˋ(U+02CB) ˙(U+02D9) survive the
-                // SQL → keyToKeyName → showToast pipeline.
-                let dump = result.unicodeScalars.map {
-                    String(format: "%@(U+%04X)", String($0), $0.value)
-                }.joined(separator: " ")
-                NSLog("[LimeIME] reverseLookup word=\(word) table=\(lookupTable) result=\(result) scalars=\(dump)")
-                // Persist to App Group container so we can read it without
-                // wrestling with the simulator log stream filter.
-                if let dir = FileManager.default.containerURL(
-                    forSecurityApplicationGroupIdentifier: "group.net.toload.limeime") {
-                    let url = dir.appendingPathComponent("debug_reverse.log")
-                    let line = "\(Date()) word=\(word) table=\(lookupTable) result=\(result) scalars=\(dump)\n"
-                    if let data = line.data(using: .utf8) {
-                        if FileManager.default.fileExists(atPath: url.path),
-                           let h = try? FileHandle(forWritingTo: url) {
-                            h.seekToEndOfFile(); h.write(data); try? h.close()
-                        } else {
-                            try? data.write(to: url)
-                        }
-                    }
-                }
-                DispatchQueue.main.async { self?.showToast(result) }
+                      !result.isEmpty else { return }
+                DispatchQueue.main.async { self?.showReverseLookup(result) }
             }
         }
     }
@@ -2048,7 +2058,7 @@ final class KeyboardViewController: UIInputViewController {
         // Resolve IM-specific symbol layout (mirrors Android KeyboardConfig.symbolkb).
         // Android stores "symbols"/"symbols_shift" as resource refs — map these to iOS JSON IDs.
         // English mode always uses the generic symbols1.
-        if !mEnglishOnly {
+        if !preSymbolEnglish {
             let kbCode = activatedIMs.first(where: { $0.tableNick == activeIM })?.keyboardId ?? ""
             let cfg    = kbCode.isEmpty ? nil : searchServer?.getKeyboardConfig(kbCode)
             // Map Android resource names → iOS JSON layout IDs
@@ -2123,29 +2133,22 @@ final class KeyboardViewController: UIInputViewController {
         word.unicodeScalars.contains { $0.value > 0xFFFF }
     }
 
-    // MARK: - Toast Notification (spec §8, §13)
+    // MARK: - Reverse Lookup Display (spec §8, §13)
 
-    private var toastTimer: Timer?
+    // True while a reverse-lookup result occupies the composing strip.
+    // Cleared on any keystroke (keyboardView didPress) or explicit cancel.
+    // hideComposingPopup() is a no-op while this flag is set so that automatic
+    // post-commit cleanup (clearSuggestions, updateRelatedPhrase) never races
+    // away the result before the user has a chance to read it.
+    private var isShowingReverseLookup: Bool = false
 
-    /// Briefly display a reverse lookup result in the composing strip (spec §8, §13).
-    private func showToast(_ message: String) {
-        let dump = message.unicodeScalars.map {
-            String(format: "%@(U+%04X)", String($0), $0.value)
-        }.joined(separator: " ")
-        NSLog("[LimeIME] showToast message=\(message) scalars=\(dump)")
-        toastTimer?.invalidate()
+    private func showReverseLookup(_ message: String) {
+        isShowingReverseLookup = true
         candidateBar.composingText = message
         if let lbl = expandedComposingLabel {
             lbl.attributedText = CandidateBarView.attributedKeyname(
                 message, baseFont: candidateBar.composingStripFont,
                 color: lbl.textColor ?? .label)
-        }
-        toastTimer = Timer.scheduledTimer(withTimeInterval: LayoutMetrics.Toast.displayDuration, repeats: false) { [weak self] _ in
-            guard let self, self.mComposing.isEmpty else { return }
-            self.candidateBar.composingText = nil
-            self.expandedComposingLabel?.attributedText = nil
-            self.expandedComposingLabel?.text = nil
-            self.toastTimer = nil
         }
     }
 
@@ -2176,6 +2179,7 @@ final class KeyboardViewController: UIInputViewController {
 extension KeyboardViewController: KeyboardViewDelegate {
 
     func keyboardView(_ view: KeyboardView, didPress keyDef: KeyDef) {
+        isShowingReverseLookup = false
         if keyDef.codes.count > 1 {
             handleMultiTap(keyDef)
         } else {

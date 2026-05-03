@@ -300,7 +300,7 @@ enum LayoutMetrics {
         static let spaceLongPressDuration: TimeInterval = 0.5
 
         // Space-key horizontal slide: pixels per caret step; initial movement dead zone.
-        static let spaceCaretStepPx: CGFloat = 8
+        static let spaceCaretStepPx: CGFloat = 7
         static let spaceSwipeThreshold: CGFloat = 12
 
         // iPad dual-row top-key downward slide that commits the secondary
@@ -434,12 +434,6 @@ enum LayoutMetrics {
         static let appearDuration: TimeInterval = 0.2
         // Translation offset applied at start of the slide-in animation.
         static let appearTranslationY: CGFloat = 20
-    }
-
-    // MARK: - Toast (transient reverse-lookup notification)
-
-    enum Toast {
-        static let displayDuration: TimeInterval = 2.0
     }
 
     // The expanded candidates panel (rendered by the controller) reuses
