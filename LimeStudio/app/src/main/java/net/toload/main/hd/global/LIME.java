@@ -89,7 +89,7 @@ public class LIME {
 	public static final String DATABASE_CLOUD_IM_PHONETIC_BIG5 = DATABASE_CLOUD_URL_BASED + "phoneticbig5.zip";
 	public static final String DATABASE_CLOUD_IM_PHONETIC = DATABASE_CLOUD_URL_BASED + "phonetic.zip";
 	public static final String DATABASE_CLOUD_IM_PHONETIC_KEYBOARD = "phonetic";
-	public static final String DATABASE_CLOUD_IM_EZ = DATABASE_CLOUD_URL_BASED + "ez.zip";
+	public static final String DATABASE_CLOUD_IM_EZ = DATABASE_CLOUD_URL_BASED + "ez.limedb";
 	public static final String DATABASE_CLOUD_IM_EZ_KEYBOARD = "ez";
 	public static final String DATABASE_CLOUD_IM_ECJHK = DATABASE_CLOUD_URL_BASED + "ecjhk.zip";
 	public static final String DATABASE_CLOUD_IM_ECJHK_KEYBOARD = "cj";
