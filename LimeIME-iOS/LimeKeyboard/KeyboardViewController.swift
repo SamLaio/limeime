@@ -102,7 +102,11 @@ final class KeyboardViewController: UIInputViewController {
     private var expandedMoreSep: UIView?
     /// Dismiss (✕) button at the panel's top-left — mirrors CandidateBarView.dismissButton.
     private var expandedDismissButton: UIButton?
+    /// Persistent custom vertical scrollbar thumb for the expanded candidates panel.
+    private var expandedScrollThumb: UIView?
     private let expandedSepWidth: CGFloat = LayoutMetrics.CandidateBar.dividerWidth
+    private let expandedScrollThumbWidth: CGFloat = 3
+    private let expandedScrollThumbMinHeight: CGFloat = 36
     /// Mirror of the candidate bar's keyname strip overlay. Pinned to the
     /// top of the expanded panel so when the user expands the candidate
     /// bar the first row stays pixel-identical (same composing keyname,
@@ -148,6 +152,8 @@ final class KeyboardViewController: UIInputViewController {
     // which sums actual per-row heights (54 pt regular, 56 pt bottom row).
     private var keyboardHeightConstraint: NSLayoutConstraint?
     private weak var inlineMenuPanel: UIView?
+    private weak var keyboardTopCoverView: UIView?
+    private var keyboardHostCoverHeight: CGFloat { isOnPad ? 0 : 12 }
 
     // MARK: - Lifecycle
 
@@ -322,7 +328,7 @@ final class KeyboardViewController: UIInputViewController {
         refreshPhoneticKeyboardPrefs()
 
         mCompletionOn = false
-        mCapsLock     = false
+        clearShiftState()
 
         // Map keyboard type → mEnglishOnly + mPredictionOn (spec §2 table)
         switch textDocumentProxy.keyboardType ?? .default {
@@ -459,6 +465,7 @@ final class KeyboardViewController: UIInputViewController {
                 }()
                 if !self.mEnglishOnly, let layout = LayoutLoader.load(savedImKb),
                    layout.id != self.currentLayout.id {
+                    self.clearShiftState()
                     self.currentLayout = layout
                     self.keyboardView?.setLayout(layout)
                     self.applyHeight()
@@ -683,6 +690,8 @@ final class KeyboardViewController: UIInputViewController {
             adaptedCandiText = pal.candiText
         }
         keyboardView?.theme  = t
+        view.backgroundColor = keyboardBackdropFillColor(for: t)
+        keyboardTopCoverView?.backgroundColor = keyboardBackdropFillColor(for: t)
         candidateBar?.systemUserInterfaceStyle = systemStyle
         candidateBar?.theme  = t
         if prevScale != keyboardSize || prevFontScale != candidateFontScale { applyHeight() }
@@ -696,6 +705,7 @@ final class KeyboardViewController: UIInputViewController {
         expandedCandidatesPanel?.backgroundColor = .clear
         expandedCollapseButton?.tintColor = adaptedCandiText
         expandedMoreSep?.backgroundColor = adaptedCandiText.withAlphaComponent(LayoutMetrics.CandidateBar.separatorAlpha)
+        expandedScrollThumb?.backgroundColor = adaptedCandiText.withAlphaComponent(0.35)
         expandedDismissButton?.tintColor = pal.label
         expandedDismissButton?.backgroundColor = pal.normalKey.withAlphaComponent(0.15)
         expandedComposingLabel?.font = candidateBar.composingStripFont
@@ -743,10 +753,6 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - UI Setup
 
     private func setupKeyboardUI() {
-        // Transparent so the area above the candidate bar (the collapsible
-        // popup strip) doesn't paint a gray rectangle next to the keyname bubble.
-        view.backgroundColor = .clear
-
         // Initial values for composing popup / expanded panel chrome. Clamped to {0,1}
         // so coloured themes (2–5) fall back to Light/Dark chrome instead of
         // inheriting the theme's tinted candidate bar. applyFeedbackSettings() updates
@@ -762,6 +768,14 @@ final class KeyboardViewController: UIInputViewController {
         } else {
             adaptedCandiText = pal.candiText
         }
+        view.backgroundColor = keyboardBackdropFillColor(for: t0)
+
+        let topCover = UIView()
+        topCover.backgroundColor = keyboardBackdropFillColor(for: t0)
+        topCover.isUserInteractionEnabled = false
+        topCover.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(topCover)
+        keyboardTopCoverView = topCover
 
         // Candidate bar
         candidateBar = CandidateBarView()
@@ -778,7 +792,12 @@ final class KeyboardViewController: UIInputViewController {
         view.addSubview(keyboardView)
 
         NSLayoutConstraint.activate([
-            candidateBar.topAnchor.constraint(equalTo: view.topAnchor),
+            topCover.topAnchor.constraint(equalTo: view.topAnchor),
+            topCover.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            topCover.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            topCover.bottomAnchor.constraint(equalTo: candidateBar.topAnchor),
+
+            candidateBar.topAnchor.constraint(equalTo: view.topAnchor, constant: keyboardHostCoverHeight),
             candidateBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             candidateBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             {
@@ -808,7 +827,18 @@ final class KeyboardViewController: UIInputViewController {
         let sv = UIScrollView()
         sv.backgroundColor = .clear
         sv.translatesAutoresizingMaskIntoConstraints = false
+        sv.showsVerticalScrollIndicator = false
+        sv.alwaysBounceVertical = false
+        sv.delegate = self
         panel.addSubview(sv)
+
+        let scrollThumb = UIView()
+        scrollThumb.backgroundColor = adaptedCandiText.withAlphaComponent(0.35)
+        scrollThumb.layer.cornerRadius = expandedScrollThumbWidth / 2
+        scrollThumb.layer.masksToBounds = true
+        scrollThumb.isHidden = true
+        scrollThumb.isUserInteractionEnabled = false
+        panel.addSubview(scrollThumb)
 
         let contentView = UIView()
         contentView.translatesAutoresizingMaskIntoConstraints = false
@@ -837,6 +867,7 @@ final class KeyboardViewController: UIInputViewController {
         expandedScrollView               = sv
         expandedContentView              = contentView
         expandedContentHeightConstraint  = hc
+        expandedScrollThumb              = scrollThumb
 
         // Collapse button (chevron.up) pinned to top-right, same width as candi bar chevron.
         // Mirror the collapsed bar's chevron point size so the two surfaces
@@ -950,6 +981,13 @@ final class KeyboardViewController: UIInputViewController {
         expandedComposingLabel = stripLabel
     }
 
+    private func keyboardBackdropFillColor(for theme: Int) -> UIColor {
+        if theme == 1 {
+            return UIColor(red: 0.07, green: 0.07, blue: 0.08, alpha: 1)
+        }
+        return UIColor(white: 0.82, alpha: 1)
+    }
+
     private func applyHeight() {
         // Use KeyboardView.preferredHeight so the outer extension view is sized to
         // exactly match the sum of each row's actual height (54 pt regular, 56 pt
@@ -965,7 +1003,7 @@ final class KeyboardViewController: UIInputViewController {
         // with the Pad value (74×scale), leaving a layout gap.
         candidateBarHeightConstraint?.constant = barH
         expandedCollapseHeightConstraint?.constant = barH
-        let totalHeight = barH + keysHeight
+        let totalHeight = keyboardHostCoverHeight + barH + keysHeight
         if let existing = keyboardHeightConstraint {
             existing.constant = totalHeight
         } else {
@@ -1285,6 +1323,13 @@ final class KeyboardViewController: UIInputViewController {
         applyShiftState()
     }
 
+    private func clearShiftState() {
+        guard isShiftOn || mCapsLock else { return }
+        isShiftOn = false
+        mCapsLock = false
+        applyShiftState()
+    }
+
     private func handleClose() {
         clearComposing(force: false)
         dismissKeyboard()
@@ -1503,6 +1548,7 @@ final class KeyboardViewController: UIInputViewController {
     private func showExpandedCandidates(_ candidates: [Mapping], selectedIndex: Int = -1) {
         expandedCandidates = candidates
         expandedSelectedIndex = (selectedIndex >= 0 && selectedIndex < candidates.count) ? selectedIndex : -1
+        expandedScrollView?.setContentOffset(.zero, animated: false)
         reloadExpandedCandidates()
         expandedCandidatesPanel?.isHidden = false
         // Hide both the key grid and the candidate bar while the expanded panel is shown.
@@ -1512,11 +1558,13 @@ final class KeyboardViewController: UIInputViewController {
         keyboardView?.isHidden = true
         candidateBar.isHidden = true
         isExpandedCandidatesVisible = true
+        updateExpandedScrollThumb()
     }
 
     private func hideExpandedCandidates() {
         guard isExpandedCandidatesVisible else { return }
         expandedCandidatesPanel?.isHidden = true
+        expandedScrollThumb?.isHidden = true
         keyboardView?.isHidden = false
         candidateBar.isHidden = false
         isExpandedCandidatesVisible = false
@@ -1677,6 +1725,41 @@ final class KeyboardViewController: UIInputViewController {
         let totalH = expandedCandidates.isEmpty ? 0 : (y + rowH + vPad)
         expandedContentHeightConstraint?.constant = totalH
         expandedScrollView?.layoutIfNeeded()
+        updateExpandedScrollThumb()
+    }
+
+    private func updateExpandedScrollThumb() {
+        guard let panel = expandedCandidatesPanel,
+              let scrollView = expandedScrollView,
+              let thumb = expandedScrollThumb else { return }
+        panel.layoutIfNeeded()
+        scrollView.layoutIfNeeded()
+
+        let viewportHeight = scrollView.bounds.height
+        let contentHeight = scrollView.contentSize.height
+        let hasOverflow = isExpandedCandidatesVisible && contentHeight > viewportHeight + 1
+        guard hasOverflow, viewportHeight > 0 else {
+            thumb.isHidden = true
+            return
+        }
+
+        let trackInset: CGFloat = 2
+        let trackHeight = max(0, scrollView.bounds.height - 2 * trackInset)
+        let thumbHeight = min(trackHeight,
+                              max(expandedScrollThumbMinHeight,
+                                  trackHeight * viewportHeight / contentHeight))
+        let maxOffset = max(1, contentHeight - viewportHeight)
+        let clampedOffset = min(max(scrollView.contentOffset.y, 0), maxOffset)
+        let progress = clampedOffset / maxOffset
+        let thumbTravel = max(0, trackHeight - thumbHeight)
+        let thumbY = scrollView.frame.minY + trackInset + thumbTravel * progress
+        let thumbX = scrollView.frame.maxX - expandedScrollThumbWidth - 2
+
+        thumb.frame = CGRect(x: thumbX,
+                             y: thumbY,
+                             width: expandedScrollThumbWidth,
+                             height: thumbHeight)
+        thumb.isHidden = false
     }
 
     @objc private func expandedCandidateTapped(_ sender: UIButton) {
@@ -1997,6 +2080,7 @@ final class KeyboardViewController: UIInputViewController {
     /// Toggle Chinese ↔ English mode (spec §10 switchChiEng).
     private func switchChiEng(toEnglish: Bool) {
         if isSymbolMode { exitSymbolMode() }
+        clearShiftState()
         clearComposing(force: false)
         mEnglishOnly = toEnglish
         // Persist language mode if setting is enabled (spec §15)
@@ -2024,6 +2108,7 @@ final class KeyboardViewController: UIInputViewController {
         sharedDefaults?.set(activeIM, forKey: "keyboard_list")
 
         // Clear composing and candidates before switching
+        clearShiftState()
         clearComposing(force: false)
         LDComposingBuffer = ""
 
@@ -2050,6 +2135,7 @@ final class KeyboardViewController: UIInputViewController {
     /// Enter symbol keyboard mode (spec §10 switchToSymbol).
     private func switchToSymbol() {
         guard !isSymbolMode else { exitSymbolMode(); switchChiEng(toEnglish: true); return }
+        clearShiftState()
         isSymbolMode       = true
         preSymbolEnglish   = mEnglishOnly
         mEnglishOnly       = true   // disable CJK composing while in symbol mode
@@ -2096,6 +2182,7 @@ final class KeyboardViewController: UIInputViewController {
 
     /// Load a symbol keyboard layout page.
     private func loadSymbolLayout(page: Int) {
+        clearShiftState()
         let id = symbolLayouts[page]
         let layout = LayoutLoader.load(id) ?? currentLayout
         currentLayout = layout
@@ -2106,6 +2193,7 @@ final class KeyboardViewController: UIInputViewController {
     /// Exit symbol mode and restore the previous keyboard layout.
     private func exitSymbolMode() {
         guard isSymbolMode else { return }
+        clearShiftState()
         isSymbolMode = false
         mEnglishOnly = preSymbolEnglish
         let restore = preSymbolLayout ?? currentLayout
@@ -2521,6 +2609,7 @@ extension KeyboardViewController: KeyboardViewDelegate {
         activeIM = im.tableNick.isEmpty ? "phonetic" : im.tableNick
         // Persist last-used IM (mirrors Android mLIMEPref.setActiveIM(), key "keyboard_list")
         sharedDefaults?.set(activeIM, forKey: "keyboard_list")
+        clearShiftState()
         clearComposing(force: false)
         if let db = self.db {
             let caps = imCapabilities(for: activeIM, db: db)
@@ -2818,6 +2907,15 @@ extension KeyboardViewController: KeyboardViewDelegate {
         }
         items.append(("取消", {}))
         showInlineMenu(items: items)
+    }
+}
+
+// MARK: - UIScrollViewDelegate
+extension KeyboardViewController: UIScrollViewDelegate {
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === expandedScrollView else { return }
+        updateExpandedScrollThumb()
     }
 }
 

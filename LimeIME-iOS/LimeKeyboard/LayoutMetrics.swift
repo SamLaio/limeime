@@ -110,7 +110,7 @@ enum LayoutMetrics {
         /// Sizes used on iPhone hardware / phone-class host.
         enum Phone {
             /// Reserved height of the keyname strip overlay.
-            static let stripHeight: CGFloat = 22
+            static let stripHeight: CGFloat = 18
             /// Strip-label font size (× candidateFontScale at use-site).
             static let stripFontSize: CGFloat = 14
             /// Candidate-cell font size (× candidateFontScale at use-site).

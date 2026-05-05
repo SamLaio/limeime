@@ -12,46 +12,95 @@ For the raw constants and per-idiom values, see
 [LAYOUT_PARAM.md](LAYOUT_PARAM.md). This doc focuses on *how the pieces
 fit together*.
 
+For the host-app-specific Safari / Gemini extra top-space investigation, see
+[SAFARI_EXTRA_SPACE.md](SAFARI_EXTRA_SPACE.md). That issue is intentionally not
+treated as candidate-bar geometry here.
+
 ---
 
 ## 1. The candidate bar
 
+The candidate bar is one fixed-height surface at the top of the keyboard.
+It contains every candidate-related control: the left dismiss button, the
+composing keyname / reverse-lookup strip, the horizontally-scrolling
+candidate cells, the right separator, and the expand chevron.
+
 ```
- ┌──────────────────────────────────────────────────────────────┬─┬─────┐
- │ ㄉㄚˊ                                                       │ │     │   ← keyname strip (top)
- │ ─────────────────────────────────────────────────────────── │ │  ▾  │   ← chevron
- │   答    打    搭    達    大    ...                         │ │     │
- └──────────────────────────────────────────────────────────────┴─┴─────┘
-   ↑                                                            ↑ ↑     ↑
-   leading region                                          moreSep │     trailing edge
-   (keyname overlay sits on top of                                 │
-    the candidate scroll view)                          chevron button
-                                                        (Chevron.buttonWidth)
+Horizontal zones
+
+ bar.leading                                                   bar.trailing
+     │                                                              │
+     ▼                                                              ▼
+ ┌──────┬──────────────────────────────────────────────────────┬─┬─────┐
+ │  X   │ composing keyname / reverse lookup strip             │ │     │
+ │      │ ㄉㄚˊ   or   日=ㄇㄧˋ; ㄖˋ                             │ │     │
+ │      │                                                      │ │     │
+ │      │   raw    first    second    third                    │ │  ▾  │
+ │      │   dj     答       打        搭       ...              │ │     │
+ └──────┴──────────────────────────────────────────────────────┴─┴─────┘
+   ▲      ▲                                              ▲      ▲   ▲
+   │      │                                              │      │   │
+   │      scrollView.leading                             │      │   moreButton
+   │      composingLabel.leading                         │      │   width = Chevron.buttonWidth
+   │                                                     moreSep
+   dismissButton                                         width = CandidateBar.dividerWidth
+   width = Chevron.buttonWidth / 2
+
+Vertical bands
+
+ y=0 ┌──────────────────────────────────────────────────────────────┐
+    │ composingLabel: composing keyname or reverse lookup           │
+    │ height = ceil(composingStripFont.lineHeight) + labelHeightPad │
+    ├──────────────────── stripHeight ─────────────────────────────┤
+    │ stripHeight is counted from bar.top downward:                 │
+    │ y = 0 ... stripHeight                                         │
+    │ candidate glyph zone                                          │
+    │ CandidateButton titleLabel is shifted down by stripHeight / 2 │
+    │ selection pill hugs titleLabel + pillPadX / pillPadY          │
+    └──────────────────────────────────────────────────────────────┘ y=candidateBarHeight
 ```
 
-### Composition
+### Component map
 
-| Subview | Owner | Z-order | Role |
+| Component | View / owner | Parameter(s) | Geometry / role |
 |---|---|---|---|
-| `composingLabel` | bar (`CandidateBarView`) | top | Renders the composing keyname (e.g. `ㄉㄚˊ`) during composition, **and** the reverse-lookup result (e.g. `日=ㄇㄧˋ; ㄖˋ`) after a candidate is committed. Same font, same color, same position. |
-| `scrollView` | bar | middle | Horizontally-scrolling container for the candidate cells. Spans from the bar's leading edge to `moreSep.leadingAnchor`. |
-| `stackView` | inside `scrollView` | — | Holds the `CandidateButton` instances back to back (no spacing between them). |
-| `moreSep` | bar | top | 1pt × 20pt vertical hairline divider between the candidate area and the chevron. |
-| `moreButton` | bar | top | The chevron button (downward chevron when collapsed). Pinned to the bar's trailing edge with a fixed width. |
+| Whole bar | `CandidateBarView` | `ComposingPopup.{Phone,Pad}.barBaseHeight * candidateFontScale` | Total candidate-bar height. The controller stores this as `candidateBarHeight` and applies it to `candidateBarHeightConstraint`. |
+| Left dismiss button | `dismissButton` in `CandidateBarView` | `Chevron.buttonWidth(isPad:) / 2`; height = `candidateBarHeight - composingStripHeight`; centerY offset = `composingStripHeight / 2` | Clears composing without touching document text. It sits only in the candidate glyph zone, not in the keyname strip. |
+| Keyname / reverse-lookup strip | `composingLabel` in `CandidateBarView` | `ComposingPopup.labelLeading`; `labelTrailingInset`; `labelTopInset`; `stripFontSize`; `labelHeightPad`; `textAlpha` | Overlays the top of the scroll region. During composing it shows key names such as `ㄉㄚˊ`; after commit it reuses the same label for reverse lookup such as `日=ㄇㄧˋ; ㄖˋ`. |
+| Candidate viewport | `scrollView` in `CandidateBarView` | leading = `dismissButton.trailingAnchor`; trailing = `moreSep.leadingAnchor` | The visible horizontal candidate area. The keyname / reverse-lookup label is drawn above this same region. |
+| Candidate row content | `stackView` inside `scrollView` | `stackView.spacing = 0`; `CandidateBar.candidateHPad`; `ComposingPopup.stripHeight` | Holds `CandidateButton`s back-to-back. There is no stack spacing; visible item spacing comes from each button's left/right `candidateHPad`. |
+| Candidate cell | `CandidateButton` | `candidateHPad`; `candidateFontSize`; `composingCodeFontSize`; `CandidateBar.composingCodeDimAlpha` | Full-height tap target. Normal candidates use `candidateFont`; raw composing-code records use `composingCodeFont` and dimmed text. |
+| Candidate vertical bias | `CandidateButton.contentEdgeInsets` | `ComposingPopup.stripHeight(isPad:) / 2` | Shifts title text and selection pill down so candidate glyphs clear the overlaid strip. |
+| Selection pill | `CandidateButton.pillView` | `pillPadX`; `pillPadY`; `pillCornerRadius`; `darkThemePill`; `candiHighlight` | Inner highlight view that hugs the title label instead of filling the whole button. |
+| Right separator | `moreSep` in `CandidateBarView` | `CandidateBar.dividerWidth`; `dividerHeight`; `separatorAlpha` | Hairline divider immediately left of the chevron. Its trailing edge is pinned to `moreButton.leadingAnchor`. |
+| Expand chevron | `moreButton` in `CandidateBarView` | `Chevron.buttonWidth(isPad:)`; `Chevron.iconSize(isPad:)`; vertical content inset = `composingStripHeight / 2` | Opens the expanded candidates panel. Width is fixed per idiom and independent of bar height. |
 
-### Bar height (per idiom × font scale)
+### Main layout formulas
 
-```
-candidateBarHeight = LayoutMetrics.ComposingPopup.barBaseHeight(isPad:)
-                   * candidateFontScale
-```
-
-Defaults:
-
-| Idiom | `barBaseHeight` | At fontScale 1.1 |
+| Quantity | Formula | Notes |
 |---|---|---|
-| iPhone | 58 | ≈64pt |
-| iPad | 74 | ≈81pt |
+| `candidateBarHeight` | `ComposingPopup.barBaseHeight(isPad:) * candidateFontScale` | Overall bar height. Defaults at fontScale 1.1: iPhone `58 * 1.1 ≈ 64pt`, iPad `74 * 1.1 ≈ 81pt`. |
+| `composingStripHeight` | `ComposingPopup.stripHeight(isPad:)` | Reserved top strip area counted from `bar.top` downward (`y = 0 ... stripHeight`): iPhone `22pt`, iPad `28pt`. This value is not multiplied by `candidateFontScale`. |
+| `composingStripFont` | `ComposingPopup.stripFontSize(isPad:) * candidateFontScale` | Font for composing keyname and reverse lookup. Uses STHeiti TC for visible Bopomofo tone marks. |
+| `candidateFont` | `ComposingPopup.candidateFontSize(isPad:) * candidateFontScale` | Font for normal candidate words. |
+| `composingCodeFont` | `ComposingPopup.composingCodeFontSize(isPad:) * candidateFontScale` | Font for raw composing-code records. |
+| Candidate horizontal gap | `candidateHPad + candidateHPad` between adjacent titles | The stack has zero spacing. Each button contributes its own left and right padding. |
+| Candidate vertical shift | `bias = composingStripHeight / 2` | Applied as `contentEdgeInsets.top = bias`, `bottom = -bias`. |
+| Dismiss width | `Chevron.buttonWidth(isPad:) / 2` | iPhone `20pt`, iPad `26pt` with current constants. |
+| Chevron width | `Chevron.buttonWidth(isPad:)` | iPhone `40pt`, iPad `52pt`. Also used by the expanded panel row-wrap calculation. |
+
+### State-dependent text in the strip
+
+The top strip is a single label with two meanings:
+
+| State | Text source | Example | Lifetime |
+|---|---|---|---|
+| Composing | `showComposingPopup()` maps `mComposing` through `keyname(_:)` | `ㄉㄚˊ` | Updates on every composing-code change; clears when composing is cancelled or committed. |
+| Reverse lookup | `showReverseLookup(_:)` formats the committed word's lookup codes | `日=ㄇㄧˋ; ㄖˋ` | Reuses the same `composingLabel`. Guarded by `isShowingReverseLookup` so `hideComposingPopup()` does not immediately clear it during post-commit cleanup. |
+
+Because both states use the same view, reverse lookup inherits the exact
+same leading/trailing constraints, font, color, and clipping behavior as
+the composing keyname.
 
 ### Chevron button — width independent of bar height
 
