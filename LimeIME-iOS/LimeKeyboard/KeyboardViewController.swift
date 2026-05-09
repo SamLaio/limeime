@@ -1,4 +1,4 @@
-import UIKit
+﻿import UIKit
 
 // Full keyboard extension entry point.
 // Implements IMService behavior per IM_SERVICE.md spec.
@@ -33,6 +33,11 @@ final class KeyboardViewController: UIInputViewController {
     private var mCapsLock:    Bool = false
     private var isShiftOn:    Bool = false
     private var activeIM:     String = "phonetic"
+    /// Cached `imkeys` for the active IM (refreshed on every setTableName).
+    /// On iPad layouts, characters whose code is NOT in this string are routed to
+    /// the direct-output path so iPad dual-sliding punctuation/full-shape keys do
+    /// not corrupt Chinese composition.
+    private var currentImKeys: String = ""
     // Sentinel ID "__unset__" ensures initOnStartInput always loads the JSON layout on first call,
     // even when the JSON id matches the hardcoded fallback id ("lime_phonetic").
     private var currentLayout: LimeKeyLayout = LimeKeyLayout(id: "__unset__", rows: [])
@@ -365,6 +370,7 @@ final class KeyboardViewController: UIInputViewController {
                         searchServer?.setTableName(activeIM)
                     }
                     searchServer?.setPhoneticKeyboardType(phoneticKeyboardType)
+                    refreshImKeys()
                 }
             }
         }
@@ -479,6 +485,9 @@ final class KeyboardViewController: UIInputViewController {
             // loadSettings() calls applyPrefsToSearchEngine() which pushes all prefs to SearchServer.
             self.loadSettings()
             self.searchServer?.setPhoneticKeyboardType(self.phoneticKeyboardType)
+            // imKeysForTable depends on phoneticKeyboardType for the phonetic family,
+            // so refreshImKeys must run AFTER setPhoneticKeyboardType.
+            self.refreshImKeys()
             self.applyFeedbackSettings()
         }
     }
@@ -523,6 +532,8 @@ final class KeyboardViewController: UIInputViewController {
         if freshType != phoneticKeyboardType {
             phoneticKeyboardType = freshType
             searchServer?.setPhoneticKeyboardType(phoneticKeyboardType)
+            // Phonetic-family imkeys depend on kbType (BPMF / ETEN26 / HSU / ETEN).
+            refreshImKeys()
         }
 
         // 2. DB-side (controls visible layout via resolvedLayoutId → activatedIMs cache)
@@ -745,6 +756,18 @@ final class KeyboardViewController: UIInputViewController {
         // Stroke5 (wb) uses only letters
         // Cangjie (cj), Array, EZ, etc. — detect from DB
         return db.detectIMCapabilities(tableName: imCode)
+    }
+
+    /// Refresh the cached `imkeys` for the active IM. Called after every
+    /// SearchServer.setTableName / setPhoneticKeyboardType so handleCharacter
+    /// can use it as the authoritative input-acceptance check on iPad layouts.
+    /// Reads from `LimeDB.imKeysForTable` which uses hardcoded keymaps for
+    /// known IMs (phonetic / cj / dayi / array) and falls back to the im
+    /// table's `imkeys` field for unknown ones — the im table row may be
+    /// missing for IMs that have a hardcoded keymap, so getImConfig alone
+    /// returns "" for them on iOS.
+    private func refreshImKeys() {
+        currentImKeys = db?.imKeysForTable(activeIM) ?? ""
     }
 
     // MARK: - UI Setup
@@ -1149,9 +1172,27 @@ final class KeyboardViewController: UIInputViewController {
         let isComma    = code == 44
         let isPeriod   = code == 46
 
-        // Acceptance rules (spec §5 table)
+        // Acceptance rules.
+        // iPad layouts: tighter rule driven by the IM table's `imkeys` field.
+        // iPad dual-sliding keys output codes that are NOT in any IM's imkeys
+        // (full-shape Chinese punct 65292/12290/65306/65307, half-shape 60/62/63/58,
+        // CJK brackets 12300-12303/12289, top-row symbols 33-41, etc.). With the
+        // legacy hasSymbol/hasNumber heuristic those codes get accepted into
+        // mComposing because hasSymbol=true on most Chinese IMs (phonetic, array,
+        // dayi, et26, et_41, hsu, hs all use ASCII codes in the symbol range as
+        // IM-input keys). That corrupts the composing buffer and breaks the next
+        // candidate lookup. Using `imkeys` membership routes those codes to the
+        // direct-output branch (commit current candidate + insertText + finishComposing).
+        // Phone layouts retain the legacy heuristic to avoid behavior changes.
+        let isIPadLayout = isOnPad && currentLayout.id.hasSuffix("_ipad")
         let accepted: Bool
-        if !hasSymbol && !hasNumber {
+        if isIPadLayout && !currentImKeys.isEmpty {
+            // Compare both the literal char and its lowercase form so a-z and A-Z
+            // both match an imkeys entry stored as lowercase (the convention).
+            let inImKeys = currentImKeys.contains(charStr)
+                        || currentImKeys.contains(charStr.lowercased())
+            accepted = isLetter || inImKeys || (isPhonetic && isSpace)
+        } else if !hasSymbol && !hasNumber {
             accepted = isLetter || (isPhonetic && isSpace) || isComma || isPeriod
         } else if !hasSymbol && hasNumber {
             accepted = isLetter || isDigit
@@ -2100,6 +2141,7 @@ final class KeyboardViewController: UIInputViewController {
             ss.setTableName(activeIM)
         }
         ss.setPhoneticKeyboardType(phoneticKeyboardType)
+        refreshImKeys()
 
         // Update keyboard layout to match the new IM if available
         let preferredLayout = resolvedLayoutId(for: activeIM)
@@ -2599,6 +2641,7 @@ extension KeyboardViewController: KeyboardViewDelegate {
             searchServer?.setTableName(activeIM)
         }
         searchServer?.setPhoneticKeyboardType(phoneticKeyboardType)
+        refreshImKeys()
         if let layout = LayoutLoader.load(resolvedLayoutId(for: activeIM)), layout.id != currentLayout.id {
             currentLayout = layout
             keyboardView?.setLayout(currentLayout)
@@ -2932,7 +2975,11 @@ extension KeyboardViewController: CandidateBarViewDelegate {
             return
         }
 
-        guard !mComposing.isEmpty || hasChineseSymbolCandidatesShown else { return }
+        guard CandidateExpansionPolicy.shouldExpand(
+            hasCandidatesShown: hasCandidatesShown,
+            composing: mComposing,
+            hasChineseSymbolCandidatesShown: hasChineseSymbolCandidatesShown
+        ) else { return }
         // mCandidateList already holds the full emoji-injected list from the two-stage
         // fetch. Use it directly so the expanded grid shows exactly the same items as
         // the candidate bar (including any injected emoji).
