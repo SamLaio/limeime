@@ -48,8 +48,12 @@ public class LimePreferenceFragment extends Fragment {
         // Mirror LIMEPreference.onPause() — flush the cache when leaving prefs
         Activity act = getActivity();
         if (act instanceof LIMESettings) {
-            SearchServer ss = ((LIMESettings) act).getManageImController().getSearchServer();
-            if (ss != null) ss.initialCache();
+            net.toload.main.hd.ui.controller.ManageImController ctrl =
+                    ((LIMESettings) act).getManageImController();
+            if (ctrl != null) {
+                SearchServer ss = ctrl.getSearchServer();
+                if (ss != null) ss.initialCache();
+            }
         }
     }
 }

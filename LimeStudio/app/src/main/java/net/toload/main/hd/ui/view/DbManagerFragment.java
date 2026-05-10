@@ -308,6 +308,13 @@ public class DbManagerFragment extends Fragment {
     // Utilities
     // -----------------------------------------------------------------------
 
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        activity = null;
+        setupImController = null;
+    }
+
     private void showToastMessage(String msg, int length) {
         runOnUi(() -> {
             android.content.Context ctx = getContext();
