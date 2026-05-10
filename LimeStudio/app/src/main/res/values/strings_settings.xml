@@ -494,6 +494,7 @@
     <string name="l3_initial_restore_confirm">請在按確認後點選將還原之備份檔</string>
     <string name="l3_initial_restore_start">開始還原資料庫</string>
     <string name="l3_initial_restore_end">資料庫還原完成</string>
+    <string name="l3_restore_default_confirm">確定要還原為預設資料庫嗎？所有自訂字根將會被覆蓋。</string>
 
     <string name="l3_initial_cloud_backup_database">Google Drive備份</string>
     <string name="l3_initial_cloud_backup_start">開始Google Drive資料庫備份</string>
