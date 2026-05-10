@@ -789,4 +789,14 @@
         <item>60</item>
     </string-array>
 
+
+    <!-- SetupFragment strings -->
+    <string name="setup_step_enable_keyboard">於系統設定中啟用 LimeIME</string>
+    <string name="setup_step_switch_keyboard">將輸入法切換為 LimeIME</string>
+    <string name="setup_status_active">LimeIME 鍵盤已啟用且為目前輸入法 ✓</string>
+    <string name="setup_status_enabled_not_active">已啟用，但尚未切換為 LimeIME — 點按下方按鈕切換</string>
+    <string name="setup_status_not_enabled">尚未在系統中啟用 LimeIME — 點按下方按鈕前往系統設定</string>
+    <string name="url_github_limeime">https://github.com/lime-ime/limeime</string>
+    <string name="setup_im_privacy_note">LimeIME 不會收集任何輸入內容或個人資料。</string>
+
 </resources>

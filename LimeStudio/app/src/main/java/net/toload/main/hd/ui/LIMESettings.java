@@ -299,7 +299,7 @@ public class LIMESettings extends AppCompatActivity implements LIMESettingsView 
     private void onTabSelected(int itemId) {
         androidx.fragment.app.Fragment fragment;
         if (itemId == R.id.nav_setup) {
-            fragment = net.toload.main.hd.ui.view.SetupImFragment.newInstance(0);
+            fragment = net.toload.main.hd.ui.view.SetupFragment.newInstance();
         } else if (itemId == R.id.nav_im) {
             fragment = net.toload.main.hd.ui.view.ImInstallFragment.newInstance();
         } else if (itemId == R.id.nav_prefs) {
@@ -307,7 +307,7 @@ public class LIMESettings extends AppCompatActivity implements LIMESettingsView 
         } else if (itemId == R.id.nav_db) {
             fragment = net.toload.main.hd.ui.view.DbManagerFragment.newInstance();
         } else {
-            fragment = net.toload.main.hd.ui.view.SetupImFragment.newInstance(0);
+            fragment = net.toload.main.hd.ui.view.SetupFragment.newInstance();
         }
         getSupportFragmentManager().beginTransaction()
                 .replace(R.id.main_fragment_container, fragment)
