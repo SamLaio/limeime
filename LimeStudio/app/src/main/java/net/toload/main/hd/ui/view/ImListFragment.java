@@ -101,6 +101,13 @@ public class ImListFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        View root = getView();
+        if (root != null) {
+            RecyclerView rv = root.findViewById(R.id.im_list_recycler);
+            if (rv != null) {
+                rv.setAdapter(null);
+            }
+        }
         super.onDestroyView();
         activity = null;
         manageImController = null;

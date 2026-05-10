@@ -86,8 +86,9 @@ public class ImDetailFragment extends Fragment {
         MaterialToolbar toolbar = rootView.findViewById(R.id.im_detail_toolbar);
         toolbar.setTitle(imDesc != null ? imDesc : "");
         toolbar.setNavigationOnClickListener(v -> {
-            if (getParentFragmentManager().getBackStackEntryCount() > 0) {
-                getParentFragmentManager().popBackStack();
+            Fragment host = getParentFragment();
+            if (host != null) {
+                host.getChildFragmentManager().popBackStack();
             }
         });
 
@@ -195,10 +196,10 @@ public class ImDetailFragment extends Fragment {
                         .setTitle(R.string.im_detail_keyboard_picker_title)
                         .setItems(names, (dialog, which) -> {
                             Keyboard selected = keyboards.get(which);
-                            ctrl.setIMKeyboard(tbl, selected);
                             if (tvKeyboardValue != null) {
                                 tvKeyboardValue.setText(selected.getDesc());
                             }
+                            new Thread(() -> ctrl.setIMKeyboard(tbl, selected)).start();
                         })
                         .setNegativeButton(android.R.string.cancel, null)
                         .show();

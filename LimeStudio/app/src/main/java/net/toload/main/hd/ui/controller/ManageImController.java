@@ -391,22 +391,21 @@ public class ManageImController extends BaseController {
      */
     public void setImEnabled(int id, boolean enabled) {
         if (searchServer == null) {
-            if (DEBUG) Log.w(TAG, "setImEnabled(): searchServer is null");
+            if (DEBUG) Log.e(TAG, "SearchServer not initialized");
             return;
         }
-        try {
-            android.content.ContentValues cv = new android.content.ContentValues();
-            // The disable column stores boolean as string "true"/"false"
-            cv.put(LIME.DB_IM_COLUMN_DISABLE, String.valueOf(!enabled));
-            searchServer.updateRecord(
-                    LIME.DB_TABLE_IM,
-                    cv,
-                    LIME.DB_IM_COLUMN_ID + " = ?",
-                    new String[]{String.valueOf(id)});
-            if (DEBUG) Log.i(TAG, "setImEnabled(): id=" + id + ", enabled=" + enabled);
-        } catch (Exception e) {
-            handleError(manageImView, "Failed to set IM enabled: " + e.getMessage(), e);
-        }
+        executor.submit(() -> {
+            try {
+                android.content.ContentValues cv = new android.content.ContentValues();
+                cv.put(LIME.DB_IM_COLUMN_DISABLE, String.valueOf(!enabled));
+                searchServer.updateRecord(LIME.DB_TABLE_IM, cv,
+                        LIME.DB_IM_COLUMN_ID + " = ?",
+                        new String[]{String.valueOf(id)});
+                if (DEBUG) Log.i(TAG, "setImEnabled(): id=" + id + ", enabled=" + enabled);
+            } catch (Exception e) {
+                handleError(manageImView, "Failed to set IM enabled: " + e.getMessage(), e);
+            }
+        });
     }
 
     /**

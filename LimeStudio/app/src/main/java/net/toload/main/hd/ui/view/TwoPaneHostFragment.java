@@ -64,6 +64,8 @@ public class TwoPaneHostFragment extends Fragment {
                 if (!slidingPaneLayout.isOpen()) {
                     slidingPaneLayout.open();
                 }
+                // Reset to null to prevent re-fire on configuration change re-subscription
+                vm.selectedIm.setValue(null);
             }
         });
 
