@@ -137,17 +137,33 @@ public class LimeDBTest {
         limeDB.createEmojiTablesForTest(true);
         limeDB.replaceEmojiDataForTest(Arrays.asList(
                 new LimeDB.EmojiDataRow("🇯🇵", "1F1EF,1F1F5", "Flags", "country-flag", 1,
-                        "flag: Japan", "日本國旗", "flag|Japan", "國旗|日本|國|旗|日|本", 0.6),
+                        "flag: Japan", "東洋旗", "flag|Japan", "國旗|國|旗|日|本", 0.6),
                 new LimeDB.EmojiDataRow("😢", "1F622", "Smileys & Emotion", "face-concerned", 2,
                         "crying face", "哭臉", "cry|crying|face", "哭臉|哭|臉", 1.0)
         ), "17.0");
+
+        assertEquals("Panel search keeps bare ASCII", "c*", LimeDB.buildEmojiPanelSearchQueryForTest("c"));
+        assertEquals("Panel search keeps two-char ASCII", "cr*", LimeDB.buildEmojiPanelSearchQueryForTest("cr"));
+        assertEquals("Panel search keeps CJK", "國*", LimeDB.buildEmojiPanelSearchQueryForTest("國"));
+        assertEquals("Candidate search drops bare ASCII", "", LimeDB.buildEmojiCandidateQueryForTest("c"));
+        assertEquals("Candidate search keeps two-char ASCII", "cr*", LimeDB.buildEmojiCandidateQueryForTest("cr"));
+        assertEquals("Candidate search broadens 國旗", "國旗* OR 國*", LimeDB.buildEmojiCandidateQueryForTest("國旗"));
+        assertEquals("Candidate search broadens 日本", "日本* OR 日*", LimeDB.buildEmojiCandidateQueryForTest("日本"));
 
         List<Mapping> flags = limeDB.findEmojiForCandidate("國旗", LimeDB.EmojiLocale.TW, 8);
         assertFalse("國旗 should find emoji candidates", flags.isEmpty());
         assertEquals("🇯🇵", flags.get(0).getWord());
 
+        List<Mapping> japanFromFirstCharacter = limeDB.findEmojiForCandidate("日本", LimeDB.EmojiLocale.TW, 8);
+        assertFalse("日本 should find emoji candidates through 日* expansion", japanFromFirstCharacter.isEmpty());
+        assertEquals("🇯🇵", japanFromFirstCharacter.get(0).getWord());
+
         List<Mapping> bareAscii = limeDB.findEmojiForCandidate("c", LimeDB.EmojiLocale.EN, 8);
         assertTrue("Bare one-character ASCII candidate should be ignored", bareAscii.isEmpty());
+
+        List<Mapping> panelBareAscii = limeDB.searchEmoji("c", LimeDB.EmojiLocale.EN, 8);
+        assertFalse("Panel search should allow one-character ASCII prefix", panelBareAscii.isEmpty());
+        assertEquals("😢", panelBareAscii.get(0).getWord());
 
         List<Mapping> cryPrefix = limeDB.findEmojiForCandidate("cr", LimeDB.EmojiLocale.EN, 8);
         assertFalse("Two-character ASCII prefix should find emoji candidates", cryPrefix.isEmpty());

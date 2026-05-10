@@ -34,13 +34,13 @@ This document plans the rebuild plus the cross-platform upgrade path. The keyboa
 This DB plan is an **independent, self-contained PR** — it solves issue #29 on both platforms by itself, no UI changes required. The keyboard-UI work in [docs/EMOJI_KEYBOARD.md](EMOJI_KEYBOARD.md) is a follow-up PR built on top.
 
 1. **PR 1 (this plan)**: build script + new `emoji.db` + FTS5-primary schema with FTS4 fallback on old Android devices + `findEmojiForCandidate` APIs on both platforms + candidate-bar rewiring + Android cache-wipe hook.
-2. **PR 2 ([EMOJI_KEYBOARD.md](EMOJI_KEYBOARD.md))**: iOS-only — iPhone home-row reflow, iPad space-trim, emoji-launcher key, panel view, preference toggle.
+2. **PR 2 ([EMOJI_KEYBOARD.md](EMOJI_KEYBOARD.md))**: iOS + Android emoji keyboard UI — English-keyboard launcher placement, `中` key relocation where applicable, emoji panel, emoji search mode, recent category, category bookmarks, backspace, and preference toggle.
 
 Splitting this way:
 
 - Lets PR 1 ship to users on its own and immediately fix the 7-year-old #29 complaint.
 - Keeps PR 2's review surface focused on UI changes (no SQL/build-script churn mixed in).
-- Android v2 panel UI builds on PR 1's already-in-place FTS-backed search API.
+- The cross-platform emoji panel UI builds on PR 1's already-in-place FTS-backed search API.
 
 ## Non-goals
 
@@ -167,14 +167,22 @@ LIMIT 200;
 
 Order is deterministic and easy to reason about. No BM25 ranking needed.
 
-Query construction is shared by panel search and candidate injection:
+Query construction has two entry points. They share sanitization and FTS escaping, but **do not share the same minimum length rule**:
 
 - Trim whitespace and split ASCII whitespace into terms.
 - Escape or drop FTS control characters from user/candidate text before building `MATCH`.
-- Drop one-character ASCII alphabetic tokens before building the query (`c` returns no emoji candidates). This prevents noisy candidate-bar injection while the user is still typing an English word.
-- Keep one-character CJK tokens because they are real IM candidates (`國` → `國*`, `笑` → `笑*`).
-- Add `*` to each remaining token for prefix search (`cr` → `cr*`, `cry` → `cry*`, `flag` → `flag*`, `國` → `國*`, `笑` → `笑*`).
 - If sanitization leaves no searchable token, return an empty result instead of running a broad query.
+
+**Emoji panel search field** (`searchEmoji(query, locale)`) is explicit search, so it starts matching from a single character:
+
+- English: keep one-character ASCII alphabetic tokens and append `*` (`c` → `c*`, `cr` → `cr*`, `cry` → `cry*`).
+- Chinese/CJK: keep one-character CJK tokens and append `*` (`國` → `國*`, `笑` → `笑*`).
+
+**Inline candidate-bar emoji injection** (`findEmojiForCandidate`) is passive suggestion, so English is intentionally less eager:
+
+- English in the Chinese IM candidate bar or English keyboard candidate path: drop one-character ASCII alphabetic tokens before building the query (`c` returns no inline emoji); start at two characters (`cr` → `cr*`, `cry` → `cry*`, `flag` → `flag*`).
+- Chinese IM candidates: keep one-character CJK tokens because they are real IM candidates (`國` → `國*`, `笑` → `笑*`).
+- For multi-character Chinese candidates, query both the full candidate and the first Chinese character. Example: candidate `國旗` builds `國旗* OR 國*`; candidate `日本` builds `日本* OR 日*`. This preserves exact/full-word relevance while still finding emoji through the first Chinese character expansion.
 
 ### Path 2 — Candidate-bar emoji injection (rewired in v1)
 
@@ -314,14 +322,16 @@ End-to-end manual test on **both** platforms (iOS bundles new build, Android ins
 ### Issue #29 fixes (functional)
 
 10. On the **phonetic** or **Array** layout, type a sequence whose Chinese candidate is `國旗` → country flags 🇯🇵🇺🇸🇮🇹🇰🇷… appear among injected emoji candidates in the candidate bar (was 🎏 only). Repeat for `日本` → 🇯🇵, `美國` → 🇺🇸, `笑` → 😀😄😁🤣 family, `國` (single char) → country flags and any other upstream TW keywords expanded to `國` (broader-match validation).
-11. In English search/candidate paths, verify `cry` emoji are found by `cr` and `cry`, but not by bare `c`.
-12. Confirm `SearchServer.injectEmoji` (iOS) and the Android candidate-injection sites now call `findEmojiForCandidate` (grep for the new symbol).
-13. Mark issue #29 fixed in the PR description.
+11. In English inline candidate paths (Chinese IM candidate bar and English keyboard candidate path), verify `cry` emoji are found by `cr` and `cry`, but not by bare `c`.
+12. In the emoji keyboard search box, verify prefix search starts from one English character: `c`, `cr`, and `cry` all search as `c*`, `cr*`, and `cry*`.
+13. In Chinese IM inline candidate injection, verify matching also runs on the first Chinese character of a longer candidate: `國旗` searches with both `國旗*` and `國*`; `日本` searches with both `日本*` and `日*`.
+14. Confirm `SearchServer.injectEmoji` (iOS) and the Android candidate-injection sites now call `findEmojiForCandidate` (grep for the new symbol).
+15. Mark issue #29 fixed in the PR description.
 
 ### Recents writeback (sanity)
 
-14. Tap an emoji from the candidate bar (or, after the UI plan ships, from the panel). Verify `emoji_user` now has a row for that glyph with `last_used` ≈ now and `use_count = 1`. Tap again → `use_count = 2`, `last_used` updated.
-15. Search for that emoji's category (e.g. tap a recently picked smiley, then search `smile`) → it appears at the top because of the `ORDER BY last_used DESC` clause.
+16. Tap an emoji from the candidate bar or emoji panel. Verify `emoji_user` now has a row for that glyph with `last_used` ≈ now and `use_count = 1`. Tap again → `use_count = 2`, `last_used` updated.
+17. Search for that emoji's category (e.g. tap a recently picked smiley, then search `smile`) → it appears at the top because of the `ORDER BY last_used DESC` clause.
 
 ## Decisions — resolved
 
@@ -332,8 +342,10 @@ End-to-end manual test on **both** platforms (iOS bundles new build, Android ins
 5. **Ordering**: `(emoji_user.last_used IS NULL), emoji_user.last_used DESC, emoji_data.sort_order ASC`. Recents first, then canonical Unicode order.
 6. **Candidate-bar broadening — both platforms**: rewired to `findEmojiForCandidate` (FTS-backed; FTS5 primary, FTS4 fallback on old Android) on iOS (`SearchServer.injectEmoji`) and Android (`LIMEService` injection sites L2471-2530 + L2665-2720).
 7. **Recents writeback**: `emoji_user` table inside lime.db, written on every emoji insertion. Reuses LimeIME's existing IM-table user-record lifecycle and `<table>_user` convention.
-8. **Upgrade path 1**: lime.db schema bump (102 → 103) handled in existing `LimeDB.onUpgrade`. Reuses the existing pattern — no new framework.
-9. **Upgrade path 2**: emoji-data version refresh detected via `im` table (`code='emoji', title='version'`), triggered by mismatch with build-time constant `EMOJI_DATA_VERSION`. emoji.db ships with its own `im` metadata rows; the emoji-specific refresh method uses the existing ATTACH/copy pattern to copy them alongside `emoji_data`. Reuses LimeIME's existing IM-table user-record preservation approach by keeping `emoji_user` intact and reconciling it after import.
+8. **English matching thresholds**: inline candidate-bar emoji injection starts English prefix matching at two characters (`cr*`, `cry*`) and deliberately ignores bare one-character English (`c`). The emoji keyboard search box starts at one character (`c*`, `cr*`, `cry*`) because the user is explicitly searching.
+9. **Chinese candidate matching**: Chinese inline candidate injection keeps one-character CJK matching and also queries the first Chinese character of longer candidates (`國旗* OR 國*`, `日本* OR 日*`).
+10. **Upgrade path 1**: lime.db schema bump (102 → 103) handled in existing `LimeDB.onUpgrade`. Reuses the existing pattern — no new framework.
+11. **Upgrade path 2**: emoji-data version refresh detected via `im` table (`code='emoji', title='version'`), triggered by mismatch with build-time constant `EMOJI_DATA_VERSION`. emoji.db ships with its own `im` metadata rows; the emoji-specific refresh method uses the existing ATTACH/copy pattern to copy them alongside `emoji_data`. Reuses LimeIME's existing IM-table user-record preservation approach by keeping `emoji_user` intact and reconciling it after import.
 
 ## File map
 

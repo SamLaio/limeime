@@ -1809,12 +1809,84 @@ final class LimeDBTest: XCTestCase {
         XCTAssertNotNil(db.emojiConvert("笑", LIME.EMOJI_CN))
     }
 
-    func testEmojiFTSQueryDropsBareAsciiButKeepsUsefulPrefixesAndCJK() throws {
-        XCTAssertEqual(LimeDB.buildEmojiFTSQueryForTest("c"), "")
-        XCTAssertEqual(LimeDB.buildEmojiFTSQueryForTest("cr"), "cr*")
-        XCTAssertEqual(LimeDB.buildEmojiFTSQueryForTest("cry"), "cry*")
-        XCTAssertEqual(LimeDB.buildEmojiFTSQueryForTest("國"), "國*")
-        XCTAssertEqual(LimeDB.buildEmojiFTSQueryForTest("笑"), "笑*")
+    func testEmojiPanelSearchQueryKeepsBareAsciiAndCJKPrefixes() throws {
+        XCTAssertEqual(LimeDB.buildEmojiPanelSearchQueryForTest("c"), "c*")
+        XCTAssertEqual(LimeDB.buildEmojiPanelSearchQueryForTest("cr"), "cr*")
+        XCTAssertEqual(LimeDB.buildEmojiPanelSearchQueryForTest("cry"), "cry*")
+        XCTAssertEqual(LimeDB.buildEmojiPanelSearchQueryForTest("國"), "國*")
+        XCTAssertEqual(LimeDB.buildEmojiPanelSearchQueryForTest("笑"), "笑*")
+    }
+
+    func testEmojiCandidateQueryDropsBareAsciiAndBroadensChineseCandidates() throws {
+        XCTAssertEqual(LimeDB.buildEmojiCandidateQueryForTest("c"), "")
+        XCTAssertEqual(LimeDB.buildEmojiCandidateQueryForTest("cr"), "cr*")
+        XCTAssertEqual(LimeDB.buildEmojiCandidateQueryForTest("cry"), "cry*")
+        XCTAssertEqual(LimeDB.buildEmojiCandidateQueryForTest("國"), "國*")
+        XCTAssertEqual(LimeDB.buildEmojiCandidateQueryForTest("笑"), "笑*")
+        XCTAssertEqual(LimeDB.buildEmojiCandidateQueryForTest("國旗"), "國旗* OR 國*")
+        XCTAssertEqual(LimeDB.buildEmojiCandidateQueryForTest("日本"), "日本* OR 日*")
+    }
+
+    func testEmojiPanelSearchAllowsSingleAsciiButCandidateSearchDoesNot() throws {
+        let db = try makeLimeDB()
+        try db.replaceEmojiDataForTest([
+            .init(value: "😢", cp: "1F622", groupName: "Smileys & Emotion", subgroup: "face-concerned",
+                  sortOrder: 1, nameEn: "crying face", nameTw: "哭臉",
+                  tagsEn: "cry|crying|face", tagsTw: "哭臉|哭|臉", version: 1.0)
+        ], emojiVersion: "17.0")
+
+        XCTAssertTrue(db.findEmojiForCandidate("c", locale: .en, limit: 8).isEmpty)
+        XCTAssertEqual(db.searchEmoji("c", locale: .en, limit: 8).map(\.word), ["😢"])
+        XCTAssertEqual(db.searchEmoji("cr", locale: .en, limit: 8).map(\.word), ["😢"])
+        XCTAssertEqual(db.searchEmoji("cry", locale: .en, limit: 8).map(\.word), ["😢"])
+    }
+
+    func testEmojiCandidateSearchBroadensMultiCharacterChineseToFirstCharacter() throws {
+        let db = try makeLimeDB()
+        try db.replaceEmojiDataForTest([
+            .init(value: "🇯🇵", cp: "1F1EF,1F1F5", groupName: "Flags", subgroup: "country-flag",
+                  sortOrder: 1, nameEn: "flag: Japan", nameTw: "東洋旗",
+                  tagsEn: "flag|Japan", tagsTw: "日|本", version: 0.6)
+        ], emojiVersion: "17.0")
+
+        XCTAssertEqual(db.findEmojiForCandidate("日本", locale: .tw, limit: 8).map(\.word), ["🇯🇵"])
+    }
+
+    func testEmojiUsageWritebackChangesPanelRecentsOrder() throws {
+        let db = try makeLimeDB()
+        try db.replaceEmojiDataForTest([
+            .init(value: "😢", cp: "1F622", groupName: "Smileys & Emotion", subgroup: "face-concerned",
+                  sortOrder: 1, nameEn: "crying face", nameTw: "哭臉",
+                  tagsEn: "cry|crying|face", tagsTw: "哭臉|哭|臉", version: 1.0),
+            .init(value: "🇯🇵", cp: "1F1EF,1F1F5", groupName: "Flags", subgroup: "country-flag",
+                  sortOrder: 2, nameEn: "flag: Japan", nameTw: "日本國旗",
+                  tagsEn: "flag|Japan", tagsTw: "國旗|日本|國|旗|日|本", version: 0.6)
+        ], emojiVersion: "17.0")
+
+        XCTAssertEqual(db.loadEmojiPanelItems(limit: 2).map(\.word), ["😢", "🇯🇵"])
+        db.recordEmojiUsage("🇯🇵", timestampSeconds: 1000)
+        XCTAssertEqual(db.loadEmojiPanelItems(limit: 2).map(\.word), ["🇯🇵", "😢"])
+    }
+
+    func testEmojiRecentCategoryLoadsOnlyUsedEmojiNewestFirst() throws {
+        let db = try makeLimeDB()
+        try db.replaceEmojiDataForTest([
+            .init(value: "😢", cp: "1F622", groupName: "Smileys & Emotion", subgroup: "face-concerned",
+                  sortOrder: 1, nameEn: "crying face", nameTw: "哭臉",
+                  tagsEn: "cry|crying|face", tagsTw: "哭臉|哭|臉", version: 1.0),
+            .init(value: "🇯🇵", cp: "1F1EF,1F1F5", groupName: "Flags", subgroup: "country-flag",
+                  sortOrder: 2, nameEn: "flag: Japan", nameTw: "日本國旗",
+                  tagsEn: "flag|Japan", tagsTw: "國旗|日本|國|旗|日|本", version: 0.6),
+            .init(value: "😀", cp: "1F600", groupName: "Smileys & Emotion", subgroup: "face-smiling",
+                  sortOrder: 3, nameEn: "grinning face", nameTw: "笑臉",
+                  tagsEn: "grin|smile|face", tagsTw: "笑臉|笑|臉", version: 1.0),
+        ], emojiVersion: "17.0")
+
+        XCTAssertTrue(db.loadRecentEmoji(limit: 8).isEmpty)
+        db.recordEmojiUsage("😢", timestampSeconds: 1000)
+        db.recordEmojiUsage("🇯🇵", timestampSeconds: 2000)
+
+        XCTAssertEqual(db.loadRecentEmoji(limit: 8).map(\.word), ["🇯🇵", "😢"])
     }
 
     // MARK: - 36. getBaseScore — documents always-0 decision

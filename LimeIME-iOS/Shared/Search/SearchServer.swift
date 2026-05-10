@@ -733,7 +733,7 @@ final class SearchServer {
         let echoWord = list[0].word
         var item1: [Mapping] = []
         if echoWord.range(of: "^[A-Za-z]+$", options: .regularExpression) != nil {
-            item1 = db.emojiConvert(echoWord, LimeDB.EMOJI_EN)
+            item1 = db.findEmojiForCandidate(echoWord, locale: .en, limit: 8)
             for m in item1 {
                 if emojiCheck.insert(m.word).inserted { emojiList.append(m) }
             }
@@ -744,7 +744,7 @@ final class SearchServer {
             if list.count > 1 {
                 let word2 = list[1].word
                 if !word2.isEmpty, word2.utf8.count > 1, word2.count < 4 {
-                    let item2 = db.emojiConvert(word2, LimeDB.EMOJI_TW)
+                    let item2 = db.findEmojiForCandidate(word2, locale: .tw, limit: 8)
                     if !item2.isEmpty {
                         for m in item2 {
                             if emojiCheck.insert(m.word).inserted { emojiList.append(m) }

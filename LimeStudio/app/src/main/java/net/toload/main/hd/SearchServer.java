@@ -756,6 +756,42 @@ public class SearchServer {
         return null;
     }
 
+    public List<Mapping> searchEmoji(String query, LimeDB.EmojiLocale locale, int limit) {
+        if (query != null) {
+            if (emojicache == null) {
+                emojicache = new ConcurrentHashMap<>(LIME.SEARCHSRV_RESET_CACHE_SIZE);
+            }
+            String cacheKey = "search:" + locale.name() + ":" + query + ":" + limit;
+            List<Mapping> results = emojicache.get(cacheKey);
+            if (results == null) {
+                results = dbadapter.searchEmoji(query, locale, limit);
+                emojicache.put(cacheKey, results);
+            }
+            return results;
+        }
+        return null;
+    }
+
+    public List<Mapping> loadRecentEmoji(int limit) {
+        if (emojicache == null) {
+            emojicache = new ConcurrentHashMap<>(LIME.SEARCHSRV_RESET_CACHE_SIZE);
+        }
+        String cacheKey = "recent:" + limit;
+        List<Mapping> results = emojicache.get(cacheKey);
+        if (results == null) {
+            results = dbadapter.loadRecentEmoji(limit);
+            emojicache.put(cacheKey, results);
+        }
+        return results;
+    }
+
+    public void recordEmojiUsage(String value) {
+        dbadapter.recordEmojiUsage(value, System.currentTimeMillis() / 1000L);
+        if (emojicache != null) {
+            emojicache.clear();
+        }
+    }
+
     /**
      * Core method to retrieve mappings for a code from cache or database.
      * <p>

@@ -8,6 +8,7 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - Components
     private var candidateBar: CandidateBarView!
     private var keyboardView:  KeyboardView!
+    private var emojiPanelView: EmojiPanelView?
 
     // MARK: - SearchServer
     private var searchServer: SearchServer?
@@ -153,6 +154,9 @@ final class KeyboardViewController: UIInputViewController {
     private var baseCandidateBarHeight: CGFloat { LayoutMetrics.ComposingPopup.barBaseHeight(isPad: isOnPad) }
     private var candidateBarHeight: CGFloat { baseCandidateBarHeight * candidateFontScale }
     private var candidateBarHeightConstraint: NSLayoutConstraint?
+    private var keyboardTopToCandidateConstraint: NSLayoutConstraint?
+    private var keyboardTopToViewConstraint: NSLayoutConstraint?
+    private var emojiPanelBottomConstraint: NSLayoutConstraint?
     // keyRowHeight removed — height is now driven by KeyboardView.preferredHeight,
     // which sums actual per-row heights (54 pt regular, 56 pt bottom row).
     private var keyboardHeightConstraint: NSLayoutConstraint?
@@ -816,11 +820,16 @@ final class KeyboardViewController: UIInputViewController {
                 return c
             }(),
 
-            keyboardView.topAnchor.constraint(equalTo: candidateBar.bottomAnchor),
+            {
+                let c = keyboardView.topAnchor.constraint(equalTo: candidateBar.bottomAnchor)
+                keyboardTopToCandidateConstraint = c
+                return c
+            }(),
             keyboardView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             keyboardView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             keyboardView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+        keyboardTopToViewConstraint = keyboardView.topAnchor.constraint(equalTo: view.topAnchor, constant: 118)
         // Space-key gestures (swipe + long-press) are now added directly in
         // KeyboardView.makeKeyButton so they survive every setLayout() call.
 
@@ -1029,6 +1038,8 @@ final class KeyboardViewController: UIInputViewController {
         case LimeKeyCode.shift.rawValue:       handleShift()
         case LimeKeyCode.done.rawValue:        handleClose()
         case LimeKeyCode.globe.rawValue:       advanceToNextInputMode()
+        case LimeKeyCode.emojiPanel.rawValue:  showEmojiPanel()
+        case LimeKeyCode.emojiABC.rawValue:    hideEmojiPanel()
         case LimeKeyCode.switchToEnglish.rawValue: switchChiEng(toEnglish: true)
         case LimeKeyCode.switchToIM.rawValue:  switchChiEng(toEnglish: false)
         case LimeKeyCode.switchToSymbol.rawValue:     switchToSymbol()
@@ -2290,6 +2301,9 @@ extension KeyboardViewController: KeyboardViewDelegate {
 
     func keyboardView(_ view: KeyboardView, didPress keyDef: KeyDef) {
         isShowingReverseLookup = false
+        if emojiPanelView?.handleSearchKey(code: keyDef.code) == true {
+            return
+        }
         if keyDef.codes.count > 1 {
             handleMultiTap(keyDef)
         } else {
@@ -2931,6 +2945,151 @@ extension KeyboardViewController: KeyboardViewDelegate {
         items.append(("取消", {}))
         showInlineMenu(items: items)
     }
+
+    private func showEmojiPanel() {
+        if isExpandedCandidatesVisible { hideExpandedCandidates() }
+        dismissPopupKeyboard()
+        hideComposingPopup()
+        view.isOpaque = false
+        view.backgroundColor = .clear
+        inputView?.isOpaque = false
+        inputView?.backgroundColor = .clear
+
+        let panel: EmojiPanelView
+        if let existing = emojiPanelView {
+            panel = existing
+        } else {
+            panel = EmojiPanelView()
+            panel.translatesAutoresizingMaskIntoConstraints = false
+            panel.delegate = self
+            view.addSubview(panel)
+            let bottom = panel.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            emojiPanelBottomConstraint = bottom
+            NSLayoutConstraint.activate([
+                panel.topAnchor.constraint(equalTo: view.topAnchor),
+                panel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                panel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                bottom,
+            ])
+            emojiPanelView = panel
+        }
+
+        emojiPanelBottomConstraint?.isActive = false
+        let bottom = panel.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        bottom.isActive = true
+        emojiPanelBottomConstraint = bottom
+        keyboardTopToViewConstraint?.isActive = false
+        keyboardTopToCandidateConstraint?.isActive = true
+        candidateBarHeightConstraint?.constant = candidateBarHeight
+        keyboardView.isHidden = true
+        candidateBar.isHidden = true
+        panel.prepareForPresentation()
+        panel.isHidden = false
+        panel.setEmojiPages(loadEmojiCategoryPages())
+    }
+
+    private func hideEmojiPanel() {
+        emojiPanelView?.resignSearch()
+        emojiPanelView?.isHidden = true
+        emojiPanelView?.setSearchMode(false)
+        emojiPanelBottomConstraint?.isActive = false
+        if let panel = emojiPanelView {
+            let bottom = panel.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            bottom.isActive = true
+            emojiPanelBottomConstraint = bottom
+        }
+        keyboardTopToViewConstraint?.isActive = false
+        keyboardTopToCandidateConstraint?.isActive = true
+        candidateBarHeightConstraint?.constant = candidateBarHeight
+        candidateBar.isHidden = false
+        keyboardView.isHidden = false
+        keyboardView.setLayout(currentLayout)
+    }
+
+    private func showEmojiSearchKeyboard() {
+        guard let panel = emojiPanelView else { return }
+        emojiPanelBottomConstraint?.isActive = false
+        let bottom = panel.bottomAnchor.constraint(equalTo: keyboardView.topAnchor)
+        bottom.isActive = true
+        emojiPanelBottomConstraint = bottom
+        candidateBar.isHidden = true
+        candidateBarHeightConstraint?.constant = 0
+        keyboardTopToCandidateConstraint?.isActive = false
+        keyboardTopToViewConstraint?.constant = 118
+        keyboardTopToViewConstraint?.isActive = true
+        keyboardView.isHidden = false
+        let englishLayout = numberRowInEnglish ? "lime_english_number" : "lime_english"
+        if currentLayout.id != englishLayout,
+           let layout = LayoutLoader.load(englishLayout) {
+            keyboardView.setLayout(layout)
+        }
+        panel.setSearchMode(true)
+        view.setNeedsLayout()
+    }
+
+    private func loadEmojiCategoryPages() -> [[Mapping]] {
+        let recent = db?.loadRecentEmoji(limit: 32) ?? []
+        var pages = EmojiPanelFallback.categories.map { emojiMappings(from: $0) }
+        if !recent.isEmpty {
+            pages[0] = recent
+        }
+        return pages
+    }
+
+    private func loadEmojiSearchFallbackItems() -> [Mapping] {
+        var seen = Set<String>()
+        return EmojiPanelFallback.categories.flatMap { words in
+            words.compactMap { word in
+                guard seen.insert(word).inserted else { return nil }
+                return emojiMapping(word)
+            }
+        }
+    }
+
+    private func emojiMappings(from words: [String]) -> [Mapping] {
+        words.map { emojiMapping($0) }
+    }
+
+    private func emojiMapping(_ word: String) -> Mapping {
+        Mapping(id: 0, code: "", word: word,
+                score: 0, baseScore: 0,
+                recordType: Mapping.RecordType.emoji)
+    }
+
+    private func searchEmojiPanel(query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            emojiPanelView?.setEmojis(loadEmojiSearchFallbackItems())
+            return
+        }
+        let english = db?.searchEmoji(trimmed, locale: .en, limit: 80) ?? []
+        let traditional = db?.searchEmoji(trimmed, locale: .tw, limit: 80) ?? []
+        var seen = Set<String>()
+        let results = (english + traditional).filter { seen.insert($0.word).inserted }
+        emojiPanelView?.setEmojis(results)
+    }
+}
+
+private enum EmojiPanelFallback {
+    static let categories: [[String]] = [
+        ["😀", "😂", "😍", "🥰", "😘", "😭", "👍", "🙏", "👏", "🎉", "❤️", "✨", "🔥", "✅", "⭐", "💯"],
+        ["😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊", "😇", "🥰", "😍", "😘",
+         "😋", "😛", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥳", "😏", "😒", "😔", "😢", "😭", "😤", "😱"],
+        ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔",
+         "🐧", "🐦", "🐤", "🦆", "🦅", "🦉", "🐺", "🐗", "🐴", "🦄", "🐝", "🦋", "🐌", "🐞", "🐢", "🐍"],
+        ["🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍", "🥥", "🥝",
+         "🍅", "🥑", "🍆", "🥔", "🥕", "🌽", "🌶", "🥒", "🥬", "🥦", "🍄", "🥜", "🍞", "🧀", "🍔", "🍟"],
+        ["⚽", "🏀", "🏈", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🪀", "🏓", "🏸", "🏒", "🏑", "🥍",
+         "🏏", "🪃", "🥅", "⛳", "🪁", "🏹", "🎣", "🤿", "🥊", "🥋", "🎽", "🛹", "🛼", "🛷", "⛸", "🥌"],
+        ["🚗", "🚕", "🚙", "🚌", "🚎", "🏎", "🚓", "🚑", "🚒", "🚐", "🛻", "🚚", "🚛", "🚜", "🛵", "🏍",
+         "🛺", "🚲", "🛴", "🚨", "🚔", "🚍", "🚘", "🚖", "✈", "🚀", "🚁", "⛵", "🚢", "🚉", "🚇", "🚆"],
+        ["💡", "🔦", "🕯", "🪔", "📱", "💻", "⌨", "🖥", "🖨", "🖱", "🖲", "💽", "💾", "💿", "📷", "🎥",
+         "📺", "📻", "🎙", "⏰", "⌚", "📚", "✏", "📌", "✂", "🔒", "🔑", "🔨", "🧰", "🧲", "🧪", "🧬"],
+        ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣", "💕", "💞", "💓", "💗", "💖",
+         "✨", "⭐", "🌟", "💫", "⚡", "🔥", "💥", "☀", "🌙", "☁", "☔", "❄", "☃", "✅", "❌", "⭕"],
+        ["🏳", "🏴", "🏁", "🚩", "🇹🇼", "🇯🇵", "🇰🇷", "🇺🇸", "🇨🇦", "🇬🇧", "🇫🇷", "🇩🇪", "🇮🇹", "🇪🇸", "🇦🇺", "🇳🇿",
+         "🇸🇬", "🇭🇰", "🇲🇴", "🇹🇭", "🇻🇳", "🇵🇭", "🇲🇾", "🇮🇩", "🇮🇳", "🇧🇷", "🇲🇽", "🇳🇱", "🇸🇪", "🇨🇭", "🇪🇺", "🇺🇳"]
+    ]
 }
 
 // MARK: - UIScrollViewDelegate
@@ -3035,5 +3194,519 @@ extension KeyboardViewController: PopupKeyboardViewDelegate {
         isSelfUpdate = true
         textDocumentProxy.insertText(char)
         isSelfUpdate = false
+    }
+}
+
+// MARK: - EmojiPanelViewDelegate
+
+extension KeyboardViewController: EmojiPanelViewDelegate {
+
+    func emojiPanelView(_ view: EmojiPanelView, didSelect mapping: Mapping) {
+        if composingLength > 0 { clearComposing(force: true) }
+        isSelfUpdate = true
+        textDocumentProxy.insertText(mapping.word)
+        isSelfUpdate = false
+        db?.recordEmojiUsage(mapping.word)
+    }
+
+    func emojiPanelViewDidRequestABC(_ view: EmojiPanelView) {
+        hideEmojiPanel()
+    }
+
+    func emojiPanelViewDidRequestBackspace(_ view: EmojiPanelView) {
+        textDocumentProxy.deleteBackward()
+    }
+
+    func emojiPanelViewDidBeginSearch(_ view: EmojiPanelView) {
+        showEmojiSearchKeyboard()
+    }
+
+    func emojiPanelView(_ view: EmojiPanelView, didChangeSearchQuery query: String) {
+        searchEmojiPanel(query: query)
+    }
+}
+
+protocol EmojiPanelViewDelegate: AnyObject {
+    func emojiPanelView(_ view: EmojiPanelView, didSelect mapping: Mapping)
+    func emojiPanelViewDidRequestABC(_ view: EmojiPanelView)
+    func emojiPanelViewDidRequestBackspace(_ view: EmojiPanelView)
+    func emojiPanelViewDidBeginSearch(_ view: EmojiPanelView)
+    func emojiPanelView(_ view: EmojiPanelView, didChangeSearchQuery query: String)
+}
+
+final class EmojiPanelView: UIView, UITextFieldDelegate, UIScrollViewDelegate {
+    weak var delegate: EmojiPanelViewDelegate?
+
+    private let searchField = UISearchTextField()
+    private let emojiViewport = UIScrollView()
+    private let emojiContentView = UIView()
+    private let categoryScrollView = UIScrollView()
+    private let categoryBar = UIStackView()
+    private let categoryIconSpacer = UIView()
+    private let categoryBackspaceButton = UIButton(type: .system)
+    private var emojiPages: [[Mapping]] = []
+    private var buttonMappings: [Mapping] = []
+    private let emojiFallbackButtonSize: CGFloat = 54
+    private let phoneEmojiMinButtonSize: CGFloat = 46
+    private let phoneEmojiMaxButtonSize: CGFloat = 54
+    private let phoneEmojiMinFontSize: CGFloat = 30
+    private let phoneEmojiMaxFontSize: CGFloat = 36
+    private let padEmojiMinButtonSize: CGFloat = 48
+    private let padEmojiMaxButtonSize: CGFloat = 72
+    private let padEmojiMinFontSize: CGFloat = 40
+    private let padEmojiMaxFontSize: CGFloat = 56
+    private let categoryIconSize: CGFloat = 32
+    private let categoryTextWidth: CGFloat = 48
+    private let categorySymbolSize: CGFloat = 22
+    private let categorySpacing: CGFloat = 4
+    private var categoryIconSpacerWidth: NSLayoutConstraint?
+    private var visibleRows = 4
+    private var emojiBottomToCategoryConstraint: NSLayoutConstraint?
+    private var emojiBottomToPanelConstraint: NSLayoutConstraint?
+    private var isSearchMode = false
+    private var categoryButtons: [UIButton] = []
+    private var activeCategoryIndex = 1
+    private var lastRenderedWidth: CGFloat = 0
+    private var lastRenderedViewportHeight: CGFloat = 0
+    private var emojiContentOffsetX: CGFloat = 0
+    private var emojiContentWidth: CGFloat = 0
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    func setEmojis(_ emojis: [Mapping]) {
+        self.emojiPages = [emojis]
+        rebuildEmojiButtons()
+    }
+
+    func setEmojiPages(_ pages: [[Mapping]]) {
+        self.emojiPages = pages
+        if !isSearchMode {
+            setEmojiContentOffset(0, animated: false)
+            activeCategoryIndex = 1
+        }
+        rebuildEmojiButtons()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let width = bounds.width
+        let viewportHeight = emojiViewport.bounds.height
+        if abs(width - lastRenderedWidth) > 0.5 || abs(viewportHeight - lastRenderedViewportHeight) > 0.5 {
+            rebuildEmojiButtons()
+        }
+        updateCategoryIconSpacer()
+    }
+
+    private func setup() {
+        isOpaque = false
+        backgroundColor = .clear
+
+        searchField.placeholder = "搜尋表情符號"
+        searchField.delegate = self
+        searchField.autocorrectionType = .no
+        searchField.autocapitalizationType = .none
+        searchField.returnKeyType = .done
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchField.addTarget(self, action: #selector(searchChanged), for: .editingChanged)
+        addSubview(searchField)
+
+        emojiViewport.clipsToBounds = true
+        emojiViewport.backgroundColor = .clear
+        emojiViewport.alwaysBounceHorizontal = true
+        emojiViewport.alwaysBounceVertical = false
+        emojiViewport.showsHorizontalScrollIndicator = false
+        emojiViewport.showsVerticalScrollIndicator = false
+        emojiViewport.delaysContentTouches = false
+        emojiViewport.delegate = self
+        emojiViewport.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(emojiViewport)
+
+        emojiContentView.backgroundColor = .clear
+        emojiViewport.addSubview(emojiContentView)
+
+        categoryScrollView.alwaysBounceHorizontal = true
+        categoryScrollView.alwaysBounceVertical = false
+        categoryScrollView.showsHorizontalScrollIndicator = false
+        categoryScrollView.backgroundColor = .clear
+        categoryScrollView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(categoryScrollView)
+
+        let deleteConfig = UIImage.SymbolConfiguration(pointSize: categorySymbolSize, weight: .regular)
+        categoryBackspaceButton.setImage(UIImage(systemName: "delete.backward", withConfiguration: deleteConfig), for: .normal)
+        categoryBackspaceButton.tintColor = .label
+        categoryBackspaceButton.imageView?.contentMode = .scaleAspectFit
+        categoryBackspaceButton.layer.cornerRadius = categoryIconSize / 2
+        categoryBackspaceButton.addTarget(self, action: #selector(tapBackspace), for: .touchUpInside)
+        categoryBackspaceButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(categoryBackspaceButton)
+
+        categoryBar.axis = .horizontal
+        categoryBar.alignment = .center
+        categoryBar.distribution = .fill
+        categoryBar.spacing = categorySpacing
+        categoryBar.translatesAutoresizingMaskIntoConstraints = false
+        categoryScrollView.addSubview(categoryBar)
+        categoryIconSpacer.translatesAutoresizingMaskIntoConstraints = false
+        categoryIconSpacerWidth = categoryIconSpacer.widthAnchor.constraint(equalToConstant: 0)
+        categoryIconSpacerWidth?.isActive = true
+
+        let emojiBottomToCategory = emojiViewport.bottomAnchor.constraint(equalTo: categoryScrollView.topAnchor, constant: -8)
+        let emojiBottomToPanel = emojiViewport.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
+        emojiBottomToCategoryConstraint = emojiBottomToCategory
+        emojiBottomToPanelConstraint = emojiBottomToPanel
+
+        NSLayoutConstraint.activate([
+            searchField.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            searchField.heightAnchor.constraint(equalToConstant: 44),
+
+            categoryScrollView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            categoryScrollView.trailingAnchor.constraint(equalTo: categoryBackspaceButton.leadingAnchor, constant: -4),
+            categoryScrollView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            categoryScrollView.heightAnchor.constraint(equalToConstant: 48),
+
+            categoryBackspaceButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            categoryBackspaceButton.centerYAnchor.constraint(equalTo: categoryScrollView.centerYAnchor),
+            categoryBackspaceButton.widthAnchor.constraint(equalToConstant: categoryIconSize),
+            categoryBackspaceButton.heightAnchor.constraint(equalToConstant: categoryIconSize),
+
+            categoryBar.leadingAnchor.constraint(equalTo: categoryScrollView.contentLayoutGuide.leadingAnchor),
+            categoryBar.trailingAnchor.constraint(equalTo: categoryScrollView.contentLayoutGuide.trailingAnchor),
+            categoryBar.topAnchor.constraint(equalTo: categoryScrollView.contentLayoutGuide.topAnchor),
+            categoryBar.bottomAnchor.constraint(equalTo: categoryScrollView.contentLayoutGuide.bottomAnchor),
+            categoryBar.heightAnchor.constraint(equalTo: categoryScrollView.frameLayoutGuide.heightAnchor),
+
+            emojiViewport.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),
+            emojiViewport.leadingAnchor.constraint(equalTo: leadingAnchor),
+            emojiViewport.trailingAnchor.constraint(equalTo: trailingAnchor),
+            emojiBottomToCategory,
+        ])
+
+        buildCategoryBar()
+    }
+
+    private func buildCategoryBar() {
+        categoryBar.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        categoryButtons = []
+        let abc = textButton("ABC", action: #selector(tapABC))
+        abc.tag = 0
+        categoryButtons.append(abc)
+        categoryBar.addArrangedSubview(abc)
+        categoryBar.addArrangedSubview(categoryIconSpacer)
+        ["clock", "face.smiling", "pawprint", "apple.logo", "soccerball",
+         "car", "lightbulb", "heart", "flag"].enumerated().forEach { index, symbol in
+            let button = iconButton(symbol, action: #selector(tapCategory))
+            button.tag = index + 1
+            categoryButtons.append(button)
+            categoryBar.addArrangedSubview(button)
+        }
+        updateCategoryHighlight()
+    }
+
+    func setSearchMode(_ enabled: Bool) {
+        isSearchMode = enabled
+        visibleRows = currentVisibleRows()
+        categoryScrollView.isHidden = enabled
+        categoryBackspaceButton.isHidden = enabled
+        emojiBottomToCategoryConstraint?.isActive = !enabled
+        emojiBottomToPanelConstraint?.isActive = enabled
+        rebuildEmojiButtons()
+    }
+
+    func prepareForPresentation() {
+        endEditing(true)
+        setSearchMode(false)
+        setEmojiContentOffset(0, animated: false)
+        activeCategoryIndex = 1
+        updateCategoryHighlight()
+    }
+
+    func resignSearch() {
+        searchField.resignFirstResponder()
+    }
+
+    func handleSearchKey(code: Int) -> Bool {
+        guard isSearchMode, searchField.isFirstResponder else { return false }
+        switch code {
+        case LimeKeyCode.delete.rawValue:
+            guard !(searchField.text ?? "").isEmpty else { return true }
+            searchField.text = String((searchField.text ?? "").dropLast())
+        case LimeKeyCode.enter.rawValue, LimeKeyCode.done.rawValue:
+            searchField.resignFirstResponder()
+            return true
+        case 32:
+            searchField.text = (searchField.text ?? "") + " "
+        case 33...126:
+            guard let scalar = Unicode.Scalar(code) else { return false }
+            searchField.text = (searchField.text ?? "") + String(scalar)
+        default:
+            return false
+        }
+        searchChanged()
+        return true
+    }
+
+    private func rebuildEmojiButtons() {
+        lastRenderedWidth = bounds.width
+        lastRenderedViewportHeight = emojiViewport.bounds.height
+        emojiContentView.subviews.forEach { $0.removeFromSuperview() }
+        buttonMappings = []
+        visibleRows = currentVisibleRows()
+        let rows = max(1, visibleRows)
+        let pageWidth = emojiPageWidth()
+        let pageHeight = emojiPageHeight()
+        let buttonSize = emojiButtonSize()
+        let columnsPerPage = isSearchMode ? 0 : normalModeColumnsPerPage(pageWidth: pageWidth)
+        let horizontalInset = emojiHorizontalInset()
+        let cellWidth = isSearchMode ? buttonSize : (pageWidth - horizontalInset * 2) / CGFloat(columnsPerPage)
+        let pages = isSearchMode ? [emojiPages.flatMap { $0 }] : emojiPages
+        if isSearchMode {
+            let columns = Int(ceil(Double(pages.first?.count ?? 0) / Double(rows)))
+            emojiContentWidth = max(pageWidth, CGFloat(columns) * buttonSize + 24)
+        } else {
+            emojiContentWidth = max(pageWidth, CGFloat(max(pages.count, 1)) * pageWidth)
+        }
+        for (pageIndex, page) in pages.enumerated() {
+            let pageRows: Int
+            let pageButtonSize: CGFloat
+            if isSearchMode {
+                pageRows = rows
+                pageButtonSize = buttonSize
+            } else if pageIndex == 0 {
+                pageRows = max(rows, Int(ceil(pageHeight / buttonSize)))
+                pageButtonSize = buttonSize
+            } else {
+                let realRows = max(1, Int(ceil(Double(page.count) / Double(max(columnsPerPage, 1)))))
+                pageRows = min(rows, realRows)
+                pageButtonSize = emojiButtonSize(forRows: pageRows)
+            }
+            let cellsPerPage = columnsPerPage * pageRows
+            let visibleCellCount = (!isSearchMode && pageIndex == 0) ? max(page.count, cellsPerPage) : page.count
+            for index in 0..<visibleCellCount {
+                let column: Int
+                let row: Int
+                if isSearchMode {
+                    column = index / rows
+                    row = index % rows
+                } else {
+                    column = index % columnsPerPage
+                    row = (index / columnsPerPage) % pageRows
+                }
+                let button = UILabel()
+                let isRealEmoji = index < page.count
+                button.text = isRealEmoji ? page[index].word : "\u{25CF}"
+                button.font = UIFont.systemFont(ofSize: emojiFontSize(for: pageButtonSize))
+                button.textAlignment = .center
+                button.isUserInteractionEnabled = true
+                button.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapEmojiLabel(_:))))
+                if isRealEmoji {
+                    button.tag = buttonMappings.count
+                    buttonMappings.append(page[index])
+                } else {
+                    button.tag = -1
+                    button.textColor = UIColor.label.withAlphaComponent(0.001)
+                    button.backgroundColor = UIColor.label.withAlphaComponent(0.001)
+                }
+                button.frame = CGRect(x: (isSearchMode ? 0 : CGFloat(pageIndex) * pageWidth) + CGFloat(column) * cellWidth + horizontalInset,
+                                      y: CGFloat(row) * pageButtonSize,
+                                      width: cellWidth,
+                                      height: pageButtonSize)
+                emojiContentView.addSubview(button)
+            }
+        }
+        let maxOffsetX = maxEmojiContentOffsetX()
+        emojiContentOffsetX = min(max(emojiContentOffsetX, 0), maxOffsetX)
+        layoutEmojiContent(height: pageHeight)
+        updateCategoryHighlightForScroll()
+    }
+
+    private func emojiPageWidth() -> CGFloat {
+        max(emojiViewport.bounds.width, bounds.width, 1)
+    }
+
+    private func emojiPageHeight() -> CGFloat {
+        max(emojiViewport.bounds.height, CGFloat(max(1, currentVisibleRows())) * emojiButtonSize())
+    }
+
+    private func usesPadEmojiLayout() -> Bool {
+        traitCollection.userInterfaceIdiom == .pad || bounds.width >= 700
+    }
+
+    private func currentVisibleRows() -> Int {
+        guard !isSearchMode else { return 1 }
+        let availableHeight = emojiViewport.bounds.height
+        let preferredRows = usesPadEmojiLayout() ? 5 : 4
+        guard availableHeight > 1 else { return preferredRows }
+        let minimumButtonSize = usesPadEmojiLayout() ? padEmojiMinButtonSize : phoneEmojiMinButtonSize
+        return availableHeight >= minimumButtonSize * CGFloat(preferredRows) ? preferredRows : max(preferredRows - 1, 3)
+    }
+
+    private func emojiButtonSize() -> CGFloat {
+        emojiButtonSize(forRows: currentVisibleRows())
+    }
+
+    private func emojiButtonSize(forRows rows: Int) -> CGFloat {
+        guard !isSearchMode else { return emojiFallbackButtonSize }
+        let availableHeight = emojiViewport.bounds.height
+        guard availableHeight > 1 else { return emojiFallbackButtonSize }
+        let rows = CGFloat(max(rows, 1))
+        let minButtonSize = usesPadEmojiLayout() ? padEmojiMinButtonSize : phoneEmojiMinButtonSize
+        let maxButtonSize = usesPadEmojiLayout() ? padEmojiMaxButtonSize : phoneEmojiMaxButtonSize
+        return clamped(floor(availableHeight / rows),
+                       lower: minButtonSize,
+                       upper: maxButtonSize)
+    }
+
+    private func emojiFontSize() -> CGFloat {
+        emojiFontSize(for: emojiButtonSize())
+    }
+
+    private func emojiFontSize(for buttonSize: CGFloat) -> CGFloat {
+        if usesPadEmojiLayout() && !isSearchMode {
+            let fontSize = buttonSize * 0.78
+            return clamped(fontSize, lower: padEmojiMinFontSize, upper: padEmojiMaxFontSize)
+        }
+        let fontSize = buttonSize * 0.9
+        return clamped(fontSize, lower: phoneEmojiMinFontSize, upper: phoneEmojiMaxFontSize)
+    }
+
+    private func emojiHorizontalInset() -> CGFloat {
+        guard usesPadEmojiLayout() && !isSearchMode else { return 12 }
+        return clamped(emojiPageWidth() * 0.025, lower: 24, upper: 48)
+    }
+
+    private func normalModeColumnsPerPage(pageWidth: CGFloat) -> Int {
+        let targetCellWidth = usesPadEmojiLayout() ? max(emojiButtonSize() * 1.95, 116) : emojiButtonSize()
+        let fitted = Int((pageWidth - emojiHorizontalInset() * 2) / targetCellWidth)
+        return usesPadEmojiLayout() ? min(10, max(8, fitted)) : min(10, max(7, fitted))
+    }
+
+    private func clamped(_ value: CGFloat, lower: CGFloat, upper: CGFloat) -> CGFloat {
+        min(max(value, lower), upper)
+    }
+
+    private func updateCategoryIconSpacer() {
+        guard let widthConstraint = categoryIconSpacerWidth else { return }
+        let iconCount = max(categoryButtons.count - 1, 0)
+        let iconsWidth = CGFloat(iconCount) * categoryIconSize
+            + CGFloat(max(iconCount - 1, 0)) * categorySpacing
+        let centeredIconStart = max(0, (categoryScrollView.bounds.width - iconsWidth) / 2)
+        let abcAndSpacingWidth = categoryTextWidth + categorySpacing * 2
+        let targetSpacer = max(0, centeredIconStart - abcAndSpacingWidth)
+        if abs(widthConstraint.constant - targetSpacer) > 0.5 {
+            widthConstraint.constant = targetSpacer
+            categoryBar.setNeedsLayout()
+        }
+    }
+
+    private func maxEmojiContentOffsetX() -> CGFloat {
+        max(0, emojiContentWidth - max(emojiViewport.bounds.width, 1))
+    }
+
+    private func layoutEmojiContent(height: CGFloat? = nil) {
+        let contentHeight = height ?? emojiContentView.frame.height
+        emojiContentView.frame = CGRect(x: 0,
+                                        y: 0,
+                                        width: emojiContentWidth,
+                                        height: contentHeight)
+        emojiViewport.contentSize = CGSize(width: emojiContentWidth, height: contentHeight)
+        emojiViewport.contentOffset.x = min(emojiContentOffsetX, maxEmojiContentOffsetX())
+    }
+
+    private func setEmojiContentOffset(_ offsetX: CGFloat, animated: Bool) {
+        let clampedX = min(max(offsetX, 0), maxEmojiContentOffsetX())
+        emojiContentOffsetX = clampedX
+        emojiViewport.setContentOffset(CGPoint(x: clampedX, y: 0), animated: animated)
+        updateCategoryHighlightForScroll()
+    }
+
+    private func textButton(_ title: String, action: Selector) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setTitle(title, for: .normal)
+        button.titleLabel?.font = UIFont.systemFont(ofSize: 22, weight: .regular)
+        button.tintColor = .label
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.layer.cornerRadius = categoryIconSize / 2
+        button.widthAnchor.constraint(equalToConstant: categoryTextWidth).isActive = true
+        button.heightAnchor.constraint(equalToConstant: categoryIconSize).isActive = true
+        return button
+    }
+
+    private func iconButton(_ symbol: String, action: Selector) -> UIButton {
+        let button = UIButton(type: .system)
+        let config = UIImage.SymbolConfiguration(pointSize: categorySymbolSize, weight: .regular)
+        button.setImage(UIImage(systemName: symbol, withConfiguration: config), for: .normal)
+        button.tintColor = .label
+        button.imageView?.contentMode = .scaleAspectFit
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.layer.cornerRadius = categoryIconSize / 2
+        button.widthAnchor.constraint(equalToConstant: categoryIconSize).isActive = true
+        button.heightAnchor.constraint(equalToConstant: categoryIconSize).isActive = true
+        return button
+    }
+
+    @objc private func searchChanged() {
+        delegate?.emojiPanelView(self, didChangeSearchQuery: searchField.text ?? "")
+    }
+
+    @objc private func tapEmojiLabel(_ sender: UITapGestureRecognizer) {
+        guard let hitView = sender.view,
+              hitView.tag >= 0,
+              hitView.tag < buttonMappings.count else { return }
+        delegate?.emojiPanelView(self, didSelect: buttonMappings[hitView.tag])
+    }
+
+    @objc private func tapABC() {
+        delegate?.emojiPanelViewDidRequestABC(self)
+    }
+
+    @objc private func tapBackspace() {
+        delegate?.emojiPanelViewDidRequestBackspace(self)
+    }
+
+    @objc private func tapCategory(_ sender: UIButton) {
+        activeCategoryIndex = sender.tag
+        updateCategoryHighlight()
+        let targetX = CGFloat(max(sender.tag - 1, 0)) * emojiPageWidth()
+        setEmojiContentOffset(targetX, animated: true)
+    }
+
+    private func updateCategoryHighlightForScroll() {
+        guard !isSearchMode else { return }
+        let page = Int(round(emojiContentOffsetX / emojiPageWidth()))
+        activeCategoryIndex = min(max(page + 1, 1), max(categoryButtons.count - 1, 1))
+        updateCategoryHighlight()
+    }
+
+    private func updateCategoryHighlight() {
+        for button in categoryButtons {
+            let active = button.tag == activeCategoryIndex
+            button.backgroundColor = active ? UIColor.label.withAlphaComponent(0.14) : .clear
+            button.tintColor = .label
+        }
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === emojiViewport else { return }
+        emojiContentOffsetX = min(max(scrollView.contentOffset.x, 0), maxEmojiContentOffsetX())
+        updateCategoryHighlightForScroll()
+    }
+
+    func textFieldDidBeginEditing(_ textField: UITextField) {
+        delegate?.emojiPanelViewDidBeginSearch(self)
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        return true
     }
 }

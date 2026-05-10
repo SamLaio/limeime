@@ -2627,6 +2627,8 @@ final class SpyLimeDB: LimeDBProtocol {
 
     // MARK: LimeDBProtocol — emoji / misc lookups
     func emojiConvert(_ source: String, _ emoji: Int) -> [Mapping] { [] }
+    func findEmojiForCandidate(_ candidate: String, locale: LimeDB.EmojiLocale, limit: Int) -> [Mapping] { [] }
+    func searchEmoji(_ queryText: String, locale: LimeDB.EmojiLocale, limit: Int) -> [Mapping] { [] }
     func getCodeListStringByWord(_ keyword: String, table: String?) -> String? { codeListResponse }
     func getEnglishSuggestions(_ word: String) -> [String]? { nil }
 

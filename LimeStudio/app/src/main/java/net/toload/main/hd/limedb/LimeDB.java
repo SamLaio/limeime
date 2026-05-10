@@ -4710,27 +4710,25 @@ public class LimeDB extends LimeSQLiteOpenHelper {
     }
 
     public List<Mapping> findEmojiForCandidate(String candidate, EmojiLocale locale, int limit) {
+        return queryEmojiFts(candidate, buildEmojiCandidateQuery(candidate), limit);
+    }
+
+    public List<Mapping> searchEmoji(String queryText, EmojiLocale locale, int limit) {
+        return queryEmojiFts(queryText, buildEmojiPanelSearchQuery(queryText), limit);
+    }
+
+    public List<Mapping> loadRecentEmoji(int limit) {
         List<Mapping> output = new LinkedList<>();
-        if (candidate == null || candidate.trim().isEmpty()) {
-            return output;
-        }
         if (checkDBConnection()) {
             return output;
         }
         checkEmojiDB();
-        String query = buildEmojiFtsQuery(candidate);
-        if (query.isEmpty()) {
-            return output;
-        }
-        int safeLimit = limit > 0 ? limit : 8;
-        String localeNameColumn = locale == EmojiLocale.EN ? "name_en" : "name_tw";
-        String localeTagColumn = locale == EmojiLocale.EN ? "tags_en" : "tags_tw";
-        String sql = "SELECT d.value FROM " + EMOJI_TABLE_FTS + " f " +
-                "JOIN " + EMOJI_TABLE_DATA + " d ON d.rowid = f.rowid " +
-                "LEFT JOIN " + EMOJI_TABLE_USER + " u ON u.value = d.value " +
-                "WHERE " + EMOJI_TABLE_FTS + " MATCH ? " +
-                "ORDER BY (u.last_used IS NULL), u.last_used DESC, d.sort_order ASC LIMIT ?";
-        try (Cursor cursor = db.rawQuery(sql, new String[]{query, String.valueOf(safeLimit)})) {
+        int safeLimit = limit > 0 ? limit : 32;
+        String sql = "SELECT d.value FROM " + EMOJI_TABLE_USER + " u " +
+                "JOIN " + EMOJI_TABLE_DATA + " d ON d.value = u.value " +
+                "WHERE u.last_used IS NOT NULL " +
+                "ORDER BY u.last_used DESC, u.use_count DESC, d.sort_order ASC LIMIT ?";
+        try (Cursor cursor = db.rawQuery(sql, new String[]{String.valueOf(safeLimit)})) {
             while (cursor != null && cursor.moveToNext()) {
                 String word = cursor.getString(0);
                 if (word != null && !word.isEmpty()) {
@@ -4742,7 +4740,39 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error finding emoji for candidate using " + localeNameColumn + "/" + localeTagColumn, e);
+            Log.e(TAG, "Error loading recent emoji", e);
+        }
+        return output;
+    }
+
+    private List<Mapping> queryEmojiFts(String sourceCode, String query, int limit) {
+        List<Mapping> output = new LinkedList<>();
+        if (query.isEmpty()) {
+            return output;
+        }
+        if (checkDBConnection()) {
+            return output;
+        }
+        checkEmojiDB();
+        int safeLimit = limit > 0 ? limit : 8;
+        String sql = "SELECT d.value FROM " + EMOJI_TABLE_FTS + " f " +
+                "JOIN " + EMOJI_TABLE_DATA + " d ON d.rowid = f.rowid " +
+                "LEFT JOIN " + EMOJI_TABLE_USER + " u ON u.value = d.value " +
+                "WHERE " + EMOJI_TABLE_FTS + " MATCH ? " +
+                "ORDER BY (u.last_used IS NULL), u.last_used DESC, d.sort_order ASC LIMIT ?";
+        try (Cursor cursor = db.rawQuery(sql, new String[]{query, String.valueOf(safeLimit)})) {
+            while (cursor != null && cursor.moveToNext()) {
+                String word = cursor.getString(0);
+                if (word != null && !word.isEmpty()) {
+                    Mapping mapping = new Mapping();
+                    mapping.setCode(sourceCode == null ? "" : sourceCode);
+                    mapping.setWord(word);
+                    mapping.setEmojiRecord();
+                    output.add(mapping);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error querying emoji FTS", e);
         }
         return output;
     }
@@ -4993,20 +5023,10 @@ public class LimeDB extends LimeSQLiteOpenHelper {
         targetDb.insert(LIME.DB_TABLE_IM, null, cv);
     }
 
-    private static String buildEmojiFtsQuery(String input) {
-        String trimmed = input == null ? "" : input.trim();
-        if (trimmed.isEmpty()) {
-            return "";
-        }
+    private static String buildEmojiPanelSearchQuery(String input) {
+        List<String> tokens = sanitizedEmojiTokens(input);
         StringBuilder builder = new StringBuilder();
-        for (String rawPart : trimmed.split("\\s+")) {
-            String token = rawPart.replaceAll("[^\\p{L}\\p{N}_]+", "");
-            if (token.isEmpty()) {
-                continue;
-            }
-            if (isSingleAsciiAlphabeticToken(token)) {
-                continue;
-            }
+        for (String token : tokens) {
             if (builder.length() > 0) {
                 builder.append(' ');
             }
@@ -5015,12 +5035,82 @@ public class LimeDB extends LimeSQLiteOpenHelper {
         return builder.toString();
     }
 
+    private static String buildEmojiCandidateQuery(String input) {
+        List<String> tokens = sanitizedEmojiTokens(input);
+        StringBuilder builder = new StringBuilder();
+        for (String token : tokens) {
+            if (isSingleAsciiAlphabeticToken(token)) {
+                continue;
+            }
+            appendEmojiQueryTerm(builder, token + "*");
+            String firstCjk = firstCjkCharacter(token);
+            if (firstCjk != null && !firstCjk.equals(token)) {
+                appendEmojiQueryTerm(builder, firstCjk + "*");
+            }
+        }
+        return builder.toString();
+    }
+
+    private static List<String> sanitizedEmojiTokens(String input) {
+        List<String> tokens = new ArrayList<>();
+        String trimmed = input == null ? "" : input.trim();
+        if (trimmed.isEmpty()) {
+            return tokens;
+        }
+        for (String rawPart : trimmed.split("\\s+")) {
+            String token = rawPart.replaceAll("[^\\p{L}\\p{N}_]+", "");
+            if (token.isEmpty()) {
+                continue;
+            }
+            tokens.add(token);
+        }
+        return tokens;
+    }
+
+    private static void appendEmojiQueryTerm(StringBuilder builder, String term) {
+        if (builder.length() > 0) {
+            builder.append(" OR ");
+        }
+        builder.append(term);
+    }
+
+    public static String buildEmojiPanelSearchQueryForTest(String input) {
+        return buildEmojiPanelSearchQuery(input);
+    }
+
+    public static String buildEmojiCandidateQueryForTest(String input) {
+        return buildEmojiCandidateQuery(input);
+    }
+
     private static boolean isSingleAsciiAlphabeticToken(String token) {
         if (token.length() != 1) {
             return false;
         }
         char value = token.charAt(0);
         return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z');
+    }
+
+    private static String firstCjkCharacter(String token) {
+        if (token == null || token.isEmpty()) {
+            return null;
+        }
+        int codePoint = token.codePointAt(0);
+        if (!isCjkCodePoint(codePoint)) {
+            return null;
+        }
+        return new String(Character.toChars(codePoint));
+    }
+
+    private static boolean isCjkCodePoint(int codePoint) {
+        return (codePoint >= 0x3400 && codePoint <= 0x4DBF)
+                || (codePoint >= 0x4E00 && codePoint <= 0x9FFF)
+                || (codePoint >= 0xF900 && codePoint <= 0xFAFF)
+                || (codePoint >= 0x20000 && codePoint <= 0x2A6DF)
+                || (codePoint >= 0x2A700 && codePoint <= 0x2B73F)
+                || (codePoint >= 0x2B740 && codePoint <= 0x2B81F)
+                || (codePoint >= 0x2B820 && codePoint <= 0x2CEAF)
+                || (codePoint >= 0x2CEB0 && codePoint <= 0x2EBEF)
+                || (codePoint >= 0x30000 && codePoint <= 0x3134F);
     }
 
     private static String quoteSqlString(String value) {

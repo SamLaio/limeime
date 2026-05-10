@@ -49,19 +49,33 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
+import android.graphics.drawable.GradientDrawable;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.ContextThemeWrapper;
+import android.view.Gravity;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.CompletionInfo;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.FrameLayout;
+import android.widget.GridLayout;
+import android.widget.HorizontalScrollView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import net.toload.main.hd.candidate.CandidateInInputViewContainer;
@@ -126,6 +140,22 @@ public class LIMEService extends InputMethodService
 
     private boolean mEnglishOnly;
     private boolean mEnglishFlagShift;
+    private boolean mEmojiKeyboardShown;
+    private View mEmojiKeyboardView = null;
+    private HorizontalScrollView mEmojiScroll = null;
+    private LinearLayout mEmojiPages = null;
+    private LinearLayout mEmojiRoot = null;
+    private LinearLayout mEmojiBottomBar = null;
+    private LinearLayout mEmojiCategoryBar = null;
+    private TextView mEmojiSearchField = null;
+    private int mEmojiCategoryIndex = 1;
+    private int mInputCandidateStripVisibilityBeforeEmoji = View.VISIBLE;
+    private boolean mEmojiSearchMode = false;
+    private boolean mEmojiSearchFocused = false;
+    private StringBuilder mEmojiSearchQuery = new StringBuilder();
+    private static final int EMOJI_SEARCH_PANEL_HEIGHT_DP = 120;
+    private static final int EMOJI_SEARCH_SCROLL_HEIGHT_DP = 44;
+    private static final int EMOJI_SEARCH_KEY_HEIGHT_DP = 40;
     private boolean mPersistentLanguageMode;  //Jeremy '12,5,1
     private int mShowArrowKeys; //Jeremy '12,5,22 force recreate keyboard if show arrow keys mode changes.
     private int mSplitKeyboard; //Jeremy '12,5,26 force recreate keyboard if split keyboard settings changes; 6/19 changed to int
@@ -160,6 +190,26 @@ public class LIMEService extends InputMethodService
     private BroadcastReceiver mVoiceInputReceiver = null;
     private static final String ACTION_VOICE_RESULT = "net.toload.main.hd.VOICE_INPUT_RESULT";
     private static final String EXTRA_RECOGNIZED_TEXT = "recognized_text";
+
+    private static final String[][] EMOJI_CATEGORIES = {
+            {"😀", "😂", "😍", "🥰", "😘", "😭", "👍", "🙏", "👏", "🎉", "❤️", "✨", "🔥", "✅", "⭐", "💯"},
+            {"😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊", "😇", "🥰", "😍", "😘",
+                    "😋", "😛", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥳", "😏", "😒", "😔", "😢", "😭", "😤", "😱"},
+            {"🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔",
+                    "🐧", "🐦", "🐤", "🦆", "🦅", "🦉", "🐺", "🐗", "🐴", "🦄", "🐝", "🦋", "🐌", "🐞", "🐢", "🐍"},
+            {"🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍", "🥥", "🥝",
+                    "🍅", "🥑", "🍆", "🥔", "🥕", "🌽", "🌶", "🥒", "🥬", "🥦", "🍄", "🥜", "🍞", "🧀", "🍔", "🍟"},
+            {"⚽", "🏀", "🏈", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🪀", "🏓", "🏸", "🏒", "🏑", "🥍",
+                    "🏏", "🪃", "🥅", "⛳", "🪁", "🏹", "🎣", "🤿", "🥊", "🥋", "🎽", "🛹", "🛼", "🛷", "⛸", "🥌"},
+            {"🚗", "🚕", "🚙", "🚌", "🚎", "🏎", "🚓", "🚑", "🚒", "🚐", "🛻", "🚚", "🚛", "🚜", "🛵", "🏍",
+                    "🛺", "🚲", "🛴", "🚨", "🚔", "🚍", "🚘", "🚖", "✈", "🚀", "🚁", "⛵", "🚢", "🚉", "🚇", "🚆"},
+            {"💡", "🔦", "🕯", "🪔", "📱", "💻", "⌨", "🖥", "🖨", "🖱", "🖲", "💽", "💾", "💿", "📷", "🎥",
+                    "📺", "📻", "🎙", "⏰", "⌚", "📚", "✏", "📌", "✂", "🔒", "🔑", "🔨", "🧰", "🧲", "🧪", "🧬"},
+            {"❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣", "💕", "💞", "💓", "💗", "💖",
+                    "✨", "⭐", "🌟", "💫", "⚡", "🔥", "💥", "☀", "🌙", "☁", "☔", "❄", "☃", "✅", "❌", "⭕"},
+            {"🏳", "🏴", "🏁", "🚩", "🇹🇼", "🇯🇵", "🇰🇷", "🇺🇸", "🇨🇦", "🇬🇧", "🇫🇷", "🇩🇪", "🇮🇹", "🇪🇸", "🇦🇺", "🇳🇿",
+                    "🇸🇬", "🇭🇰", "🇲🇴", "🇹🇭", "🇻🇳", "🇵🇭", "🇲🇾", "🇮🇩", "🇮🇳", "🇧🇷", "🇲🇽", "🇳🇱", "🇸🇪", "🇨🇭", "🇪🇺", "🇺🇳"}
+    };
 
     //private String mWordSeparators;
     //private String misMatched;  //Removed by Jeremy '13,1,10
@@ -647,6 +697,7 @@ public class LIMEService extends InputMethodService
         if (DEBUG)
             Log.i(TAG, "onStartInputView()");
         super.onStartInputView(attribute, restarting);
+        resetEmojiKeyboardState();
 
         // Ensure InputView container is visible
         if (mCandidateInInputView != null) {
@@ -1858,6 +1909,9 @@ public class LIMEService extends InputMethodService
 
         }
 
+        if (mEmojiKeyboardShown && mEmojiSearchFocused && handleEmojiSearchKey(primaryCode)) {
+            return;
+        }
 
         if (mLIMEPref.getEnglishPrediction()
                 && primaryCode != LIMEBaseKeyboard.KEYCODE_DELETE) {
@@ -1913,6 +1967,10 @@ public class LIMEService extends InputMethodService
             switchToNextActivatedIM(true);
         } else if (primaryCode == LIMEKeyboardView.KEYCODE_PREV_IM) {
             switchToNextActivatedIM(false);
+        } else if (primaryCode == LIME.KEYCODE_EMOJI_PANEL) {
+            showEmojiKeyboard();
+        } else if (primaryCode == LIME.KEYCODE_EMOJI_ABC) {
+            hideEmojiKeyboard();
         } else if (primaryCode == KEYCODE_SWITCH_TO_ENGLISH_MODE && mInputView != null) { //chi->eng
             switchKeyboard(primaryCode);
             // Jeremy '11,5,31 Rewrite softkeybaord enter/space and english separator processing.
@@ -1951,6 +2009,644 @@ public class LIMEService extends InputMethodService
                 }
             }
         }
+    }
+
+    private void showEmojiKeyboard() {
+        mEmojiKeyboardShown = true;
+        mEmojiSearchFocused = false;
+        mEmojiSearchQuery.setLength(0);
+        if (mEmojiSearchField != null) {
+            mEmojiSearchField.setText("");
+        }
+        clearComposing(true);
+        hideCandidateView();
+        mInputCandidateStripVisibilityBeforeEmoji = getInputCandidateStripVisibility();
+        setInputCandidateStripVisibility(View.GONE);
+        if (mEmojiKeyboardView != null) {
+            mEmojiKeyboardView.setVisibility(View.VISIBLE);
+        }
+        renderEmojiContent("");
+        enforceEmojiKeyboardVisibility();
+    }
+
+    private void hideEmojiKeyboard() {
+        mEmojiKeyboardShown = false;
+        mEmojiSearchFocused = false;
+        if (mEmojiKeyboardView != null) {
+            mEmojiKeyboardView.setVisibility(View.GONE);
+        }
+        if (mInputView != null) {
+            mInputView.setVisibility(View.VISIBLE);
+            mInputView.invalidateAllKeys();
+        }
+        setInputCandidateStripVisibility(mInputCandidateStripVisibilityBeforeEmoji);
+        refreshCandidateInputContainer();
+    }
+
+    private void resetEmojiKeyboardState() {
+        boolean wasEmojiKeyboardShown = mEmojiKeyboardShown;
+        mEmojiKeyboardShown = false;
+        mEmojiSearchFocused = false;
+        mEmojiSearchMode = false;
+        mEmojiSearchQuery.setLength(0);
+        if (mEmojiKeyboardView != null) {
+            mEmojiKeyboardView.setVisibility(View.GONE);
+        }
+        if (mInputView != null) {
+            mInputView.setVisibility(View.VISIBLE);
+            mInputView.invalidateAllKeys();
+        }
+        if (wasEmojiKeyboardShown) {
+            setInputCandidateStripVisibility(mInputCandidateStripVisibilityBeforeEmoji);
+        }
+    }
+
+    private void setupEmojiKeyboardView() {
+        if (!(mEmojiKeyboardView instanceof FrameLayout)) return;
+
+        FrameLayout container = (FrameLayout) mEmojiKeyboardView;
+        container.removeAllViews();
+        container.setBackgroundColor(Color.TRANSPARENT);
+
+        mEmojiRoot = new LinearLayout(mThemeContext);
+        mEmojiRoot.setOrientation(LinearLayout.VERTICAL);
+        mEmojiRoot.setPadding(dp(12), dp(8), dp(12), dp(8));
+        mEmojiRoot.setMinimumHeight(dp(280));
+        container.addView(mEmojiRoot, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        mEmojiSearchField = new TextView(mThemeContext);
+        mEmojiSearchField.setTextSize(17);
+        updateEmojiSearchText();
+        mEmojiSearchField.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_search, 0, 0, 0);
+        mEmojiSearchField.setCompoundDrawablePadding(dp(8));
+        mEmojiSearchField.setPadding(dp(14), 0, dp(14), 0);
+        mEmojiSearchField.setGravity(Gravity.CENTER_VERTICAL);
+        mEmojiSearchField.setBackground(makeRoundRect(0xF2FFFFFF, dp(26)));
+        mEmojiSearchField.setOnClickListener(v -> enterEmojiSearchMode());
+        mEmojiSearchField.setOnTouchListener((v, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_UP) {
+                enterEmojiSearchMode();
+            }
+            return true;
+        });
+        mEmojiRoot.addView(mEmojiSearchField, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
+
+        mEmojiScroll = new HorizontalScrollView(mThemeContext);
+        mEmojiScroll.setFillViewport(false);
+        mEmojiScroll.setHorizontalScrollBarEnabled(false);
+        mEmojiScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        mEmojiPages = new LinearLayout(mThemeContext);
+        mEmojiPages.setOrientation(LinearLayout.HORIZONTAL);
+        mEmojiScroll.addView(mEmojiPages, new HorizontalScrollView.LayoutParams(
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT,
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            mEmojiScroll.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+                if (!mEmojiSearchMode) {
+                    int pageWidth = getEmojiPageWidth();
+                    if (pageWidth > 0) {
+                        updateEmojiCategoryHighlight(Math.round((float) scrollX / (float) pageWidth));
+                    }
+                }
+            });
+        }
+        LinearLayout.LayoutParams gridParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0);
+        gridParams.weight = 1;
+        gridParams.topMargin = dp(8);
+        mEmojiRoot.addView(mEmojiScroll, gridParams);
+
+        mEmojiBottomBar = new LinearLayout(mThemeContext);
+        mEmojiBottomBar.setGravity(Gravity.CENTER_VERTICAL);
+        mEmojiBottomBar.setOrientation(LinearLayout.HORIZONTAL);
+        mEmojiRoot.addView(mEmojiBottomBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
+
+        TextView abc = createEmojiControl("ABC", 17);
+        abc.setOnClickListener(v -> hideEmojiKeyboard());
+        mEmojiBottomBar.addView(abc, new LinearLayout.LayoutParams(dp(48), dp(46)));
+
+        mEmojiCategoryBar = new LinearLayout(mThemeContext);
+        mEmojiCategoryBar.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams categoryParams = new LinearLayout.LayoutParams(0, dp(54));
+        categoryParams.weight = 1;
+        mEmojiBottomBar.addView(mEmojiCategoryBar, categoryParams);
+
+        TextView backspace = createEmojiControl("⌫", 24);
+        backspace.setOnClickListener(v -> handleEmojiBackspace());
+        mEmojiBottomBar.addView(backspace, new LinearLayout.LayoutParams(dp(48), dp(46)));
+
+        renderEmojiContent("");
+        mEmojiKeyboardView.setVisibility(mEmojiKeyboardShown ? View.VISIBLE : View.GONE);
+    }
+
+    private void renderEmojiContent(String query) {
+        if (mEmojiPages == null || mEmojiCategoryBar == null) return;
+
+        String normalizedQuery = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        mEmojiSearchMode = mEmojiSearchFocused || normalizedQuery.length() > 0;
+        mEmojiPages.removeAllViews();
+
+        if (mEmojiKeyboardView != null) {
+            ViewGroup.LayoutParams emojiParams = mEmojiKeyboardView.getLayoutParams();
+            if (emojiParams != null) {
+                emojiParams.height = mEmojiSearchMode ? dp(EMOJI_SEARCH_PANEL_HEIGHT_DP) : ViewGroup.LayoutParams.WRAP_CONTENT;
+                mEmojiKeyboardView.setLayoutParams(emojiParams);
+            }
+        }
+        if (mEmojiRoot != null) {
+            mEmojiRoot.setMinimumHeight(mEmojiSearchFocused ? dp(EMOJI_SEARCH_PANEL_HEIGHT_DP) : dp(280));
+        }
+        if (mEmojiScroll != null) {
+            LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    mEmojiSearchMode ? dp(EMOJI_SEARCH_SCROLL_HEIGHT_DP) : 0);
+            scrollParams.weight = mEmojiSearchMode ? 0 : 1;
+            scrollParams.topMargin = dp(8);
+            mEmojiScroll.setLayoutParams(scrollParams);
+        }
+        if (mEmojiBottomBar != null) {
+            mEmojiBottomBar.setVisibility(mEmojiSearchFocused ? View.GONE : View.VISIBLE);
+        }
+        enforceEmojiKeyboardVisibility();
+
+        if (mEmojiSearchMode) {
+            List<String> matches = findEmojiSearchResults(normalizedQuery);
+            addEmojiPage(matches.toArray(new String[0]), getEmojiPageWidth());
+            updateEmojiCategoryHighlight(-1);
+            if (mEmojiScroll != null) {
+                mEmojiScroll.post(() -> mEmojiScroll.scrollTo(0, 0));
+            }
+        } else {
+            int pageWidth = getEmojiPageWidth();
+            for (int i = 0; i < EMOJI_CATEGORIES.length; i++) {
+                addEmojiPage(getEmojiCategoryItems(i), pageWidth);
+            }
+            updateEmojiCategoryHighlight(mEmojiCategoryIndex);
+            if (mEmojiScroll != null) {
+                mEmojiScroll.post(() -> mEmojiScroll.scrollTo(mEmojiCategoryIndex * getEmojiPageWidth(), 0));
+            }
+        }
+    }
+
+    private void enterEmojiSearchMode() {
+        mEmojiSearchFocused = true;
+        mEmojiSearchQuery.setLength(0);
+        updateEmojiSearchText();
+        forceEnglishKeyboardForEmojiSearch();
+        enforceEmojiKeyboardVisibility();
+        refreshCandidateInputContainer();
+        renderEmojiContent("");
+    }
+
+    private void exitEmojiSearchToPanel() {
+        mEmojiSearchFocused = false;
+        mEmojiSearchQuery.setLength(0);
+        updateEmojiSearchText();
+        if (mInputView != null) {
+            mInputView.setVisibility(View.GONE);
+            mInputView.invalidateAllKeys();
+        }
+        renderEmojiContent("");
+        refreshCandidateInputContainer();
+    }
+
+    private void forceEnglishKeyboardForEmojiSearch() {
+        mEnglishOnly = true;
+        if (mKeyboardSwitcher != null) {
+            mKeyboardSwitcher.setKeyboardMode(activeIM, LIMEKeyboardSwitcher.MODE_TEXT,
+                    mImeOptions, false, false, false);
+        }
+        if (mInputView != null) {
+            mInputView.invalidateAllKeys();
+        }
+    }
+
+    private boolean handleEmojiSearchKey(int primaryCode) {
+        if (primaryCode == LIMEBaseKeyboard.KEYCODE_DELETE) {
+            handleEmojiBackspace();
+            return true;
+        }
+        if (primaryCode == LIME.KEYCODE_EMOJI_PANEL) {
+            exitEmojiSearchToPanel();
+            return true;
+        }
+        if (primaryCode == LIME.KEYCODE_EMOJI_ABC || primaryCode == KEYCODE_SWITCH_TO_IM_MODE) {
+            hideEmojiKeyboard();
+            return true;
+        }
+        if (primaryCode == LIMEBaseKeyboard.KEYCODE_DONE || primaryCode == MY_KEYCODE_ENTER) {
+            mEmojiSearchFocused = false;
+            if (mInputView != null) {
+                mInputView.setVisibility(View.GONE);
+            }
+            renderEmojiContent(mEmojiSearchQuery.toString());
+            return true;
+        }
+        if (primaryCode >= 32 && primaryCode < 127) {
+            mEmojiSearchQuery.append((char) Character.toLowerCase(primaryCode));
+            updateEmojiSearchText();
+            return true;
+        }
+        return true;
+    }
+
+    private void handleEmojiBackspace() {
+        if (mEmojiSearchFocused && mEmojiSearchQuery.length() > 0) {
+            mEmojiSearchQuery.deleteCharAt(mEmojiSearchQuery.length() - 1);
+            updateEmojiSearchText();
+        } else {
+            handleBackspace();
+        }
+    }
+
+    private void updateEmojiSearchText() {
+        if (mEmojiSearchField != null) {
+            if (mEmojiSearchQuery.length() == 0 && !mEmojiSearchFocused) {
+                mEmojiSearchField.setText("搜尋表情符號");
+                mEmojiSearchField.setTextColor(0xFF8A8A8A);
+            } else {
+                mEmojiSearchField.setText(mEmojiSearchQuery.toString());
+                mEmojiSearchField.setTextColor(ContextCompat.getColor(this, android.R.color.black));
+            }
+        }
+        renderEmojiContent(mEmojiSearchQuery.toString());
+    }
+
+    private void addEmojiPage(String[] emojis, int pageWidth) {
+        GridLayout page = new GridLayout(mThemeContext);
+        page.setColumnCount(mEmojiSearchMode ? Math.max(1, emojis.length) : 8);
+        page.setPadding(0, 0, 0, 0);
+        int keySize = Math.max(dp(42), pageWidth / 8);
+        for (String emoji : emojis) {
+            TextView key = createEmojiControl(emoji, 28);
+            key.setOnClickListener(v -> commitEmoji(((TextView) v).getText().toString()));
+            GridLayout.LayoutParams keyParams = new GridLayout.LayoutParams();
+            keyParams.width = keySize;
+            keyParams.height = dp(mEmojiSearchMode ? EMOJI_SEARCH_KEY_HEIGHT_DP : 50);
+            keyParams.setMargins(0, dp(1), 0, dp(1));
+            page.addView(key, keyParams);
+        }
+        int contentWidth = mEmojiSearchMode ? Math.max(pageWidth, keySize * emojis.length) : pageWidth;
+        mEmojiPages.addView(page, new LinearLayout.LayoutParams(contentWidth, LinearLayout.LayoutParams.WRAP_CONTENT));
+    }
+
+    private void updateEmojiCategoryHighlight(int categoryIndex) {
+        if (mEmojiCategoryBar == null) return;
+        if (categoryIndex >= 0) {
+            mEmojiCategoryIndex = Math.max(0, Math.min(categoryIndex, EMOJI_CATEGORIES.length - 1));
+        }
+
+        if (mEmojiCategoryBar.getChildCount() != EMOJI_CATEGORIES.length) {
+            mEmojiCategoryBar.removeAllViews();
+            for (int i = 0; i < EMOJI_CATEGORIES.length; i++) {
+                final int index = i;
+                View tab = createEmojiCategoryIcon(index);
+                tab.setOnClickListener(v -> {
+                    if (mEmojiSearchField != null && mEmojiSearchField.length() > 0) {
+                        mEmojiSearchField.setText("");
+                    }
+                    mEmojiSearchMode = false;
+                    renderEmojiContent("");
+                    if (mEmojiScroll != null) {
+                        mEmojiScroll.post(() -> mEmojiScroll.smoothScrollTo(index * getEmojiPageWidth(), 0));
+                    }
+                    updateEmojiCategoryHighlight(index);
+                });
+                mEmojiCategoryBar.addView(tab, new LinearLayout.LayoutParams(0, dp(40), 1));
+            }
+        }
+        for (int i = 0; i < mEmojiCategoryBar.getChildCount(); i++) {
+            View tab = mEmojiCategoryBar.getChildAt(i);
+            tab.setBackground(makeRoundRect(
+                    !mEmojiSearchMode && i == mEmojiCategoryIndex ? 0x22000000 : Color.TRANSPARENT, dp(18)));
+            tab.invalidate();
+        }
+    }
+
+    private View createEmojiCategoryIcon(int categoryIndex) {
+        EmojiCategoryIconButton view = new EmojiCategoryIconButton(mThemeContext, categoryIndex);
+        view.setClickable(true);
+        return view;
+    }
+
+    private int getEmojiPageWidth() {
+        int viewWidth = mEmojiKeyboardView == null ? 0 : mEmojiKeyboardView.getWidth();
+        int fallbackWidth = getResources().getDisplayMetrics().widthPixels;
+        return Math.max(dp(320), (viewWidth > 0 ? viewWidth : fallbackWidth) - dp(24));
+    }
+
+    private List<String> findEmojiSearchResults(String query) {
+        if (SearchSrv != null && query != null && query.length() > 0) {
+            List<Mapping> english = SearchSrv.searchEmoji(query, LimeDB.EmojiLocale.EN, 80);
+            List<Mapping> traditional = SearchSrv.searchEmoji(query, LimeDB.EmojiLocale.TW, 80);
+            List<String> dbMatches = new ArrayList<>();
+            if (english != null) {
+                for (Mapping mapping : english) {
+                    if (mapping != null && mapping.getWord() != null && !dbMatches.contains(mapping.getWord())) {
+                        dbMatches.add(mapping.getWord());
+                    }
+                }
+            }
+            if (traditional != null) {
+                for (Mapping mapping : traditional) {
+                    if (mapping != null && mapping.getWord() != null && !dbMatches.contains(mapping.getWord())) {
+                        dbMatches.add(mapping.getWord());
+                    }
+                }
+            }
+            if (!dbMatches.isEmpty()) {
+                return dbMatches;
+            }
+        }
+
+        List<String> matches = new ArrayList<>();
+        for (String[] category : EMOJI_CATEGORIES) {
+            for (String emoji : category) {
+                if (emoji.contains(query) || emojiKeywordMatches(emoji, query)) {
+                    if (!matches.contains(emoji)) {
+                        matches.add(emoji);
+                    }
+                }
+            }
+        }
+        return matches;
+    }
+
+    private String[] getEmojiCategoryItems(int categoryIndex) {
+        if (categoryIndex == 0 && SearchSrv != null) {
+            List<Mapping> recent = SearchSrv.loadRecentEmoji(32);
+            if (recent != null && !recent.isEmpty()) {
+                List<String> words = new ArrayList<>();
+                for (Mapping mapping : recent) {
+                    if (mapping != null && mapping.getWord() != null && !mapping.getWord().isEmpty()) {
+                        words.add(mapping.getWord());
+                    }
+                }
+                if (!words.isEmpty()) {
+                    return words.toArray(new String[0]);
+                }
+            }
+        }
+        return EMOJI_CATEGORIES[categoryIndex];
+    }
+
+    private boolean emojiKeywordMatches(String emoji, String query) {
+        if (query.length() == 0) return true;
+        if ("😂🤣😆😅😭😢".contains(emoji)) return startsWithAny(query, "cry", "cr", "laugh", "lol", "tear");
+        if ("❤️🧡💛💚💙💜🖤🤍🤎💕💞💓💗💖😍🥰😘".contains(emoji)) return startsWithAny(query, "heart", "love", "lov", "kiss");
+        if ("🐶🐱🐭🐹🐰🦊🐻🐼🐨🐯🦁🐮🐷🐸🐵".contains(emoji)) return startsWithAny(query, "animal", "dog", "cat", "bear", "monkey");
+        if ("🍎🍐🍊🍋🍌🍉🍇🍓🍔🍟".contains(emoji)) return startsWithAny(query, "food", "fruit", "apple", "burger");
+        if ("🚗🚕🚙🚌🚎✈🚀🚁🚢🚉🚇🚆".contains(emoji)) return startsWithAny(query, "car", "travel", "train", "plane");
+        if ("⚽🏀🏈⚾🎾🏐".contains(emoji)) return startsWithAny(query, "sport", "ball", "soccer");
+        if ("🇹🇼🇯🇵🇰🇷🇺🇸🇨🇦🇬🇧🇫🇷🇩🇪🇮🇹🇪🇸".contains(emoji)) return startsWithAny(query, "flag", "country");
+        return false;
+    }
+
+    private boolean startsWithAny(String query, String... keywords) {
+        for (String keyword : keywords) {
+            if (keyword.startsWith(query) || query.startsWith(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void commitEmoji(String emoji) {
+        InputConnection ic = getCurrentInputConnection();
+        if (ic != null) {
+            ic.commitText(emoji, 1);
+        }
+        if (SearchSrv != null) {
+            SearchSrv.recordEmojiUsage(emoji);
+        }
+    }
+
+    private TextView createEmojiControl(String text, int textSize) {
+        TextView view = new TextView(mThemeContext);
+        view.setText(text);
+        view.setTextSize(textSize);
+        view.setTextColor(ContextCompat.getColor(this, android.R.color.black));
+        view.setGravity(Gravity.CENTER);
+        view.setIncludeFontPadding(false);
+        view.setClickable(true);
+        return view;
+    }
+
+    private class EmojiCategoryIconButton extends View {
+        private final int categoryIndex;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        EmojiCategoryIconButton(Context context, int categoryIndex) {
+            super(context);
+            this.categoryIndex = categoryIndex;
+            paint.setColor(ContextCompat.getColor(LIMEService.this, android.R.color.black));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            setWillNotDraw(false);
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float size = Math.min(getWidth(), getHeight()) * 0.56f;
+            float cx = getWidth() / 2f;
+            float cy = getHeight() / 2f;
+            paint.setStrokeWidth(Math.max(2.2f, dp(2)));
+            paint.setStyle(Paint.Style.STROKE);
+
+            switch (categoryIndex) {
+                case 0:
+                    drawRecentIcon(canvas, cx, cy, size);
+                    break;
+                case 1:
+                    drawSmileIcon(canvas, cx, cy, size);
+                    break;
+                case 2:
+                    drawAnimalIcon(canvas, cx, cy, size);
+                    break;
+                case 3:
+                    drawAppleIcon(canvas, cx, cy, size);
+                    break;
+                case 4:
+                    drawBallIcon(canvas, cx, cy, size);
+                    break;
+                case 5:
+                    drawCarIcon(canvas, cx, cy, size);
+                    break;
+                case 6:
+                    drawBulbIcon(canvas, cx, cy, size);
+                    break;
+                case 7:
+                    drawHeartIcon(canvas, cx, cy, size);
+                    break;
+                case 8:
+                    drawFlagIcon(canvas, cx, cy, size);
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        private void drawRecentIcon(Canvas canvas, float cx, float cy, float size) {
+            float r = size * 0.48f;
+            canvas.drawCircle(cx, cy, r, paint);
+            canvas.drawLine(cx, cy, cx, cy - r * 0.62f, paint);
+            canvas.drawLine(cx, cy, cx - r * 0.54f, cy, paint);
+        }
+
+        private void drawSmileIcon(Canvas canvas, float cx, float cy, float size) {
+            float r = size * 0.45f;
+            canvas.drawCircle(cx, cy, r, paint);
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(cx - r * 0.34f, cy - r * 0.16f, dp(1.5f), paint);
+            canvas.drawCircle(cx + r * 0.34f, cy - r * 0.16f, dp(1.5f), paint);
+            paint.setStyle(Paint.Style.STROKE);
+            RectF smile = new RectF(cx - r * 0.42f, cy - r * 0.02f, cx + r * 0.42f, cy + r * 0.52f);
+            canvas.drawArc(smile, 18, 144, false, paint);
+        }
+
+        private void drawAnimalIcon(Canvas canvas, float cx, float cy, float size) {
+            float r = size * 0.31f;
+            canvas.drawCircle(cx - r * 0.85f, cy - r * 0.95f, r * 0.45f, paint);
+            canvas.drawCircle(cx + r * 0.85f, cy - r * 0.95f, r * 0.45f, paint);
+            canvas.drawCircle(cx, cy - r * 0.2f, r, paint);
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(cx - r * 0.34f, cy - r * 0.32f, dp(1.35f), paint);
+            canvas.drawCircle(cx + r * 0.34f, cy - r * 0.32f, dp(1.35f), paint);
+            canvas.drawOval(new RectF(cx - r * 0.22f, cy - r * 0.02f, cx + r * 0.22f, cy + r * 0.24f), paint);
+            paint.setStyle(Paint.Style.STROKE);
+            canvas.drawArc(new RectF(cx - r * 0.5f, cy + r * 0.04f, cx, cy + r * 0.54f), 0, 70, false, paint);
+            canvas.drawArc(new RectF(cx, cy + r * 0.04f, cx + r * 0.5f, cy + r * 0.54f), 110, 70, false, paint);
+        }
+
+        private void drawAppleIcon(Canvas canvas, float cx, float cy, float size) {
+            float r = size * 0.37f;
+            Path apple = new Path();
+            apple.moveTo(cx, cy - r * 0.72f);
+            apple.cubicTo(cx - r * 0.95f, cy - r * 0.98f, cx - r * 1.15f, cy + r * 0.1f, cx - r * 0.62f, cy + r * 0.82f);
+            apple.cubicTo(cx - r * 0.24f, cy + r * 1.25f, cx - r * 0.02f, cy + r * 0.92f, cx, cy + r * 0.92f);
+            apple.cubicTo(cx + r * 0.02f, cy + r * 0.92f, cx + r * 0.24f, cy + r * 1.25f, cx + r * 0.62f, cy + r * 0.82f);
+            apple.cubicTo(cx + r * 1.15f, cy + r * 0.1f, cx + r * 0.95f, cy - r * 0.98f, cx, cy - r * 0.72f);
+            canvas.drawPath(apple, paint);
+            canvas.drawLine(cx, cy - r * 0.8f, cx + r * 0.14f, cy - r * 1.22f, paint);
+            canvas.drawArc(new RectF(cx + r * 0.1f, cy - r * 1.42f, cx + r * 0.8f, cy - r * 0.9f), 165, 150, false, paint);
+        }
+
+        private void drawBallIcon(Canvas canvas, float cx, float cy, float size) {
+            float r = size * 0.45f;
+            canvas.drawCircle(cx, cy, r, paint);
+            canvas.drawLine(cx - r * 0.72f, cy - r * 0.28f, cx + r * 0.72f, cy + r * 0.28f, paint);
+            canvas.drawLine(cx - r * 0.72f, cy + r * 0.28f, cx + r * 0.72f, cy - r * 0.28f, paint);
+            canvas.drawArc(new RectF(cx - r * 0.72f, cy - r, cx + r * 0.72f, cy + r), 73, 214, false, paint);
+        }
+
+        private void drawCarIcon(Canvas canvas, float cx, float cy, float size) {
+            float w = size * 0.95f;
+            float h = size * 0.45f;
+            Path car = new Path();
+            car.moveTo(cx - w * 0.48f, cy + h * 0.1f);
+            car.lineTo(cx - w * 0.34f, cy - h * 0.28f);
+            car.lineTo(cx - w * 0.14f, cy - h * 0.45f);
+            car.lineTo(cx + w * 0.28f, cy - h * 0.45f);
+            car.lineTo(cx + w * 0.48f, cy - h * 0.04f);
+            car.lineTo(cx + w * 0.48f, cy + h * 0.28f);
+            car.lineTo(cx - w * 0.48f, cy + h * 0.28f);
+            car.close();
+            canvas.drawPath(car, paint);
+            canvas.drawCircle(cx - w * 0.26f, cy + h * 0.34f, h * 0.2f, paint);
+            canvas.drawCircle(cx + w * 0.28f, cy + h * 0.34f, h * 0.2f, paint);
+        }
+
+        private void drawBulbIcon(Canvas canvas, float cx, float cy, float size) {
+            float r = size * 0.35f;
+            canvas.drawArc(new RectF(cx - r, cy - r * 1.15f, cx + r, cy + r * 0.85f), 210, 120, false, paint);
+            canvas.drawLine(cx - r * 0.46f, cy + r * 0.48f, cx - r * 0.28f, cy + r * 1.05f, paint);
+            canvas.drawLine(cx + r * 0.46f, cy + r * 0.48f, cx + r * 0.28f, cy + r * 1.05f, paint);
+            canvas.drawLine(cx - r * 0.34f, cy + r * 1.05f, cx + r * 0.34f, cy + r * 1.05f, paint);
+            canvas.drawLine(cx - r * 0.24f, cy + r * 1.3f, cx + r * 0.24f, cy + r * 1.3f, paint);
+        }
+
+        private void drawHeartIcon(Canvas canvas, float cx, float cy, float size) {
+            float s = size * 0.5f;
+            Path heart = new Path();
+            heart.moveTo(cx, cy + s * 0.72f);
+            heart.cubicTo(cx - s * 1.1f, cy - s * 0.08f, cx - s * 0.98f, cy - s * 0.84f, cx - s * 0.42f, cy - s * 0.84f);
+            heart.cubicTo(cx - s * 0.14f, cy - s * 0.84f, cx, cy - s * 0.6f, cx, cy - s * 0.42f);
+            heart.cubicTo(cx, cy - s * 0.6f, cx + s * 0.14f, cy - s * 0.84f, cx + s * 0.42f, cy - s * 0.84f);
+            heart.cubicTo(cx + s * 0.98f, cy - s * 0.84f, cx + s * 1.1f, cy - s * 0.08f, cx, cy + s * 0.72f);
+            canvas.drawPath(heart, paint);
+        }
+
+        private void drawFlagIcon(Canvas canvas, float cx, float cy, float size) {
+            float h = size * 0.9f;
+            float left = cx - size * 0.36f;
+            canvas.drawLine(left, cy - h * 0.5f, left, cy + h * 0.5f, paint);
+            Path flag = new Path();
+            flag.moveTo(left, cy - h * 0.48f);
+            flag.cubicTo(cx - size * 0.02f, cy - h * 0.66f, cx + size * 0.22f, cy - h * 0.26f, cx + size * 0.48f, cy - h * 0.42f);
+            flag.lineTo(cx + size * 0.48f, cy + h * 0.1f);
+            flag.cubicTo(cx + size * 0.22f, cy + h * 0.26f, cx - size * 0.02f, cy - h * 0.14f, left, cy + h * 0.04f);
+            flag.close();
+            canvas.drawPath(flag, paint);
+        }
+    }
+
+    private GradientDrawable makeRoundRect(int color, int radius) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(radius);
+        return drawable;
+    }
+
+    private int dp(float value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private int getInputCandidateStripVisibility() {
+        if (mCandidateInInputView != null && mCandidateInInputView.getChildCount() > 0) {
+            return mCandidateInInputView.getChildAt(0).getVisibility();
+        }
+        return View.VISIBLE;
+    }
+
+    private void setInputCandidateStripVisibility(int visibility) {
+        if (mCandidateInInputView != null && mCandidateInInputView.getChildCount() > 0) {
+            mCandidateInInputView.getChildAt(0).setVisibility(visibility);
+        }
+    }
+
+    private void enforceEmojiKeyboardVisibility() {
+        if (!mEmojiKeyboardShown || mInputView == null) return;
+        setInputCandidateStripVisibility(View.GONE);
+        if (mEmojiSearchFocused) {
+            forceEnglishKeyboardForEmojiSearch();
+            mInputView.setVisibility(View.VISIBLE);
+        } else {
+            mInputView.setVisibility(View.GONE);
+        }
+        mInputView.invalidateAllKeys();
+        if (mInputView.getHandler() != null) {
+            mInputView.post(() -> {
+                if (!mEmojiKeyboardShown) return;
+                setInputCandidateStripVisibility(View.GONE);
+                mInputView.setVisibility(mEmojiSearchFocused ? View.VISIBLE : View.GONE);
+                mInputView.invalidateAllKeys();
+            });
+        }
+    }
+
+    private void refreshCandidateInputContainer() {
+        if (mCandidateInInputView == null) return;
+        mCandidateInInputView.post(() -> {
+            mCandidateInInputView.requestLayout();
+            mCandidateInInputView.updateCandidateViewWidthConstraint();
+            mCandidateInInputView.invalidate();
+        });
     }
 
 
@@ -3099,6 +3795,9 @@ public class LIMEService extends InputMethodService
         if (DEBUG) Log.i(TAG, "switchKeyboard() primaryCode = " + primaryCode);
         if (mCapsLock)
             toggleCapsLock();
+        if (mEmojiKeyboardShown) {
+            hideEmojiKeyboard();
+        }
 
         // Auto commit the text when user switch the keyboard from chi -> eng
         try {
@@ -3216,6 +3915,8 @@ public class LIMEService extends InputMethodService
             mCandidateViewInInputView = mCandidateInInputView.findViewById(R.id.candidatesView);
             mCandidateViewInInputView.setService(this);
             mCandidateInInputView.setService(this);
+            mEmojiKeyboardView = mCandidateInInputView.findViewById(R.id.emoji_keyboard);
+            setupEmojiKeyboardView();
 
         }
         if (mCandidateView != mCandidateViewInInputView)
@@ -3936,6 +4637,7 @@ public class LIMEService extends InputMethodService
         if (DEBUG)
             Log.i(TAG, "onFinishInputView()");
         super.onFinishInputView(finishingInput);
+        resetEmojiKeyboardState();
         hideCandidateView(); //Jeremy '12,5,7 hideCandiate when inputview is closed but not yet leave the original field (onfinishinput() will not called).
     }
 

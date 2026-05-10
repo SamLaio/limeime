@@ -68,7 +68,14 @@ final class DBServer {
                 forSecurityApplicationGroupIdentifier: DBServer.appGroupID) {
             return url
         }
-        return FileManager.default.temporaryDirectory
+        let fallback = FileManager.default.urls(for: .applicationSupportDirectory,
+                                                in: .userDomainMask).first?
+            .appendingPathComponent("LimeIME", isDirectory: true)
+        let url = fallback ?? FileManager.default.temporaryDirectory
+            .appendingPathComponent("LimeIME", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        print("[DBServer] App Group unavailable; using persistent fallback database directory: \(url.path)")
+        return url
     }
 
     // MARK: - LimeDB accessor

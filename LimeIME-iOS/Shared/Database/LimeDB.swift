@@ -2116,6 +2116,19 @@ final class LimeDB {
         case tw
     }
 
+    struct EmojiDataRow {
+        let value: String
+        let cp: String
+        let groupName: String
+        let subgroup: String
+        let sortOrder: Int
+        let nameEn: String
+        let nameTw: String
+        let tagsEn: String
+        let tagsTw: String
+        let version: Double
+    }
+
     /// Legacy-compatible emoji lookup routed through the integrated emoji tables.
     func emojiConvert(_ source: String, _ emoji: Int) -> [Mapping] {
         switch emoji {
@@ -2129,8 +2142,18 @@ final class LimeDB {
     }
 
     func findEmojiForCandidate(_ candidate: String, locale: EmojiLocale, limit: Int = 8) -> [Mapping] {
-        let query = LimeDB.buildEmojiFTSQuery(candidate)
+        let query = LimeDB.buildEmojiCandidateQuery(candidate)
         guard !query.isEmpty else { return [] }
+        return queryEmojiFTS(query: query, code: candidate, limit: limit)
+    }
+
+    func searchEmoji(_ queryText: String, locale: EmojiLocale, limit: Int = 200) -> [Mapping] {
+        let query = LimeDB.buildEmojiPanelSearchQuery(queryText)
+        guard !query.isEmpty else { return [] }
+        return queryEmojiFTS(query: query, code: queryText, limit: limit)
+    }
+
+    private func queryEmojiFTS(query: String, code: String, limit: Int) -> [Mapping] {
         refreshEmojiDataIfNeeded()
         let safeLimit = max(limit, 1)
         let words: [String] = (try? dbQueue.read { db in
@@ -2147,9 +2170,48 @@ final class LimeDB {
         var seen = Set<String>()
         return words.compactMap { word -> Mapping? in
             guard seen.insert(word).inserted else { return nil }
-            return Mapping(id: 0, code: candidate, word: word,
+            return Mapping(id: 0, code: code, word: word,
                            score: 0, baseScore: 0,
                            recordType: Mapping.RecordType.emoji)
+        }
+    }
+
+    func loadEmojiPanelItems(limit: Int = 360) -> [Mapping] {
+        refreshEmojiDataIfNeeded()
+        let safeLimit = max(limit, 1)
+        let words: [String] = (try? dbQueue.read { db in
+            try String.fetchAll(db, sql: """
+                SELECT d.value
+                FROM \(LimeDB.EMOJI_TABLE_DATA) d
+                LEFT JOIN \(LimeDB.EMOJI_TABLE_USER) u ON u.value = d.value
+                ORDER BY (u.last_used IS NULL), u.last_used DESC, d.sort_order ASC
+                LIMIT ?
+            """, arguments: [safeLimit])
+        }) ?? []
+        return words.map {
+            Mapping(id: 0, code: "", word: $0,
+                    score: 0, baseScore: 0,
+                    recordType: Mapping.RecordType.emoji)
+        }
+    }
+
+    func loadRecentEmoji(limit: Int = 32) -> [Mapping] {
+        refreshEmojiDataIfNeeded()
+        let safeLimit = max(limit, 1)
+        let words: [String] = (try? dbQueue.read { db in
+            try String.fetchAll(db, sql: """
+                SELECT d.value
+                FROM \(LimeDB.EMOJI_TABLE_USER) u
+                JOIN \(LimeDB.EMOJI_TABLE_DATA) d ON d.value = u.value
+                WHERE u.last_used IS NOT NULL
+                ORDER BY u.last_used DESC, u.use_count DESC, d.sort_order ASC
+                LIMIT ?
+            """, arguments: [safeLimit])
+        }) ?? []
+        return words.map {
+            Mapping(id: 0, code: "", word: $0,
+                    score: 0, baseScore: 0,
+                    recordType: Mapping.RecordType.emoji)
         }
     }
 
@@ -2300,21 +2362,75 @@ final class LimeDB {
         try db.execute(sql: "INSERT INTO \(EMOJI_TABLE_FTS)(\(EMOJI_TABLE_FTS)) VALUES ('rebuild')")
     }
 
-    private static func buildEmojiFTSQuery(_ input: String) -> String {
-        input.split(whereSeparator: { $0.isWhitespace }).compactMap { part -> String? in
+    private static func buildEmojiPanelSearchQuery(_ input: String) -> String {
+        sanitizedEmojiTokens(input).map { "\($0)*" }.joined(separator: " ")
+    }
+
+    private static func buildEmojiCandidateQuery(_ input: String) -> String {
+        sanitizedEmojiTokens(input).flatMap { token -> [String] in
+            if isSingleASCIIAlphabeticToken(token) { return [] }
+            var terms = ["\(token)*"]
+            if let firstCJK = firstCJKCharacter(token), token != firstCJK {
+                terms.append("\(firstCJK)*")
+            }
+            return terms
+        }.joined(separator: " OR ")
+    }
+
+    private static func sanitizedEmojiTokens(_ input: String) -> [String] {
+        input.split(whereSeparator: { $0.isWhitespace }).compactMap { part in
             let tokenScalars = part.unicodeScalars.filter {
                 CharacterSet.alphanumerics.contains($0) || $0.value == 95
             }
             let token = String(String.UnicodeScalarView(tokenScalars))
-            if isSingleASCIIAlphabeticToken(token) {
-                return nil
-            }
-            return token.isEmpty ? nil : token + "*"
-        }.joined(separator: " ")
+            return token.isEmpty ? nil : token
+        }
     }
 
-    static func buildEmojiFTSQueryForTest(_ input: String) -> String {
-        return buildEmojiFTSQuery(input)
+    private static func firstCJKCharacter(_ token: String) -> String? {
+        guard let scalar = token.unicodeScalars.first, isCJKScalar(scalar) else { return nil }
+        return String(scalar)
+    }
+
+    private static func isCJKScalar(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF,
+             0x20000...0x2A6DF, 0x2A700...0x2B73F, 0x2B740...0x2B81F,
+             0x2B820...0x2CEAF, 0x2CEB0...0x2EBEF, 0x30000...0x3134F:
+            return true
+        default:
+            return false
+        }
+    }
+
+    func replaceEmojiDataForTest(_ rows: [EmojiDataRow], emojiVersion: String) throws {
+        try dbQueue.write { db in
+            try LimeDB.createEmojiTables(db, forceRecreate: true)
+            for row in rows {
+                try db.execute(sql: """
+                    INSERT INTO \(LimeDB.EMOJI_TABLE_DATA)
+                    (value, cp, group_name, subgroup, sort_order, name_en, name_tw, tags_en, tags_tw, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [
+                    row.value, row.cp, row.groupName, row.subgroup, row.sortOrder,
+                    row.nameEn, row.nameTw, row.tagsEn, row.tagsTw, row.version,
+                ])
+            }
+            try LimeDB.rebuildEmojiFTS(db)
+            try db.execute(sql: "DELETE FROM im WHERE code = 'emoji'")
+            try db.execute(sql: """
+                INSERT INTO im (code, title, desc, keyboard, disable, selkey, endkey, spacestyle)
+                VALUES ('emoji', 'version', ?, '', 0, '', '', '')
+            """, arguments: [emojiVersion])
+        }
+    }
+
+    static func buildEmojiPanelSearchQueryForTest(_ input: String) -> String {
+        return buildEmojiPanelSearchQuery(input)
+    }
+
+    static func buildEmojiCandidateQueryForTest(_ input: String) -> String {
+        return buildEmojiCandidateQuery(input)
     }
 
     private static func isSingleASCIIAlphabeticToken(_ token: String) -> Bool {

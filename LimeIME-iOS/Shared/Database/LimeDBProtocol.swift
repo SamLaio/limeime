@@ -37,6 +37,8 @@ protocol LimeDBProtocol: AnyObject {
 
     // MARK: Emoji
     func emojiConvert(_ source: String, _ emoji: Int) -> [Mapping]
+    func findEmojiForCandidate(_ candidate: String, locale: LimeDB.EmojiLocale, limit: Int) -> [Mapping]
+    func searchEmoji(_ queryText: String, locale: LimeDB.EmojiLocale, limit: Int) -> [Mapping]
 
     // MARK: Reverse lookup / English
     func getCodeListStringByWord(_ keyword: String, table: String?) -> String?

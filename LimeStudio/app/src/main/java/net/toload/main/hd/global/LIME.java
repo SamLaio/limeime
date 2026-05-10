@@ -300,6 +300,17 @@ public class LIME {
 	public static final int EMOJI_CN = 3;
 	public static final String EMOJI_FIELD_TAG = "tag";
 	public static final String EMOJI_FIELD_VALUE = "value";
+	public static final int KEYCODE_EMOJI_PANEL = -201;
+	public static final int KEYCODE_EMOJI_ABC = -202;
+	public static final int KEYCODE_EMOJI_CATEGORY_RECENT = -203;
+	public static final int KEYCODE_EMOJI_CATEGORY_SMILEYS = -204;
+	public static final int KEYCODE_EMOJI_CATEGORY_ANIMALS = -205;
+	public static final int KEYCODE_EMOJI_CATEGORY_FOOD = -206;
+	public static final int KEYCODE_EMOJI_CATEGORY_SPORTS = -207;
+	public static final int KEYCODE_EMOJI_CATEGORY_TRAVEL = -208;
+	public static final int KEYCODE_EMOJI_CATEGORY_OBJECTS = -209;
+	public static final int KEYCODE_EMOJI_CATEGORY_SYMBOLS = -210;
+	public static final int KEYCODE_EMOJI_CATEGORY_FLAGS = -211;
 	
 	// ========== Input Method Arrays (for buildActivatedIMList) ==========
 	// These arrays correspond to the order used in IM activation state

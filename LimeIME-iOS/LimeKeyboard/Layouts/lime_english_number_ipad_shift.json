@@ -906,14 +906,14 @@
           "popupCharacters": ""
         },
         {
-          "code": -99,
+          "code": -201,
           "codes": [
-            -99
+            -201
           ],
           "label": "",
           "sublabel": "",
-          "widthPercent": 7.0,
-          "icon": "mic",
+          "widthPercent": 8.0,
+          "icon": "face.smiling",
           "isModifier": true,
           "isRepeatable": false,
           "isSticky": false,
@@ -928,9 +928,25 @@
           ],
           "label": "",
           "sublabel": "",
-          "widthPercent": 57.0,
+          "widthPercent": 49.0,
           "icon": "space.bar",
           "isModifier": false,
+          "isRepeatable": false,
+          "isSticky": false,
+          "longPressCode": 0,
+          "popupKeyboard": "",
+          "popupCharacters": ""
+        },
+        {
+          "code": -99,
+          "codes": [
+            -99
+          ],
+          "label": "",
+          "sublabel": "",
+          "widthPercent": 7.0,
+          "icon": "mic",
+          "isModifier": true,
           "isRepeatable": false,
           "isSticky": false,
           "longPressCode": 0,

@@ -63,6 +63,14 @@ import static org.mockito.Mockito.*;
 @RunWith(AndroidJUnit4.class)
 public class LIMEServiceTest {
 
+    @Test
+    public void emojiKeyboardSpecialKeyCodesUseReservedCrossPlatformRange() {
+        assertEquals(-201, LIME.KEYCODE_EMOJI_PANEL);
+        assertEquals(-202, LIME.KEYCODE_EMOJI_ABC);
+        assertEquals(-203, LIME.KEYCODE_EMOJI_CATEGORY_RECENT);
+        assertEquals(-211, LIME.KEYCODE_EMOJI_CATEGORY_FLAGS);
+    }
+
     /**
      * Helper class for testing LIMEService with mock components.
      * 

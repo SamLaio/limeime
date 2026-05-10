@@ -15,6 +15,17 @@ enum LimeKeyCode: Int {
     case switchToEnglish = -9
     case switchToIM     = -10
     case globe          = -200 // iOS-only: advanceToNextInputMode()
+    case emojiPanel     = -201 // iOS/Android: open emoji keyboard panel
+    case emojiABC       = -202 // iOS/Android: return from emoji panel to English keyboard
+    case emojiCategoryRecent  = -203
+    case emojiCategorySmileys = -204
+    case emojiCategoryAnimals = -205
+    case emojiCategoryFood    = -206
+    case emojiCategorySports  = -207
+    case emojiCategoryTravel  = -208
+    case emojiCategoryObjects = -209
+    case emojiCategorySymbols = -210
+    case emojiCategoryFlags   = -211
     case nextIM              = -20  // cycle to next activated IM (spec §10)
     case prevIM              = -21  // cycle to previous activated IM (spec §10)
     case switchSymbolKeyboard = -15  // cycle symbol keyboard pages (spec §10, Android code -15)
@@ -177,6 +188,7 @@ struct LimeKeyLayout {
             KeyDef(code: 111, label: "o"), KeyDef(code: 112, label: "p"),
             KeyDef(code: 113, label: "q"), KeyDef(code: 114, label: "r"),
             KeyDef(code: 115, label: "s"),
+            KeyDef(code: LimeKeyCode.switchToIM.rawValue, label: "中文", widthPercent: 10, isModifier: true),
         ]),
         KeyRow(keys: [
             KeyDef(code: LimeKeyCode.shift.rawValue,  widthPercent: 15, icon: "shift",           isRepeatable: false, isModifier: true, isSticky: true),
@@ -188,7 +200,7 @@ struct LimeKeyLayout {
         ]),
         KeyRow(keys: [
             KeyDef(code: LimeKeyCode.done.rawValue,           widthPercent: 15, icon: "keyboard.chevron.compact.down", isRepeatable: false, isModifier: true, longPressCode: LimeKeyCode.keyboardOptionsMenu.rawValue),
-            KeyDef(code: LimeKeyCode.switchToIM.rawValue,     label: "中文",    widthPercent: 10,                      isModifier: true),
+            KeyDef(code: LimeKeyCode.emojiPanel.rawValue,     widthPercent: 10, icon: "face.smiling",                 isModifier: true),
             KeyDef(code: 44,  label: ",",                     widthPercent: 10),
             KeyDef(code: 32,                                  widthPercent: 30, icon: "space.bar"),
             KeyDef(code: 46,  label: ".",                     widthPercent: 10),
