@@ -277,18 +277,16 @@ public class ManageRelatedFragment extends Fragment implements ManageRelatedView
     }
 
     public void removeRelated(int id){
-
-        // Remove from the temp list
-        for(int i = 0 ; i < total ; i++){
-           if(id== this.relatedlist.get(i).getIdAsInt()){
-               this.relatedlist.remove(i);
-               break;
-           }
+        if (this.relatedlist != null) {
+            for (int i = 0; i < this.relatedlist.size(); i++) {
+                if (id == this.relatedlist.get(i).getIdAsInt()) {
+                    this.relatedlist.remove(i);
+                    break;
+                }
+            }
         }
-
         if (manageImController != null) {
             manageImController.deleteRelatedPhrase(id);
-            // Refresh the grid after delete
             searchRelated();
         }
     }

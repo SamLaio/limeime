@@ -99,4 +99,10 @@ public class ManageRelatedAddSheet extends BottomSheetDialogFragment {
             dismiss();
         });
     }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        hostFragment = null;
+    }
 }

@@ -115,4 +115,11 @@ public class ManageImEditSheet extends BottomSheetDialogFragment {
             dismiss();
         });
     }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        hostFragment = null;
+        record = null;
+    }
 }

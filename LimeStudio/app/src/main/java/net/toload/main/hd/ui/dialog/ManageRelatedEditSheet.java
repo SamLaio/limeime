@@ -114,4 +114,11 @@ public class ManageRelatedEditSheet extends BottomSheetDialogFragment {
             dismiss();
         });
     }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        hostFragment = null;
+        related = null;
+    }
 }
