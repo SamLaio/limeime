@@ -799,4 +799,22 @@
     <string name="url_github_limeime">https://github.com/lime-ime/limeime</string>
     <string name="setup_im_privacy_note">LimeIME 不會收集任何輸入內容或個人資料。</string>
 
+    <!-- Step 6: ImListFragment / ImDetailFragment strings -->
+    <string name="im_list_title">輸入法</string>
+    <string name="im_list_action_install">下載/匯入</string>
+    <string name="im_detail_section_info">輸入法資訊</string>
+    <string name="im_detail_label_name">名稱</string>
+    <string name="im_detail_label_records">筆數</string>
+    <string name="im_detail_section_keyboard">軟鍵盤配置</string>
+    <string name="im_detail_label_keyboard">鍵盤佈局</string>
+    <string name="im_detail_keyboard_default">預設</string>
+    <string name="im_detail_section_table">字根資料表</string>
+    <string name="im_detail_manage_table">管理字根資料表</string>
+    <string name="im_detail_section_options">選項</string>
+    <string name="im_detail_backup_on_delete">刪除時備份已學習記錄</string>
+    <string name="im_detail_remove_im">移除輸入法</string>
+    <string name="im_detail_remove_confirm">確定要移除此輸入法的所有資料嗎？</string>
+    <string name="im_related_label">聯想詞庫</string>
+    <string name="im_detail_keyboard_picker_title">選擇鍵盤佈局</string>
+
 </resources>
