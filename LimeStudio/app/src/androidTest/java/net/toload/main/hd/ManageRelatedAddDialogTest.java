@@ -9,7 +9,7 @@ import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
 
 /**
- * Tests for ManageRelatedAddDialog.
+ * Tests for ManageRelatedAddSheet.
  */
 @RunWith(AndroidJUnit4.class)
 public class ManageRelatedAddDialogTest {
@@ -17,22 +17,22 @@ public class ManageRelatedAddDialogTest {
     @Test
     public void testManageRelatedAddDialogClassExists() {
         try {
-            Class<?> cls = Class.forName("net.toload.main.hd.ui.dialog.ManageRelatedAddDialog");
+            Class<?> cls = Class.forName("net.toload.main.hd.ui.dialog.ManageRelatedAddSheet");
             assertNotNull(cls);
         } catch (ClassNotFoundException e) {
-            fail("ManageRelatedAddDialog class not found");
+            fail("ManageRelatedAddSheet class not found");
         }
     }
 
     @Test
     public void testValidationAndControllerAddRelatedApis() throws Exception {
-        Class<?> dialog = Class.forName("net.toload.main.hd.ui.dialog.ManageRelatedAddDialog");
+        Class<?> dialog = Class.forName("net.toload.main.hd.ui.dialog.ManageRelatedAddSheet");
         boolean hasValidation = false;
         for (java.lang.reflect.Method m : dialog.getDeclaredMethods()) {
             String n = m.getName().toLowerCase();
             if (n.contains("validate") || n.contains("check")) { hasValidation = true; break; }
         }
-        assertTrue("ManageRelatedAddDialog should perform validation", hasValidation);
+        assertTrue("ManageRelatedAddSheet should perform validation", hasValidation);
 
         Class<?> ctrl = Class.forName("net.toload.main.hd.ui.controller.ManageImController");
         boolean hasAddRelated = false;

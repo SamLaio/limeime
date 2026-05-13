@@ -1,17 +1,34 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/im_detail_toolbar"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        app:navigationIcon="@drawable/ic_arrow_back"
-        app:titleTextColor="?android:attr/textColorPrimary"
-        app:navigationIconTint="?android:attr/textColorSecondary" />
+        android:layout_height="?attr/actionBarSize">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/im_detail_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:titleTextColor="?android:attr/textColorPrimary"
+            app:navigationIconTint="?android:attr/textColorSecondary" />
+
+        <!-- Trailing share button OVERLAY (outside MaterialToolbar so its click events aren't absorbed) -->
+        <ImageButton
+            android:id="@+id/btn_im_share"
+            android:layout_width="?attr/actionBarSize"
+            android:layout_height="?attr/actionBarSize"
+            android:layout_gravity="end|center_vertical"
+            android:src="@drawable/outline_share_24"
+            app:tint="?android:attr/textColorPrimary"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_share" />
+
+    </FrameLayout>
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
@@ -22,33 +39,56 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="24dp">
 
-            <!-- 輸入法資訊 card -->
+            <!-- Large heading -->
+            <TextView
+                android:id="@+id/tv_im_detail_heading"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="28sp"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary"
+                android:paddingTop="4dp"
+                android:paddingBottom="12dp" />
+
+            <!-- 輸入法資訊 section label -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/im_detail_section_info"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:paddingStart="4dp"
+                android:layout_marginBottom="6dp" />
+
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp">
+                android:layout_marginBottom="16dp"
+                app:cardElevation="0dp"
+                app:cardCornerRadius="10dp"
+                app:strokeWidth="0dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="16dp">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/im_detail_section_info"
-                        android:textAppearance="?attr/textAppearanceSubtitle2"
-                        android:layout_marginBottom="12dp" />
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp">
 
                     <!-- 名稱 row -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
-                        android:layout_marginBottom="8dp">
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
 
                         <TextView
                             android:layout_width="0dp"
@@ -63,14 +103,55 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="2"
                             android:textAppearance="?attr/textAppearanceBody2"
+                            android:textColor="?android:attr/textColorSecondary"
                             android:gravity="end" />
                     </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="?android:attr/listDivider" />
+
+                    <!-- 版本 row -->
+                    <LinearLayout
+                        android:id="@+id/row_version"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/im_detail_label_version"
+                            android:textAppearance="?attr/textAppearanceBody2" />
+
+                        <TextView
+                            android:id="@+id/txtImVersion"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="2"
+                            android:textAppearance="?attr/textAppearanceBody2"
+                            android:textColor="?android:attr/textColorSecondary"
+                            android:gravity="end"
+                            android:text="-" />
+                    </LinearLayout>
+
+                    <View
+                        android:id="@+id/divider_version"
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="?android:attr/listDivider" />
 
                     <!-- 筆數 row -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal">
+                        android:orientation="horizontal"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
 
                         <TextView
                             android:layout_width="0dp"
@@ -85,6 +166,7 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="2"
                             android:textAppearance="?attr/textAppearanceBody2"
+                            android:textColor="?android:attr/textColorSecondary"
                             android:gravity="end"
                             android:text="…" />
                     </LinearLayout>
@@ -92,138 +174,307 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- 軟鍵盤配置 card -->
+            <!-- 軟鍵盤配置 section -->
+            <LinearLayout
+                android:id="@+id/section_keyboard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/im_detail_section_keyboard"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:paddingStart="4dp"
+                android:layout_marginBottom="6dp" />
+
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp">
+                android:layout_marginBottom="16dp"
+                app:cardElevation="0dp"
+                app:cardCornerRadius="10dp"
+                app:strokeWidth="0dp">
 
                 <LinearLayout
+                    android:id="@+id/row_keyboard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="12dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="14dp"
+                    android:background="?attr/selectableItemBackground">
 
                     <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/im_detail_label_keyboard"
+                        android:textAppearance="?attr/textAppearanceBody2" />
+
+                    <TextView
+                        android:id="@+id/tv_keyboard_value"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="2"
+                        android:textAppearance="?attr/textAppearanceBody2"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:gravity="end"
+                        android:text="@string/im_detail_keyboard_default" />
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="6dp"
+                        android:src="@drawable/ic_chevron_right"
+                        app:tint="?android:attr/textColorSecondary"
+                        android:contentDescription="@null" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <!-- 注音鍵盤類型 (phonetic only) -->
+            <LinearLayout
+                android:id="@+id/section_phonetic"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="注音鍵盤類型"
+                    android:textSize="13sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:paddingStart="4dp"
+                    android:layout_marginBottom="6dp" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    app:cardElevation="0dp"
+                    app:cardCornerRadius="10dp"
+                    app:strokeWidth="0dp">
+
+                    <android.widget.Spinner
+                        android:id="@+id/spinnerPhoneticType"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/im_detail_section_keyboard"
-                        android:textAppearance="?attr/textAppearanceSubtitle2"
-                        android:layout_marginBottom="12dp" />
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp"
+                        android:entries="@array/phonetic_keyboard_type" />
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
 
-                    <LinearLayout
-                        android:id="@+id/row_keyboard"
-                        android:layout_width="match_parent"
+            <!-- 字根資料表 section label -->
+            <TextView
+                android:id="@+id/tv_section_table_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/im_detail_section_table"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:paddingStart="4dp"
+                android:layout_marginBottom="6dp" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardElevation="0dp"
+                app:cardCornerRadius="10dp"
+                app:strokeWidth="0dp">
+
+                <LinearLayout
+                    android:id="@+id/row_manage_table"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="12dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="14dp"
+                    android:background="?attr/selectableItemBackground">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_marginEnd="12dp"
+                        android:src="@drawable/ic_grid_on_24"
+                        app:tint="@color/material_blue"
+                        android:contentDescription="@null" />
+
+                    <TextView
+                        android:id="@+id/tv_manage_table_label"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:background="?attr/selectableItemBackground">
+                        android:layout_weight="1"
+                        android:text="@string/im_detail_manage_table"
+                        android:textAppearance="?attr/textAppearanceBody2" />
 
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="@string/im_detail_label_keyboard"
-                            android:textAppearance="?attr/textAppearanceBody2" />
-
-                        <TextView
-                            android:id="@+id/tv_keyboard_value"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="2"
-                            android:textAppearance="?attr/textAppearanceBody2"
-                            android:gravity="end"
-                            android:text="@string/im_detail_keyboard_default" />
-
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:layout_marginStart="4dp"
-                            android:src="@drawable/ic_chevron_right"
-                            android:contentDescription="@null" />
-                    </LinearLayout>
-
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginStart="6dp"
+                        android:src="@drawable/ic_chevron_right"
+                        app:tint="?android:attr/textColorSecondary"
+                        android:contentDescription="@null" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- 字根資料表 card -->
-            <com.google.android.material.card.MaterialCardView
+            <!-- 字根對應設定 (custom only) -->
+            <LinearLayout
+                android:id="@+id/section_custom_mapping"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp">
+                android:orientation="vertical"
+                android:visibility="gone">
 
-                <LinearLayout
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="字根對應設定"
+                    android:textSize="13sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:paddingStart="4dp"
+                    android:layout_marginBottom="6dp" />
+
+                <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/im_detail_section_table"
-                        android:textAppearance="?attr/textAppearanceSubtitle2"
-                        android:layout_marginBottom="12dp" />
+                    android:layout_marginBottom="16dp"
+                    app:cardElevation="0dp"
+                    app:cardCornerRadius="10dp"
+                    app:strokeWidth="0dp">
 
                     <LinearLayout
-                        android:id="@+id/row_manage_table"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:background="?attr/selectableItemBackground">
+                        android:orientation="vertical"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp">
 
-                        <TextView
-                            android:layout_width="0dp"
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchAcceptNumberIndex"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="@string/im_detail_manage_table"
-                            android:textAppearance="?attr/textAppearanceBody2" />
+                            android:text="@string/accept_number_index"
+                            android:paddingTop="6dp"
+                            android:paddingBottom="6dp" />
 
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_chevron_right"
-                            android:contentDescription="@null" />
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:background="?android:attr/listDivider" />
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchAcceptSymbolIndex"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/accept_symbol_index"
+                            android:paddingTop="6dp"
+                            android:paddingBottom="6dp" />
                     </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
 
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- 選項 card -->
-            <com.google.android.material.card.MaterialCardView
+            <!-- 電話鍵盤設定 (array10 only) -->
+            <LinearLayout
+                android:id="@+id/section_array10"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp">
+                android:orientation="vertical"
+                android:visibility="gone">
 
-                <LinearLayout
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="電話鍵盤設定"
+                    android:textSize="13sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:paddingStart="4dp"
+                    android:layout_marginBottom="6dp" />
+
+                <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:layout_marginBottom="16dp"
+                    app:cardElevation="0dp"
+                    app:cardCornerRadius="10dp"
+                    app:strokeWidth="0dp">
 
-                    <TextView
+                    <android.widget.Spinner
+                        android:id="@+id/spinnerAutoCommit"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/im_detail_section_options"
-                        android:textAppearance="?attr/textAppearanceSubtitle2"
-                        android:layout_marginBottom="12dp" />
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="6dp"
+                        android:paddingBottom="6dp"
+                        android:entries="@array/auto_commit_labels" />
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <!-- 選項 section -->
+            <LinearLayout
+                android:id="@+id/section_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/im_detail_section_options"
+                    android:textSize="13sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:paddingStart="4dp"
+                    android:layout_marginBottom="6dp" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    app:cardElevation="0dp"
+                    app:cardCornerRadius="10dp"
+                    app:strokeWidth="0dp">
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/switch_backup_on_delete"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/im_detail_backup_on_delete" />
+                        android:text="@string/im_detail_backup_on_delete"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"
+                        android:paddingTop="12dp"
+                        android:paddingBottom="12dp" />
 
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
 
-            <!-- 移除輸入法 button -->
+            <!-- 移除輸入法 button (borderless red text, centered) -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_remove_im"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                style="?attr/borderlessButtonStyle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="@string/im_detail_remove_im" />
+                android:text="@string/im_detail_remove_im"
+                android:textAllCaps="false"
+                android:textColor="@color/setup_status_fg_red"
+                android:gravity="center" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

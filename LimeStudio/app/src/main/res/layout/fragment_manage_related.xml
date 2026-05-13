@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -16,78 +16,72 @@
             android:id="@+id/manage_related_toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            android:title="@string/im_related_label"
             app:navigationIcon="@drawable/ic_arrow_back"
             app:titleTextColor="?android:attr/textColorPrimary"
             app:navigationIconTint="?android:attr/textColorSecondary" />
 
         <LinearLayout
             android:orientation="vertical"
-            android:padding="5dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="4dp"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1">
 
-            <LinearLayout
-                android:orientation="horizontal"
-                android:layout_height="wrap_content"
-                android:layout_width="match_parent">
-
-                <EditText
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:id="@+id/edtManageRelatedSearch"
-                    android:layout_column="2"
-                    android:layout_weight="1" />
-
-                <Button
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/manage_related_search"
-                    android:id="@+id/btnManageRelatedSearch"
-                    android:layout_column="11"
-                    android:textStyle="bold" />
-
-                <Button
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/manage_related_add"
-                    android:id="@+id/btnManageRelatedAdd"
-                    android:layout_column="11"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <Space
+            <TextView
+                android:id="@+id/tv_related_label_heading"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_gravity="center_horizontal"
-                android:layout_marginTop="5dp"
-                android:layout_marginBottom="5dp" />
+                android:textSize="28sp"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:text="@string/manage_related_title" />
+
+            <EditText
+                android:id="@+id/edtManageRelatedSearch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/manage_related_search"
+                android:drawableStart="@android:drawable/ic_menu_search"
+                android:drawablePadding="8dp"
+                android:inputType="text"
+                android:imeOptions="actionSearch"
+                android:background="@drawable/search_bar_bg"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="8dp" />
 
             <androidx.recyclerview.widget.RecyclerView
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="0dp"
+                android:layout_weight="1"
                 android:id="@+id/gridManageRelated"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
                 android:clipToPadding="false" />
 
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/pagination_bar"
             android:orientation="horizontal"
             android:layout_height="wrap_content"
             android:layout_width="match_parent">
 
             <Button
+                style="?attr/borderlessButtonStyle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/manage_related_previous"
                 android:id="@+id/btnManageRelatedPrevious"
-                android:layout_margin="2dp"
-                android:paddingRight="10dp"
-                android:paddingLeft="10dp"
-                android:textStyle="bold" />
+                android:textColor="@color/material_blue"
+                android:textAllCaps="false"
+                android:paddingRight="12dp"
+                android:paddingLeft="12dp" />
 
 
             <TextView
@@ -96,19 +90,20 @@
                 android:textAppearance="?android:attr/textAppearanceMedium"
                 android:text="0"
                 android:id="@+id/txtNavigationInfo"
-                android:textSize="8pt"
+                android:textSize="13sp"
                 android:gravity="center_horizontal"
                 android:layout_weight="1" />
 
             <Button
+                style="?attr/borderlessButtonStyle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/manage_related_next"
                 android:id="@+id/btnManageRelatedNext"
-                android:layout_margin="2dp"
-                android:paddingLeft="10dp"
-                android:paddingRight="10dp"
-                android:textStyle="bold" />
+                android:textColor="@color/material_blue"
+                android:textAllCaps="false"
+                android:paddingLeft="12dp"
+                android:paddingRight="12dp" />
 
         </LinearLayout>
 

@@ -32,20 +32,19 @@ import android.os.Looper;
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
-import androidx.fragment.app.FragmentTransaction;
-import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.inputmethod.InputMethodManager;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.ToggleButton;
 import android.util.Log;
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.button.MaterialButtonToggleGroup;
 
 import net.toload.main.hd.data.Record;
 import net.toload.main.hd.global.LIME;
@@ -83,12 +82,9 @@ public class ManageImFragment extends Fragment implements ManageImView {
     private ManageImController manageImController;
     private RecyclerView gridManageIm;
 
-    private Button btnManageImKeyboard;
-    private Button btnManageImSearch;
     private Button btnManageImPrevious;
     private Button btnManageImNext;
 
-    private EditText edtManageImSearch;
     private TextView txtNavigationInfo;
 
     private List<Record> wordlist;
@@ -136,6 +132,18 @@ public class ManageImFragment extends Fragment implements ManageImView {
                     parent.getChildFragmentManager().popBackStack();
                 }
             });
+
+            toolbar.inflateMenu(R.menu.menu_manage_im);
+
+            toolbar.setOnMenuItemClickListener(item -> {
+                if (item.getItemId() == R.id.action_manage_im_add) {
+                    ManageImAddSheet sheet = ManageImAddSheet.newInstance();
+                    sheet.setFragment(this);
+                    sheet.show(getParentFragmentManager(), "addsheet");
+                    return true;
+                }
+                return false;
+            });
         }
 
         // Handle system back gesture and hardware back button.
@@ -166,8 +174,27 @@ public class ManageImFragment extends Fragment implements ManageImView {
             Log.w(TAG, "Activity is not LIMESettings; ManageImController unavailable");
         }
 
+        // Push pagination bar above the activity's BottomNavigationView so it isn't clipped
+        View paginationBar = rootView.findViewById(R.id.pagination_bar);
+        View bottomNav = requireActivity().findViewById(R.id.main_bottom_nav);
+        if (paginationBar != null && bottomNav != null) {
+            bottomNav.post(() -> {
+                int navHeight = bottomNav.getHeight();
+                if (navHeight > 0 && paginationBar.getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
+                    ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) paginationBar.getLayoutParams();
+                    lp.bottomMargin = navHeight;
+                    paginationBar.setLayoutParams(lp);
+                }
+            });
+        }
+
         this.gridManageIm = rootView.findViewById(R.id.gridManageIm);
-        this.gridManageIm.setLayoutManager(new GridLayoutManager(activity, 2));
+        // TODO: add ItemTouchHelper for swipe-to-edit / swipe-to-delete (future pass)
+        androidx.recyclerview.widget.LinearLayoutManager lm =
+                new androidx.recyclerview.widget.LinearLayoutManager(activity);
+        this.gridManageIm.setLayoutManager(lm);
+        this.gridManageIm.addItemDecoration(
+                new androidx.recyclerview.widget.DividerItemDecoration(activity, lm.getOrientation()));
         this.adapter = new ManageImAdapter();
         this.adapter.setOnItemClickListener((record, position) -> {
             ManageImEditSheet sheet = ManageImEditSheet.newInstance();
@@ -176,34 +203,30 @@ public class ManageImFragment extends Fragment implements ManageImView {
         });
         this.gridManageIm.setAdapter(this.adapter);
 
-        Button btnManageImAdd = rootView.findViewById(R.id.btnManageImAdd);
-        btnManageImAdd.setOnClickListener(v -> {
-            ManageImAddSheet sheet = ManageImAddSheet.newInstance();
-            sheet.setFragment(this);
-            sheet.show(getParentFragmentManager(), "addsheet");
+        // Large heading below toolbar
+        TextView tvImLabelHeading = rootView.findViewById(R.id.tv_im_label_heading);
+
+        // Segmented control: 字根 / 文字
+        MaterialButtonToggleGroup toggleGroupManageIm = rootView.findViewById(R.id.toggleGroupManageIm);
+        toggleGroupManageIm.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
+            if (isChecked) {
+                searchroot = (checkedId == R.id.btnFilterCode);
+                total = 0;
+                prequery = "";
+                searchword(null);
+            }
         });
 
-        this.btnManageImKeyboard = rootView.findViewById(R.id.btnManageImKeyboard);
-        if(table != null && table.equals(LIME.IM_HS)){
-            this.btnManageImKeyboard.setEnabled(false);
-        }else{
-            this.btnManageImKeyboard.setOnClickListener(v -> {
-                FragmentTransaction ft = getParentFragmentManager().beginTransaction();
-                ManageImKeyboardDialog dialog = ManageImKeyboardDialog.newInstance();
-                dialog.setFragment(this, table);
-                dialog.show(ft, "keyboarddialog");
-            });
-        }
-
-        ToggleButton toggleManageIm = rootView.findViewById(R.id.toggleManageIm);
-        toggleManageIm.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            searchroot = !isChecked;
-            total = 0;
-            prequery = "";
-            edtManageImSearch.setText("");
-            searchword(null);
-            searchreset = false;
-            btnManageImSearch.setText(getResources().getText(R.string.manage_im_search));
+        // Inline search bar
+        EditText edtManageImSearch = rootView.findViewById(R.id.edtManageImSearch);
+        edtManageImSearch.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) {
+                String q = s != null ? s.toString().trim() : "";
+                page = 0;
+                searchword(q.isEmpty() ? null : q);
+            }
         });
 
         this.btnManageImNext = rootView.findViewById(R.id.btnManageImNext);
@@ -226,60 +249,16 @@ public class ManageImFragment extends Fragment implements ManageImView {
 
         });
 
-        this.edtManageImSearch = rootView.findViewById(R.id.edtManageImSearch);
-        this.edtManageImSearch.setOnClickListener(v -> {
-            searchreset = false;
-            btnManageImSearch.setText(getResources().getText(R.string.manage_im_search));
-        });
-        this.edtManageImSearch.setOnFocusChangeListener((v, hasFocus) -> {
-            if (!hasFocus) {
-                InputMethodManager imm = (InputMethodManager) requireActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
-                imm.hideSoftInputFromWindow(edtManageImSearch.getWindowToken(), 0);
-            }
-        });
-
-        this.btnManageImSearch = rootView.findViewById(R.id.btnManageImSearch);
-        this.btnManageImSearch.setOnClickListener(v -> {
-            if (!searchreset) {
-                String query = edtManageImSearch.getText().toString();
-                // hide the soft keyboard before search Jeremy 15,6,4
-                InputMethodManager imm = (InputMethodManager) requireActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
-                imm.hideSoftInputFromWindow(edtManageImSearch.getWindowToken(), 0);
-                if (!query.isEmpty() && (prequery == null || !prequery.equals(query) || !searchreset)) {
-                    query = query.trim();
-                    searchword(query);
-
-                }
-                searchreset = true;
-                btnManageImSearch.setText(getResources().getText(R.string.manage_im_reset));
-            } else {
-                total = 0;
-                searchword(null);
-                edtManageImSearch.setText("");
-                searchreset = false;
-                btnManageImSearch.setText(getResources().getText(R.string.manage_im_search));
-            }
-        });
-
         this.txtNavigationInfo = rootView.findViewById(R.id.txtNavigationInfo);
 
         // initial imConfigFullNamelist via controller
         List<ImConfig> imConfigFullNamelist = (manageImController != null) ? manageImController.getImConfigFullNameList() : new ArrayList<>();
 
-        // UpdateKeyboard display — show the IM's currently configured keyboard
-        // description (e.g. "LIME+數字列鍵盤"), NOT the IM's full name.
-        // Previously this iterated `getImConfigFullNameList()` (title='name' rows)
-        // and surfaced the IM full name (e.g. "拼音輸入法", "大易輸入法") which was
-        // wrong for every IM on first open.
-        Keyboard currentKb = (manageImController != null) ? manageImController.getCurrentKeyboard(table) : null;
-        if (currentKb != null) {
-            btnManageImKeyboard.setText(currentKb.getDesc());
-        } else {
-            // Fallback: if no keyboard is configured for this IM, fall back to the
-            // IM full name to preserve a non-empty button label.
+        // Set large heading to the IM's display name (toolbar title stays empty)
+        if (tvImLabelHeading != null && table != null) {
             for (ImConfig imConfig : imConfigFullNamelist) {
                 if (imConfig.getCode().equals(table)) {
-                    btnManageImKeyboard.setText(imConfig.getDesc());
+                    tvImLabelHeading.setText(imConfig.getDesc());
                     break;
                 }
             }
@@ -374,10 +353,12 @@ public class ManageImFragment extends Fragment implements ManageImView {
             Toast.makeText(activity, R.string.no_search_result, Toast.LENGTH_SHORT).show();
         }
 
-        String nav = "0";
-        if (total > 0) {
-            nav = LIME.format(startrecord + 1) + "-" + LIME.format(endrecord) + " of " + LIME.format(total);
-        }
+        int totalPages = (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT;
+        if (totalPages < 1) totalPages = 1;
+        String nav = ("第 " + (page + 1) + " / "
+                + ((total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT == 0 ? 1
+                        : (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT)
+                + " 頁 · " + String.format(java.util.Locale.US, "%,d", total) + " 筆");
 
         Log.i(TAG, "updateGridView(): total=" + total + ", page=" + page + ", start=" + startrecord + ", end=" + endrecord + ", wordlistSize=" + (this.wordlist == null ? 0 : this.wordlist.size()));
         this.txtNavigationInfo.setText(nav);
@@ -419,7 +400,6 @@ public class ManageImFragment extends Fragment implements ManageImView {
         for(Keyboard k: keyboardlist){
             if(k.getCode().equals(keyboard)){
                 if (manageImController != null) manageImController.setIMKeyboard(table, k);
-                btnManageImKeyboard.setText(k.getDesc());
             }
         }
     }
@@ -467,12 +447,13 @@ public class ManageImFragment extends Fragment implements ManageImView {
     @Override
     public void updateRecordCount(int count) {
         this.total = count;
-        //updateNavigationInfo();
         if (txtNavigationInfo != null) {
-            int startRecord = LIME.IM_MANAGE_DISPLAY_AMOUNT * page;
-            int endRecord = Math.min(LIME.IM_MANAGE_DISPLAY_AMOUNT * (page + 1), total);
-            txtNavigationInfo.setText(getResources().getString(R.string.manage_im_navigation_info,
-                    startRecord + 1, endRecord, total));
+            int totalPages = (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT;
+            if (totalPages < 1) totalPages = 1;
+            txtNavigationInfo.setText(("第 " + (page + 1) + " / "
+                + ((total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT == 0 ? 1
+                        : (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT)
+                + " 頁 · " + String.format(java.util.Locale.US, "%,d", total) + " 筆"));
         }
     }
 

@@ -96,10 +96,17 @@ public class ManageImEditSheet extends BottomSheetDialogFragment {
         });
 
         view.findViewById(R.id.btn_delete).setOnClickListener(v -> {
-            if (hostFragment != null && record != null) {
-                hostFragment.removeRecord(record.getIdAsInt());
-            }
-            dismiss();
+            new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle(R.string.dialog_delete_title)
+                .setMessage(R.string.dialog_delete_message)
+                .setPositiveButton(R.string.dialog_confirm, (d, w) -> {
+                    if (hostFragment != null && record != null) {
+                        hostFragment.removeRecord(record.getIdAsInt());
+                    }
+                    dismiss();
+                })
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .show();
         });
 
         view.findViewById(R.id.btn_save).setOnClickListener(v -> {
@@ -109,10 +116,17 @@ public class ManageImEditSheet extends BottomSheetDialogFragment {
                 Toast.makeText(requireContext(), R.string.update_error, Toast.LENGTH_SHORT).show();
                 return;
             }
-            if (hostFragment != null && record != null) {
-                hostFragment.updateRecord(record.getIdAsInt(), code, score, word);
-            }
-            dismiss();
+            new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle(R.string.dialog_update_title)
+                .setMessage(R.string.dialog_update_message)
+                .setPositiveButton(R.string.dialog_confirm, (d, w) -> {
+                    if (hostFragment != null && record != null) {
+                        hostFragment.updateRecord(record.getIdAsInt(), code, score, word);
+                    }
+                    dismiss();
+                })
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .show();
         });
     }
 

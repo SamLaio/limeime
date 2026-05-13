@@ -201,9 +201,11 @@ public class DbManagerFragment extends Fragment {
     private void performBackup(Uri uri) {
         try {
             if (setupImController != null) setupImController.performBackup(uri);
+            runOnUi(() -> setStatus(getString(R.string.db_status_backup_ok)));
         } catch (Exception e) {
             Log.e(TAG, "Failed to backup database", e);
             showToastMessage(getString(R.string.l3_initial_backup_error), Toast.LENGTH_LONG);
+            runOnUi(() -> setStatus(getString(R.string.db_status_backup_fail, e.getMessage() != null ? e.getMessage() : "unknown")));
         }
     }
 
@@ -252,9 +254,11 @@ public class DbManagerFragment extends Fragment {
     private void performRestore(Uri uri) {
         try {
             if (setupImController != null) setupImController.performRestore(uri);
+            runOnUi(() -> setStatus(getString(R.string.db_status_restore_ok)));
         } catch (Exception e) {
             Log.e(TAG, "Failed to restore database", e);
             showToastMessage(getString(R.string.l3_initial_restore_error), Toast.LENGTH_LONG);
+            runOnUi(() -> setStatus(getString(R.string.db_status_restore_fail, e.getMessage() != null ? e.getMessage() : "unknown")));
         }
     }
 
@@ -267,7 +271,10 @@ public class DbManagerFragment extends Fragment {
                 .setMessage(R.string.l3_restore_default_confirm)
                 .setCancelable(false)
                 .setPositiveButton(R.string.dialog_confirm, (d, w) -> {
-                    if (setupImController != null) setupImController.restoredToDefault();
+                    if (setupImController != null) {
+                        setupImController.restoredToDefault();
+                        setStatus(getString(R.string.db_status_default_ok));
+                    }
                 })
                 .setNegativeButton(R.string.dialog_cancel, (d, w) -> {})
                 .show();
@@ -313,6 +320,11 @@ public class DbManagerFragment extends Fragment {
         super.onDestroyView();
         activity = null;
         setupImController = null;
+    }
+
+    private void setStatus(String message) {
+        if (dbStatusCard != null) dbStatusCard.setVisibility(android.view.View.VISIBLE);
+        if (dbStatusText != null) dbStatusText.setText(message);
     }
 
     private void showToastMessage(String msg, int length) {

@@ -39,7 +39,9 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.PreferenceGroup;
 
 import net.toload.main.hd.R;
 import net.toload.main.hd.SearchServer;
@@ -155,8 +157,12 @@ public class LIMEPreference extends AppCompatActivity {
 		private LIMEPreferenceManager mLIMEPref = null;
 		@Override
 		public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
-			// Load the preferences from an XML resource
-			addPreferencesFromResource(R.xml.preference);
+			// Load the preferences from an XML resource (scoped to rootKey for nested PreferenceScreen drill-down)
+			setPreferencesFromResource(R.xml.preference, rootKey);
+
+			// Remove the reserved icon space so rows aren't indented (iconSpaceReserved on
+			// the XML root doesn't cascade — apply it recursively to every Preference).
+			disableIconSpaceReserved(getPreferenceScreen());
 
 			if (ctx == null) {
 				ctx = requireActivity().getApplicationContext();
@@ -192,6 +198,46 @@ public class LIMEPreference extends AppCompatActivity {
 		}
 
 	
+
+		@Override
+		public void onNavigateToScreen(androidx.preference.PreferenceScreen preferenceScreen) {
+			android.util.Log.d(TAG, "onNavigateToScreen: " + preferenceScreen.getKey());
+			navigateToNested(preferenceScreen.getKey());
+		}
+
+		@Override
+		public boolean onPreferenceTreeClick(androidx.preference.Preference preference) {
+			if (preference instanceof androidx.preference.PreferenceScreen) {
+				android.util.Log.d(TAG, "onPreferenceTreeClick PreferenceScreen: " + preference.getKey());
+				navigateToNested(preference.getKey());
+				return true;
+			}
+			return super.onPreferenceTreeClick(preference);
+		}
+
+		private void disableIconSpaceReserved(PreferenceGroup group) {
+			if (group == null) return;
+			group.setIconSpaceReserved(false);
+			for (int i = 0; i < group.getPreferenceCount(); i++) {
+				Preference p = group.getPreference(i);
+				p.setIconSpaceReserved(false);
+				if (p instanceof PreferenceGroup) {
+					disableIconSpaceReserved((PreferenceGroup) p);
+				}
+			}
+		}
+
+		private void navigateToNested(String rootKey) {
+			PrefsFragment newFragment = new PrefsFragment();
+			Bundle args = new Bundle();
+			args.putString(PreferenceFragmentCompat.ARG_PREFERENCE_ROOT, rootKey);
+			newFragment.setArguments(args);
+			androidx.fragment.app.FragmentManager fm = getParentFragmentManager();
+			fm.beginTransaction()
+					.replace(net.toload.main.hd.R.id.lime_preference_host, newFragment)
+					.addToBackStack(null)
+					.commit();
+		}
 
 		@Override
 		public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {

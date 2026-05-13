@@ -75,10 +75,12 @@ public class ManageRelatedEditSheet extends BottomSheetDialogFragment {
         super.onViewCreated(view, savedInstanceState);
 
         TextInputEditText edtWord = view.findViewById(R.id.edt_word);
+        TextInputEditText edtRelated = view.findViewById(R.id.edt_related);
         TextView tvScore = view.findViewById(R.id.tv_score);
 
         if (related != null) {
-            edtWord.setText(related.getPword() + related.getCword());
+            edtWord.setText(related.getPword());
+            edtRelated.setText(related.getCword());
             tvScore.setText(String.valueOf(score));
         }
 
@@ -94,24 +96,37 @@ public class ManageRelatedEditSheet extends BottomSheetDialogFragment {
         });
 
         view.findViewById(R.id.btn_delete).setOnClickListener(v -> {
-            if (hostFragment != null && related != null) {
-                hostFragment.removeRelated(related.getIdAsInt());
-            }
-            dismiss();
+            new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle(R.string.dialog_delete_title)
+                .setMessage(R.string.dialog_delete_message)
+                .setPositiveButton(R.string.dialog_confirm, (d, w) -> {
+                    if (hostFragment != null && related != null) {
+                        hostFragment.removeRelated(related.getIdAsInt());
+                    }
+                    dismiss();
+                })
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .show();
         });
 
         view.findViewById(R.id.btn_save).setOnClickListener(v -> {
-            String source = edtWord.getText() != null ? edtWord.getText().toString().trim() : "";
-            if (source.length() < 2) {
+            String pword = edtWord.getText() != null ? edtWord.getText().toString().trim() : "";
+            String cword = edtRelated.getText() != null ? edtRelated.getText().toString().trim() : "";
+            if (pword.isEmpty() || cword.isEmpty()) {
                 Toast.makeText(requireContext(), R.string.update_error, Toast.LENGTH_SHORT).show();
                 return;
             }
-            String pword = source.substring(0, 1);
-            String cword = source.substring(1);
-            if (hostFragment != null && related != null) {
-                hostFragment.updateRelated(related.getIdAsInt(), pword, cword, score);
-            }
-            dismiss();
+            new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle(R.string.dialog_update_title)
+                .setMessage(R.string.dialog_update_message)
+                .setPositiveButton(R.string.dialog_confirm, (d, w) -> {
+                    if (hostFragment != null && related != null) {
+                        hostFragment.updateRelated(related.getIdAsInt(), pword, cword, score);
+                    }
+                    dismiss();
+                })
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .show();
         });
     }
 

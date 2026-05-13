@@ -8,9 +8,13 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
+import android.widget.Spinner;
 import android.widget.TextView;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -48,6 +52,7 @@ public class ImDetailFragment extends Fragment {
 
     private TextView tvImName;
     private TextView tvImRecords;
+    private TextView txtImVersion;
     private TextView tvKeyboardValue;
 
     public static ImDetailFragment newInstance(ImConfig im) {
@@ -82,18 +87,38 @@ public class ImDetailFragment extends Fragment {
 
         View rootView = inflater.inflate(R.layout.fragment_im_detail, container, false);
 
-        // Toolbar with back navigation
+        // Toolbar with back navigation (title is rendered by tv_im_detail_heading below)
         MaterialToolbar toolbar = rootView.findViewById(R.id.im_detail_toolbar);
-        toolbar.setTitle(imDesc != null ? imDesc : "");
+        toolbar.setClickable(true);
+        toolbar.setFocusable(true);
+        toolbar.setTitle("");
+
+        TextView tvHeading = rootView.findViewById(R.id.tv_im_detail_heading);
+        if (tvHeading != null) {
+            tvHeading.setText(imDesc != null ? imDesc : "");
+        }
         toolbar.setNavigationOnClickListener(v -> {
             Fragment host = getParentFragment();
             if (host != null) {
                 host.getChildFragmentManager().popBackStack();
             }
         });
+        // Also register OnBackPressedCallback because SlidingPaneLayout may intercept toolbar taps
+        requireActivity().getOnBackPressedDispatcher().addCallback(
+                getViewLifecycleOwner(),
+                new OnBackPressedCallback(true) {
+                    @Override
+                    public void handleOnBackPressed() {
+                        Fragment host = getParentFragment();
+                        if (host != null) {
+                            host.getChildFragmentManager().popBackStack();
+                        }
+                    }
+                });
 
         tvImName = rootView.findViewById(R.id.tv_im_name);
         tvImRecords = rootView.findViewById(R.id.tv_im_records);
+        txtImVersion = rootView.findViewById(R.id.txtImVersion);
         tvKeyboardValue = rootView.findViewById(R.id.tv_keyboard_value);
 
         if (imDesc != null) {
@@ -104,21 +129,44 @@ public class ImDetailFragment extends Fragment {
         LinearLayout rowKeyboard = rootView.findViewById(R.id.row_keyboard);
         rowKeyboard.setOnClickListener(v -> showKeyboardPicker());
 
-        // 字根資料表 row click -> navigate to ManageImFragment
+        final boolean isRelated = "related".equals(tableCode);
+
+        // 字根資料表 row click -> navigate to ManageImFragment (or ManageRelatedFragment for the synthetic 聯想詞庫 row)
         LinearLayout rowManageTable = rootView.findViewById(R.id.row_manage_table);
         rowManageTable.setOnClickListener(v -> {
             Fragment parent = getParentFragment();
             if (parent instanceof TwoPaneHostFragment && tableCode != null) {
-                ((TwoPaneHostFragment) parent).navigateToDetail(
-                        ManageImFragment.newInstance(1, tableCode));
+                if (isRelated) {
+                    ((TwoPaneHostFragment) parent).navigateToDetail(
+                            ManageRelatedFragment.newInstance(1));
+                } else {
+                    ((TwoPaneHostFragment) parent).navigateToDetail(
+                            ManageImFragment.newInstance(1, tableCode));
+                }
             }
         });
 
-        // 備份選項 switch - bound to SharedPreferences
+        // Apply related-row variations: hide sections that don't apply, retext labels
+        if (isRelated) {
+            View sectionKeyboard = rootView.findViewById(R.id.section_keyboard);
+            View sectionOptions = rootView.findViewById(R.id.section_options);
+            View rowVersion = rootView.findViewById(R.id.row_version);
+            View dividerVersion = rootView.findViewById(R.id.divider_version);
+            TextView tvSectionTableLabel = rootView.findViewById(R.id.tv_section_table_label);
+            TextView tvManageTableLabel = rootView.findViewById(R.id.tv_manage_table_label);
+            if (sectionKeyboard != null) sectionKeyboard.setVisibility(View.GONE);
+            if (sectionOptions != null) sectionOptions.setVisibility(View.GONE);
+            if (rowVersion != null) rowVersion.setVisibility(View.GONE);
+            if (dividerVersion != null) dividerVersion.setVisibility(View.GONE);
+            if (tvSectionTableLabel != null) tvSectionTableLabel.setText(R.string.im_detail_section_related);
+            if (tvManageTableLabel != null) tvManageTableLabel.setText(R.string.im_detail_manage_related);
+        }
+
+        // 備份選項 switch - bound to SharedPreferences (skipped for related since options card is hidden)
         SwitchMaterial switchBackup = rootView.findViewById(R.id.switch_backup_on_delete);
-        if (tableCode != null) {
+        if (tableCode != null && !isRelated) {
             SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
-            boolean backupPref = prefs.getBoolean("backup_on_delete_" + tableCode, false);
+            boolean backupPref = prefs.getBoolean("backup_on_delete_" + tableCode, true);
             switchBackup.setChecked(backupPref);
             switchBackup.setOnCheckedChangeListener((btn, checked) ->
                     PreferenceManager.getDefaultSharedPreferences(requireContext())
@@ -127,15 +175,183 @@ public class ImDetailFragment extends Fragment {
                             .apply());
         }
 
-        // 移除輸入法 button
+        // Conditional sections based on tableCode
+        SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(requireContext());
+
+        if ("custom".equals(tableCode)) {
+            rootView.findViewById(R.id.section_custom_mapping).setVisibility(View.VISIBLE);
+            SwitchMaterial sNum = rootView.findViewById(R.id.switchAcceptNumberIndex);
+            SwitchMaterial sSym = rootView.findViewById(R.id.switchAcceptSymbolIndex);
+            sNum.setChecked(sp.getBoolean("accept_number_index", false));
+            sSym.setChecked(sp.getBoolean("accept_symbol_index", false));
+            sNum.setOnCheckedChangeListener((b, c) ->
+                    sp.edit().putBoolean("accept_number_index", c).apply());
+            sSym.setOnCheckedChangeListener((b, c) ->
+                    sp.edit().putBoolean("accept_symbol_index", c).apply());
+        }
+
+        if ("array10".equals(tableCode)) {
+            rootView.findViewById(R.id.section_array10).setVisibility(View.VISIBLE);
+            // TODO §7 backport — spinner wiring for auto_commit (full array-adapter binding)
+            Spinner spinnerAutoCommit = rootView.findViewById(R.id.spinnerAutoCommit);
+            String[] autoCommitLabels = getResources().getStringArray(R.array.auto_commit_labels);
+            String[] autoCommitValues = getResources().getStringArray(R.array.auto_commit_values);
+            ArrayAdapter<String> autoCommitAdapter = new ArrayAdapter<>(requireContext(),
+                    android.R.layout.simple_spinner_item, autoCommitLabels);
+            autoCommitAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spinnerAutoCommit.setAdapter(autoCommitAdapter);
+            String savedAutoCommit = sp.getString("auto_commit", "0");
+            for (int i = 0; i < autoCommitValues.length; i++) {
+                if (autoCommitValues[i].equals(savedAutoCommit)) {
+                    spinnerAutoCommit.setSelection(i);
+                    break;
+                }
+            }
+            final String[] autoCommitValuesFinal = autoCommitValues;
+            spinnerAutoCommit.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                @Override
+                public void onItemSelected(AdapterView<?> parent, View v, int pos, long id) {
+                    sp.edit().putString("auto_commit", autoCommitValuesFinal[pos]).apply();
+                }
+                @Override public void onNothingSelected(AdapterView<?> parent) {}
+            });
+        }
+
+        if ("phonetic".equals(tableCode)) {
+            rootView.findViewById(R.id.section_phonetic).setVisibility(View.VISIBLE);
+            // TODO §7 backport — spinner wiring for phonetic_keyboard_type
+            Spinner spinnerPhonetic = rootView.findViewById(R.id.spinnerPhoneticType);
+            String[] phoneticLabels = getResources().getStringArray(R.array.phonetic_keyboard_type);
+            String[] phoneticValues = getResources().getStringArray(R.array.phonetic_keyboard_type_values);
+            ArrayAdapter<String> phoneticAdapter = new ArrayAdapter<>(requireContext(),
+                    android.R.layout.simple_spinner_item, phoneticLabels);
+            phoneticAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spinnerPhonetic.setAdapter(phoneticAdapter);
+            String savedPhonetic = sp.getString("phonetic_keyboard_type", "standard");
+            for (int i = 0; i < phoneticValues.length; i++) {
+                if (phoneticValues[i].equals(savedPhonetic)) {
+                    spinnerPhonetic.setSelection(i);
+                    break;
+                }
+            }
+            final String[] phoneticValuesFinal = phoneticValues;
+            spinnerPhonetic.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+                @Override
+                public void onItemSelected(AdapterView<?> parent, View v, int pos, long id) {
+                    String newType = phoneticValuesFinal[pos];
+                    String oldType = sp.getString("phonetic_keyboard_type", "standard");
+                    sp.edit().putString("phonetic_keyboard_type", newType).apply();
+                    if (!newType.equals(oldType)) {
+                        applyPhoneticKeyboardType(newType);
+                    }
+                }
+                @Override public void onNothingSelected(AdapterView<?> parent) {}
+            });
+        }
+
+        // 移除輸入法 button (also available for related — lets users clear and reload their own table)
         MaterialButton btnRemove = rootView.findViewById(R.id.btn_remove_im);
         btnRemove.setOnClickListener(v -> showRemoveConfirmDialog());
+
+        // Load version from SharedPreferences
+        if (tableCode != null) {
+            android.content.SharedPreferences versionSp = androidx.preference.PreferenceManager.getDefaultSharedPreferences(requireContext());
+            String version = versionSp.getString(tableCode + "mapping_version", "-");
+            if (version == null || version.isEmpty()) version = "-";
+            if (txtImVersion != null) txtImVersion.setText(version);
+        }
+
+        // Share button (plain ImageButton overlaying toolbar — direct click handler)
+        android.widget.ImageButton btnShare = rootView.findViewById(R.id.btn_im_share);
+        if (btnShare != null) {
+            btnShare.setClickable(true);
+            btnShare.setFocusable(true);
+            btnShare.bringToFront();
+            btnShare.setOnClickListener(v -> showShareFormatDialog());
+        }
 
         // Load async data
         loadRecordCount();
         loadCurrentKeyboard();
 
         return rootView;
+    }
+
+    /**
+     * Apply a phonetic_keyboard_type change to the `im` table — mirrors the
+     * LIMEPreference.onSharedPreferenceChanged logic so the soft-keyboard layout
+     * follows the picker selection. Also refreshes the 鍵盤布局 row UI.
+     */
+    private void applyPhoneticKeyboardType(String newType) {
+        final net.toload.main.hd.ui.controller.ManageImController ctrl = manageImController;
+        if (ctrl == null) return;
+        final net.toload.main.hd.SearchServer ss = ctrl.getSearchServer();
+        if (ss == null) return;
+        final boolean numberRow = androidx.preference.PreferenceManager
+                .getDefaultSharedPreferences(requireContext())
+                .getBoolean("number_row_in_english", false);
+        new Thread(() -> {
+            try {
+                net.toload.main.hd.data.Keyboard kb;
+                switch (newType) {
+                    case net.toload.main.hd.global.LIME.IM_PHONETIC_KEYBOARD_TYPE_ETEN:
+                        kb = ss.getKeyboardConfig("phoneticet41");
+                        break;
+                    case net.toload.main.hd.global.LIME.IM_PHONETIC_KEYBOARD_TYPE_ETEN26:
+                        kb = ss.getKeyboardConfig(numberRow ? "limenum" : "lime");
+                        break;
+                    case "eten26_symbol":
+                        kb = ss.getKeyboardConfig("et26");
+                        break;
+                    case net.toload.main.hd.global.LIME.IM_PHONETIC_KEYBOARD_HSU:
+                        kb = ss.getKeyboardConfig(numberRow ? "limenum" : "lime");
+                        break;
+                    case "hsu_symbol":
+                        kb = ss.getKeyboardConfig(net.toload.main.hd.global.LIME.IM_PHONETIC_KEYBOARD_HSU);
+                        break;
+                    case net.toload.main.hd.global.LIME.IM_PHONETIC_STANDARD:
+                    default:
+                        kb = ss.getKeyboardConfig("phonetic");
+                        break;
+                }
+                if (kb != null) {
+                    ss.setIMKeyboard("phonetic", kb.getDesc(), kb.getCode());
+                    final net.toload.main.hd.data.Keyboard kbFinal = kb;
+                    if (activity != null) {
+                        activity.runOnUiThread(() -> {
+                            if (tvKeyboardValue != null) {
+                                tvKeyboardValue.setText(kbFinal.getDesc());
+                            }
+                        });
+                    }
+                }
+            } catch (Exception e) {
+                android.util.Log.e("ImDetailFragment", "applyPhoneticKeyboardType failed", e);
+            }
+        }).start();
+    }
+
+    private void showShareFormatDialog() {
+        if (tableCode == null) return;
+        android.app.Activity act = requireActivity();
+        if (!(act instanceof LIMESettings)) return;
+        final net.toload.main.hd.ui.ShareManager shareManager = ((LIMESettings) act).getShareManager();
+        if (shareManager == null) return;
+
+        new android.app.AlertDialog.Builder(requireContext())
+                .setTitle(R.string.share_dialog_title)
+                .setItems(new CharSequence[] {
+                        getString(R.string.share_format_text),
+                        getString(R.string.share_format_database)
+                }, (d, which) -> {
+                    if (which == 0) {
+                        shareManager.shareImAsText(tableCode);
+                    } else {
+                        shareManager.exportAndShareImTable(tableCode);
+                    }
+                })
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .show();
     }
 
     private void loadRecordCount() {
@@ -211,10 +427,51 @@ public class ImDetailFragment extends Fragment {
         if (activity == null) return;
         new AlertDialog.Builder(activity)
                 .setMessage(R.string.im_detail_remove_confirm)
-                .setPositiveButton(android.R.string.ok, (dialog, which) ->
-                        android.widget.Toast.makeText(activity, "功能開發中",
-                                android.widget.Toast.LENGTH_SHORT).show())
-                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.dialog_confirm, (dialog, which) -> {
+                    if (manageImController != null && tableCode != null) {
+                        boolean backupLearning = false;
+                        View root = getView();
+                        if (root != null) {
+                            SwitchMaterial sw = root.findViewById(R.id.switch_backup_on_delete);
+                            backupLearning = sw != null && sw.isChecked();
+                        }
+                        net.toload.main.hd.SearchServer ss = manageImController.getSearchServer();
+                        final android.content.Context ctx = requireContext().getApplicationContext();
+                        final net.toload.main.hd.ui.controller.ManageImController ctrl = manageImController;
+                        final String tbl = tableCode;
+                        if (ss != null) {
+                            android.util.Log.i("ImDetailFragment", "Remove confirm: tbl=" + tbl);
+                            final Fragment parent = getParentFragment();
+                            // Run DB ops on background, THEN pop on main thread so IM List sees fresh data
+                            new Thread(() -> {
+                                ss.clearTable(tbl);
+                                ss.resetImConfig(tbl);
+                                java.util.List<net.toload.main.hd.data.ImConfig> imList =
+                                        ctrl.getImConfigFullNameList();
+                                android.util.Log.i("ImDetailFragment", "After resetImConfig, list size=" + (imList==null?0:imList.size()));
+                                new net.toload.main.hd.global.LIMEPreferenceManager(ctx)
+                                        .syncIMActivatedState(imList);
+                                if (parent != null && parent.getActivity() != null) {
+                                    parent.getActivity().runOnUiThread(() -> {
+                                        if (parent.isAdded()) {
+                                            parent.getChildFragmentManager().popBackStack();
+                                        }
+                                    });
+                                }
+                            }).start();
+                        } else {
+                            Fragment parent = getParentFragment();
+                            if (parent != null) {
+                                parent.getChildFragmentManager().popBackStack();
+                            }
+                        }
+                    } else {
+                        android.widget.Toast.makeText(getContext(),
+                                R.string.manage_im_error_no_controller,
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton(R.string.dialog_cancel, null)
                 .show();
     }
 
@@ -225,6 +482,7 @@ public class ImDetailFragment extends Fragment {
         manageImController = null;
         tvImName = null;
         tvImRecords = null;
+        txtImVersion = null;
         tvKeyboardValue = null;
     }
 }

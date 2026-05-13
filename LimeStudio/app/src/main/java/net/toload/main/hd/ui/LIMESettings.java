@@ -172,6 +172,11 @@ public class LIMESettings extends AppCompatActivity implements LIMESettingsView 
         // NOW inflate layout - fragments will find initialized controllers via getters
         setContentView(R.layout.activity_main);
 
+        // Hide the activity-level ActionBar so each fragment's MaterialToolbar
+        // becomes the sole top bar (prevents double-bar stacking).
+        androidx.appcompat.app.ActionBar ab = getSupportActionBar();
+        if (ab != null) ab.hide();
+
         // Setup edge-to-edge display
         setupEdgeToEdge();
 

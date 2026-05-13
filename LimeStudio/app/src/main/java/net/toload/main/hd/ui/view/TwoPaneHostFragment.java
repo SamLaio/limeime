@@ -44,6 +44,8 @@ public class TwoPaneHostFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
 
         slidingPaneLayout = view.findViewById(R.id.sliding_pane_layout);
+        // Disable swipe gestures so the SlidingPaneLayout doesn't intercept toolbar taps on the left edge
+        slidingPaneLayout.setLockMode(SlidingPaneLayout.LOCK_MODE_LOCKED);
 
         // Place ImListFragment in the list pane only on first create (avoid double-init on config change)
         if (savedInstanceState == null) {
@@ -83,10 +85,16 @@ public class TwoPaneHostFragment extends Fragment {
             }
         });
 
-        // Close the sliding pane (reveal list) when the detail back stack empties
+        // Close the sliding pane (reveal list) AND refresh the list when the detail back stack empties
         getChildFragmentManager().addOnBackStackChangedListener(() -> {
             if (getChildFragmentManager().getBackStackEntryCount() == 0) {
                 slidingPaneLayout.close();
+                // Find the list fragment and tell it to reload (SlidingPaneLayout keeps both
+                // panes resumed, so onResume on the list does not fire on pane-close)
+                Fragment listFragment = getChildFragmentManager().findFragmentById(R.id.im_list_pane);
+                if (listFragment instanceof ImListFragment) {
+                    ((ImListFragment) listFragment).refreshList();
+                }
             }
         });
     }

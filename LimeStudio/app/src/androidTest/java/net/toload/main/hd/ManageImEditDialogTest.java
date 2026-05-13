@@ -9,7 +9,7 @@ import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
 
 /**
- * Tests for ManageImEditDialog.
+ * Tests for ManageImEditSheet.
  */
 @RunWith(AndroidJUnit4.class)
 public class ManageImEditDialogTest {
@@ -17,22 +17,22 @@ public class ManageImEditDialogTest {
     @Test
     public void testManageImEditDialogClassExists() {
         try {
-            Class<?> cls = Class.forName("net.toload.main.hd.ui.dialog.ManageImEditDialog");
+            Class<?> cls = Class.forName("net.toload.main.hd.ui.dialog.ManageImEditSheet");
             assertNotNull(cls);
         } catch (ClassNotFoundException e) {
-            fail("ManageImEditDialog class not found");
+            fail("ManageImEditSheet class not found");
         }
     }
 
     @Test
     public void testValidationAndControllerUpdateApis() throws Exception {
-        Class<?> dialog = Class.forName("net.toload.main.hd.ui.dialog.ManageImEditDialog");
+        Class<?> dialog = Class.forName("net.toload.main.hd.ui.dialog.ManageImEditSheet");
         boolean hasValidation = false;
         for (java.lang.reflect.Method m : dialog.getDeclaredMethods()) {
             String n = m.getName().toLowerCase();
             if (n.contains("validate") || n.contains("check")) { hasValidation = true; break; }
         }
-        assertTrue("ManageImEditDialog should perform validation", hasValidation);
+        assertTrue("ManageImEditSheet should perform validation", hasValidation);
 
         Class<?> ctrl = Class.forName("net.toload.main.hd.ui.controller.ManageImController");
         boolean hasUpdate = false;

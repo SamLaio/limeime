@@ -93,16 +93,15 @@ public class ManageRelatedAdapter extends ListAdapter<Related, ManageRelatedAdap
         if (r != null) {
             String pword = r.getPword();
             String cword = r.getCword();
-            String text = pword + cword;
-
             int freq = r.getBasescore();
 
-            if (text.length() > 12) {
-                text = text.substring(0, 10) + "...";
+            if (cword != null && cword.length() > 10) {
+                cword = cword.substring(0, 10) + "...";
             }
 
-            holder.txtWord.setText(text);
-            holder.txtFreq.setText(activity.getString(R.string.number_format, freq));
+            holder.txtPword.setText(pword);
+            holder.txtWord.setText(cword);
+            holder.txtFreq.setText(String.format(java.util.Locale.US, "%,d", freq));
 
             holder.itemView.setOnClickListener(v -> {
                 if (onItemClickListener != null) {
@@ -113,11 +112,13 @@ public class ManageRelatedAdapter extends ListAdapter<Related, ManageRelatedAdap
     }
 
     static class ViewHolder extends RecyclerView.ViewHolder {
+        TextView txtPword;
         TextView txtWord;
         TextView txtFreq;
 
         ViewHolder(View itemView) {
             super(itemView);
+            txtPword = itemView.findViewById(R.id.txtPword);
             txtWord = itemView.findViewById(R.id.txtWord);
             txtFreq = itemView.findViewById(R.id.txtFreq);
         }

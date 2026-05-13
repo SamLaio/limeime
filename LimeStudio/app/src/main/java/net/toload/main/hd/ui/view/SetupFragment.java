@@ -37,6 +37,7 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -66,6 +67,10 @@ public class SetupFragment extends Fragment {
 
     private MaterialCardView statusCard;
     private TextView statusText;
+    private ImageView statusIcon;
+    private TextView setupHeading;
+    private TextView setupStep1Description;
+    private TextView setupStep2Description;
     private MaterialButton btnSystemSettings;
     private MaterialButton btnImePicker;
 
@@ -81,6 +86,10 @@ public class SetupFragment extends Fragment {
 
         statusCard = rootView.findViewById(R.id.statusCard);
         statusText = rootView.findViewById(R.id.statusText);
+        statusIcon = rootView.findViewById(R.id.statusIcon);
+        setupHeading = rootView.findViewById(R.id.setupHeading);
+        setupStep1Description = rootView.findViewById(R.id.setupStep1Description);
+        setupStep2Description = rootView.findViewById(R.id.setupStep2Description);
         btnSystemSettings = rootView.findViewById(R.id.btnSetupImSystemSetting);
         btnImePicker = rootView.findViewById(R.id.btnSetupImSystemIMPicker);
 
@@ -138,19 +147,40 @@ public class SetupFragment extends Fragment {
         boolean enabled = LIMEUtilities.isLIMEEnabled(ctx);
         boolean active = LIMEUtilities.isLIMEActive(ctx);
 
+        // Neutral subtle background; the state color is carried by icon + text (iOS parity)
+        statusCard.setCardBackgroundColor(ContextCompat.getColor(activity, R.color.setup_status_bg));
+
         if (enabled && active) {
-            statusCard.setCardBackgroundColor(ContextCompat.getColor(activity, R.color.setup_status_green));
+            int fg = ContextCompat.getColor(activity, R.color.setup_status_fg_green);
+            statusIcon.setImageResource(R.drawable.ic_status_check);
+            statusIcon.setColorFilter(fg);
+            statusText.setTextColor(fg);
             statusText.setText(R.string.setup_status_active);
+            setupHeading.setVisibility(View.GONE);
+            setupStep1Description.setVisibility(View.GONE);
+            setupStep2Description.setVisibility(View.GONE);
             btnSystemSettings.setVisibility(View.GONE);
             btnImePicker.setVisibility(View.GONE);
         } else if (enabled) {
-            statusCard.setCardBackgroundColor(ContextCompat.getColor(activity, R.color.setup_status_yellow));
+            int fg = ContextCompat.getColor(activity, R.color.setup_status_fg_yellow);
+            statusIcon.setImageResource(R.drawable.ic_status_warning);
+            statusIcon.setColorFilter(fg);
+            statusText.setTextColor(fg);
             statusText.setText(R.string.setup_status_enabled_not_active);
+            setupHeading.setVisibility(View.VISIBLE);
+            setupStep1Description.setVisibility(View.GONE);
+            setupStep2Description.setVisibility(View.VISIBLE);
             btnSystemSettings.setVisibility(View.GONE);
             btnImePicker.setVisibility(View.VISIBLE);
         } else {
-            statusCard.setCardBackgroundColor(ContextCompat.getColor(activity, R.color.setup_status_red));
+            int fg = ContextCompat.getColor(activity, R.color.setup_status_fg_red);
+            statusIcon.setImageResource(R.drawable.ic_status_error);
+            statusIcon.setColorFilter(fg);
+            statusText.setTextColor(fg);
             statusText.setText(R.string.setup_status_not_enabled);
+            setupHeading.setVisibility(View.VISIBLE);
+            setupStep1Description.setVisibility(View.VISIBLE);
+            setupStep2Description.setVisibility(View.GONE);
             btnSystemSettings.setVisibility(View.VISIBLE);
             btnImePicker.setVisibility(View.GONE);
         }

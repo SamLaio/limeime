@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <androidx.core.widget.NestedScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -37,93 +37,63 @@
 
         </LinearLayout>
 
-        <!-- Status Card -->
+        <!-- Status Card: neutral background; icon + text carry state color (iOS parity) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/statusCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardElevation="4dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/setup_status_bg"
             android:layout_marginBottom="16dp">
 
-            <TextView
-                android:id="@+id/statusText"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:padding="16dp"
-                android:textAppearance="?attr/textAppearanceBody2" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:padding="12dp">
+
+                <ImageView
+                    android:id="@+id/statusIcon"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@null"
+                    android:layout_marginEnd="10dp" />
+
+                <TextView
+                    android:id="@+id/statusText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textAppearance="?attr/textAppearanceBody2" />
+
+            </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Setup Title -->
+        <!-- Setup heading + step descriptions (restored from prior Android implementation) -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="設定 LimeIME"
-            android:textAppearance="?attr/textAppearanceHeadline6"
+            android:id="@+id/setupHeading"
+            android:textAppearance="?android:attr/textAppearanceLarge"
+            android:text="@string/setup_im_system_settings"
             android:layout_marginBottom="8dp" />
 
-        <!-- Setup Step List -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginBottom="16dp">
-
-            <!-- Step 1 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:paddingTop="8dp"
-                android:paddingBottom="8dp"
-                android:gravity="center_vertical">
-
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@drawable/ic_keyboard_outline"
-                    android:contentDescription="@null" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setup_step_enable_keyboard"
-                    android:layout_marginStart="12dp" />
-
-            </LinearLayout>
-
-            <!-- Step 2 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:paddingTop="8dp"
-                android:paddingBottom="8dp"
-                android:gravity="center_vertical">
-
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@drawable/ic_toggle_on_outline"
-                    android:contentDescription="@null" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/setup_step_switch_keyboard"
-                    android:layout_marginStart="12dp" />
-
-            </LinearLayout>
-
-        </LinearLayout>
-
-        <!-- Privacy Note -->
         <TextView
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/setup_im_privacy_note"
-            android:textAppearance="?attr/textAppearanceCaption"
-            android:layout_marginBottom="24dp" />
+            android:id="@+id/setupStep1Description"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:text="@string/setup_im_system_settings_description"
+            android:layout_marginBottom="5dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:id="@+id/setupStep2Description"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:text="@string/setup_im_system_impicker_description"
+            android:layout_marginBottom="16dp" />
 
         <!-- Button: System Settings -->
         <com.google.android.material.button.MaterialButton
@@ -147,8 +117,9 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:strokeWidth="1dp"
-            app:cardElevation="0dp">
+            app:strokeWidth="0dp"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/setup_status_bg">
 
             <LinearLayout
                 android:layout_width="match_parent"

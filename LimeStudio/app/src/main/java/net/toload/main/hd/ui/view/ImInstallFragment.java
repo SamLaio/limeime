@@ -204,7 +204,20 @@ public class ImInstallFragment extends Fragment {
             List<ImFamily> families = buildFamilyList();
             if (ctrl != null) {
                 for (ImFamily family : families) {
-                    family.isInstalled = ctrl.countRecords(family.tableName) > 0;
+                    // Check if the IM is registered in the `im` config table (matches IM List).
+                    // Bundled-DB record-count alone gives false positives for tables like 倉頡
+                    // that have seed records but were never registered as installed IMs.
+                    boolean inConfig = false;
+                    java.util.List<net.toload.main.hd.data.ImConfig> cfgList = ctrl.getImConfigFullNameList();
+                    if (cfgList != null) {
+                        for (net.toload.main.hd.data.ImConfig cfg : cfgList) {
+                            if (cfg != null && family.tableName.equals(cfg.getCode())) {
+                                inConfig = true;
+                                break;
+                            }
+                        }
+                    }
+                    family.isInstalled = inConfig;
                 }
             }
             if (act == null || rv == null) return;
@@ -442,10 +455,13 @@ public class ImInstallFragment extends Fragment {
         List<CloudVariant> pinyin = new ArrayList<>();
         pinyin.add(new CloudVariant(R.string.l3_im_download_from_pinyin_big5, "34,753", "730 KB",
                 LIME.DATABASE_CLOUD_IM_PINYIN));
+        pinyin.add(new CloudVariant(R.string.l3_im_download_from_pinyin_big5, "34,753", "730 KB",
+                LIME.DATABASE_CLOUD_IM_PINYINGB)); // TODO §2.3 — confirm URL and label with product
         list.add(new ImFamily(LIME.DB_TABLE_PINYIN, "拼音", pinyin, true, false, false,
                 R.drawable.ic_keyboard_outline));
 
         // 自建 (CUSTOM) — no restore switch, no cloud buttons
+        // TODO §2.3 — seedCustomIM verification: ensure seedCustomIM is invoked after successful custom-IM import
         list.add(new ImFamily(LIME.DB_TABLE_CUSTOM, "自建", new ArrayList<>(), false, false, true,
                 R.drawable.ic_add));
 
@@ -630,12 +646,24 @@ public class ImInstallFragment extends Fragment {
      * table, marks it installed, collapses its card, and refreshes just that item.
      * Must be called on the main thread.
      */
+    // TODO §2.3 — verify progress hookup: ensure ProgressManager show/hide is called around download and import operations
     private void onInstallComplete(String tableName) {
         if (!isAdded() || currentFamilies == null || adapter == null) return;
         final ManageImController ctrl = manageImController;
         if (ctrl == null) return;
         new Thread(() -> {
-            boolean installed = ctrl.countRecords(tableName) > 0;
+            // Same config-table check as buildFamilyList — record count alone misleads
+            boolean tmp = false;
+            java.util.List<net.toload.main.hd.data.ImConfig> cfgList = ctrl.getImConfigFullNameList();
+            if (cfgList != null) {
+                for (net.toload.main.hd.data.ImConfig cfg : cfgList) {
+                    if (cfg != null && tableName.equals(cfg.getCode())) {
+                        tmp = true;
+                        break;
+                    }
+                }
+            }
+            final boolean installed = tmp;
             Activity act = activity;
             if (act == null) return;
             act.runOnUiThread(() -> {

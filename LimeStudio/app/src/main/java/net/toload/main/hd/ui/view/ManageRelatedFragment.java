@@ -27,6 +27,8 @@ package net.toload.main.hd.ui.view;
 import android.app.Activity;
 import android.content.Context;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
@@ -34,8 +36,6 @@ import androidx.fragment.app.Fragment;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.inputmethod.InputMethodManager;
-import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import android.widget.Button;
 import android.widget.EditText;
@@ -79,11 +79,9 @@ public class ManageRelatedFragment extends Fragment implements ManageRelatedView
     private ManageImController manageImController;
     private RecyclerView gridManageRelated;
 
-    private Button btnManageRelatedSearch;
     private Button btnManageRelatedPrevious;
     private Button btnManageRelatedNext;
 
-    private EditText edtManageRelatedSearch;
     private TextView txtNavigationInfo;
 
     private List<Related> relatedlist;
@@ -126,6 +124,32 @@ public class ManageRelatedFragment extends Fragment implements ManageRelatedView
                     parent.getChildFragmentManager().popBackStack();
                 }
             });
+
+            toolbar.inflateMenu(R.menu.menu_manage_related);
+
+            toolbar.setOnMenuItemClickListener(item -> {
+                if (item.getItemId() == R.id.action_manage_related_add) {
+                    ManageRelatedAddSheet sheet = ManageRelatedAddSheet.newInstance();
+                    sheet.setFragment(this);
+                    sheet.show(getParentFragmentManager(), "addsheet");
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        // Inline search bar
+        EditText edtManageRelatedSearch = rootView.findViewById(R.id.edtManageRelatedSearch);
+        if (edtManageRelatedSearch != null) {
+            edtManageRelatedSearch.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+                @Override public void afterTextChanged(Editable s) {
+                    String q = s != null ? s.toString().trim() : "";
+                    page = 0;
+                    searchRelated(q.isEmpty() ? null : q);
+                }
+            });
         }
 
         // Handle system back gesture and hardware back button.
@@ -152,8 +176,26 @@ public class ManageRelatedFragment extends Fragment implements ManageRelatedView
         }
 
 
+        // Push pagination bar above the activity's BottomNavigationView so it isn't clipped
+        View paginationBar = rootView.findViewById(R.id.pagination_bar);
+        View bottomNav = requireActivity().findViewById(R.id.main_bottom_nav);
+        if (paginationBar != null && bottomNav != null) {
+            bottomNav.post(() -> {
+                int navHeight = bottomNav.getHeight();
+                if (navHeight > 0 && paginationBar.getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
+                    ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) paginationBar.getLayoutParams();
+                    lp.bottomMargin = navHeight;
+                    paginationBar.setLayoutParams(lp);
+                }
+            });
+        }
+
         this.gridManageRelated = rootView.findViewById(R.id.gridManageRelated);
-        this.gridManageRelated.setLayoutManager(new GridLayoutManager(activity, 2));
+        androidx.recyclerview.widget.LinearLayoutManager lm =
+                new androidx.recyclerview.widget.LinearLayoutManager(activity);
+        this.gridManageRelated.setLayoutManager(lm);
+        this.gridManageRelated.addItemDecoration(
+                new androidx.recyclerview.widget.DividerItemDecoration(activity, lm.getOrientation()));
         this.adapter = new ManageRelatedAdapter(activity);
         this.adapter.setOnItemClickListener((related, position) -> {
             ManageRelatedEditSheet sheet = ManageRelatedEditSheet.newInstance();
@@ -161,14 +203,6 @@ public class ManageRelatedFragment extends Fragment implements ManageRelatedView
             sheet.show(getParentFragmentManager(), "editsheet");
         });
         this.gridManageRelated.setAdapter(this.adapter);
-
-        Button btnManageRelatedAdd = rootView.findViewById(R.id.btnManageRelatedAdd);
-        btnManageRelatedAdd.setOnClickListener(v -> {
-            ManageRelatedAddSheet sheet = ManageRelatedAddSheet.newInstance();
-            sheet.setFragment(this);
-            sheet.show(getParentFragmentManager(), "addsheet");
-        });
-
 
         this.btnManageRelatedNext = rootView.findViewById(R.id.btnManageRelatedNext);
         this.btnManageRelatedNext.setEnabled(false);
@@ -190,40 +224,7 @@ public class ManageRelatedFragment extends Fragment implements ManageRelatedView
             //updateGridView(relatedlist);
         });
 
-        this.edtManageRelatedSearch = rootView.findViewById(R.id.edtManageRelatedSearch);
-        this.edtManageRelatedSearch.setOnClickListener(v -> {
-            searchReset = false;
-            btnManageRelatedSearch.setText(getResources().getText(R.string.manage_related_search));
-        });
-        this.edtManageRelatedSearch.setOnFocusChangeListener((v, hasFocus) -> {
-            if (!hasFocus) {
-                InputMethodManager imm = (InputMethodManager) requireActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
-                imm.hideSoftInputFromWindow(edtManageRelatedSearch.getWindowToken(), 0);
-            }
-        });
-
-        this.btnManageRelatedSearch = rootView.findViewById(R.id.btnManageRelatedSearch);
-        this.btnManageRelatedSearch.setOnClickListener(v -> {
-            if (!searchReset) {
-                String query = edtManageRelatedSearch.getText().toString();
-                // hide the soft keyboard before search Jeremy 15,6,4
-                InputMethodManager imm = (InputMethodManager) requireActivity().getSystemService(Context.INPUT_METHOD_SERVICE);
-                imm.hideSoftInputFromWindow(edtManageRelatedSearch.getWindowToken(), 0);
-                if (!query.isEmpty() && (preQuery == null || !preQuery.equals(query) || !searchReset)) {
-                    query = query.trim();
-                    searchRelated(query);
-                }
-                searchReset = true;
-                btnManageRelatedSearch.setText(getResources().getText(R.string.manage_related_reset));
-            } else {
-                total = 0;
-                searchRelated(null);
-                edtManageRelatedSearch.setText("");
-                searchReset = false;
-                btnManageRelatedSearch.setText(getResources().getText(R.string.manage_related_search));
-            }
-        });
-
+        // TODO: add ItemTouchHelper for swipe-to-edit / swipe-to-delete (future pass)
         this.txtNavigationInfo = rootView.findViewById(R.id.txtNavigationInfo);
 
         searchRelated(null);
@@ -294,10 +295,10 @@ public class ManageRelatedFragment extends Fragment implements ManageRelatedView
             Toast.makeText(activity, R.string.no_search_result, Toast.LENGTH_SHORT).show();
         }
 
-        String nav = "0";
-        if (total > 0) {
-            nav = LIME.format(startRecord + 1) + "-" + LIME.format(endRecord) + " of " + LIME.format(total);
-        }
+        int totalPages = (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT;
+        if (totalPages < 1) totalPages = 1;
+        String nav = "第 " + (page + 1) + " / " + totalPages + " 頁 · "
+                + String.format(java.util.Locale.US, "%,d", total) + " 筆";
 
         this.txtNavigationInfo.setText(nav);
     }
@@ -395,10 +396,10 @@ public class ManageRelatedFragment extends Fragment implements ManageRelatedView
     
     private void updateNavigationInfo() {
         if (txtNavigationInfo != null) {
-            int startrecord = LIME.IM_MANAGE_DISPLAY_AMOUNT * page;
-            int endrecord = Math.min(LIME.IM_MANAGE_DISPLAY_AMOUNT * (page + 1), total);
-            txtNavigationInfo.setText(getResources().getString(R.string.manage_related_navigation_info, 
-                startrecord + 1, endrecord, total));
+            int totalPages = (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT;
+            if (totalPages < 1) totalPages = 1;
+            txtNavigationInfo.setText("第 " + (page + 1) + " / " + totalPages + " 頁 · "
+                    + String.format(java.util.Locale.US, "%,d", total) + " 筆");
         }
     }
 

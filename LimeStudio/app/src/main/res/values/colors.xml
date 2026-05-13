@@ -108,9 +108,15 @@
     <color name="keyboard_background_semi_transparent">#E6FFFFFF</color>
 
     <!-- SetupFragment status card colors -->
+    <!-- Light tint backgrounds (legacy names kept for compatibility) -->
     <color name="setup_status_green">#C8E6C9</color>
     <color name="setup_status_yellow">#FFF9C4</color>
     <color name="setup_status_red">#FFCDD2</color>
+    <!-- iOS-style: neutral subtle background, color is carried in icon + text -->
+    <color name="setup_status_bg">#1F808080</color>
+    <color name="setup_status_fg_green">#2E7D32</color>
+    <color name="setup_status_fg_yellow">#EF6C00</color>
+    <color name="setup_status_fg_red">#C62828</color>
 
     <!-- Material blue for links and UI accent (tabs, FAB, buttons) -->
     <color name="material_blue">#FF2196F3</color>

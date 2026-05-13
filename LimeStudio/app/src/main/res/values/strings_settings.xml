@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!--
   ~ /*
   ~  *
@@ -815,6 +815,30 @@
     <string name="im_detail_remove_im">移除輸入法</string>
     <string name="im_detail_remove_confirm">確定要移除此輸入法的所有資料嗎？</string>
     <string name="im_related_label">聯想詞庫</string>
+    <string name="im_related_heading">關聯詞庫</string>
+    <string name="im_detail_section_related">聯想詞庫</string>
+    <string name="im_detail_manage_related">瀏覽 / 編輯聯想詞庫</string>
     <string name="im_detail_keyboard_picker_title">選擇鍵盤佈局</string>
+    <string name="im_detail_label_version">版本</string>
+    <string name="im_list_header_installed">已安裝的輸入法</string>
+    <string name="im_list_header_related">聯想詞庫</string>
+    <string name="db_status_backup_ok">✅ 備份完成</string>
+    <string name="db_status_restore_ok">✅ 還原完成</string>
+    <string name="db_status_default_ok">✅ 已還原預設資料庫</string>
+    <string name="db_status_backup_fail">❌ 備份失敗：%1\</string>
+    <string name="db_status_restore_fail">❌ 還原失敗：%1\</string>
+    <string name="im_reverse_lookup_screen_title">字根反查設定</string>
+    <string name="im_reverse_lookup_summary">輸入字根無候選字時，以其他輸入法字根標注說明。</string>
+    <string name="pref_section_appearance">鍵盤外觀</string>
+    <string name="pref_section_feedback">鍵盤回饋</string>
+    <string name="pref_section_font_display">字型與顯示</string>
+    <string name="pref_section_im_behaviour">輸入法行為</string>
+    <string name="pref_section_han_convert">漢字轉換</string>
+    <string name="pref_section_related_learning">關聯字與學習</string>
+    <string name="pref_section_english_dictionary">英文字典</string>
+    <string name="pref_section_advanced">進階</string>
+    <string name="pref_section_physical_keyboard">外接鍵盤</string>
 
+    <string name="share_format_text">.lime (文字)</string>
+    <string name="share_format_database">.limedb (資料庫)</string>
 </resources>

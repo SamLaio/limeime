@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 
 <!--
   ~ /*
@@ -25,13 +25,16 @@
   -->
 
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:key="lime_preference"
     android:summary="LIME Preference Configuration"
-    android:title="LIME Preference">
-    <PreferenceCategory xmlns:android="http://schemas.android.com/apk/res/android"
-        android:key="lime_keyboard"
-        android:summary=""
-        android:title="@string/keyboard">
+    android:title="LIME Preference"
+    app:iconSpaceReserved="false">
+
+    <!-- 1. 鍵盤外觀 -->
+    <PreferenceCategory
+        android:key="pref_section_appearance"
+        android:title="@string/pref_section_appearance">
         <ListPreference
             android:defaultValue="0"
             android:dialogTitle="@string/keyboard_themes"
@@ -39,44 +42,18 @@
             android:entryValues="@array/keyboard_themes_values"
             android:key="keyboard_theme"
             android:title="@string/keyboard_themes" />
-        />
-        <!-- <net.toload.main.hd.limesettings.MultiListPreference
-                 android:key="keyboard_state"
-                 android:title="@string/keyboard_list"
-                 android:entries="@array/keyboard"
-                 android:entryValues="@array/keyboard_defaultstate"
-                 android:defaultValue="0;1;2;3;4;5;6;7;8;9;10;11"
-                 android:dialogTitle="@string/keyboard_list" />-->
-
-        <CheckBoxPreference
-            android:defaultValue="false"
-            android:key="enable_emoji"
-            android:summary="@string/enable_emoji_summary"
-            android:title="@string/enable_emoji" />
         <ListPreference
-            android:defaultValue="3"
-            android:dependency="enable_emoji"
-            android:dialogTitle="@string/enable_emoji_position_dialog_title"
-            android:entries="@array/emoji_display_position_title"
-            android:entryValues="@array/emoji_display_position"
-            android:key="enable_emoji_position"
-            android:title="@string/enable_emoji_position" />
-
+            android:defaultValue="1.1"
+            android:dialogTitle="@string/keyboard_size"
+            android:entries="@array/five_size_scale_options"
+            android:entryValues="@array/five_size_scale_values"
+            android:key="keyboard_size"
+            android:title="@string/keyboard_size" />
         <CheckBoxPreference
             android:defaultValue="false"
-            android:key="persistent_language_mode"
-            android:summary="@string/persistent_language_mode_summary"
-            android:title="@string/persistent_language_mode" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="number_row_in_english"
-            android:summary="@string/number_row_in_english_summary"
-            android:title="@string/number_row_in_english" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="hide_software_keyboard_typing_with_physical"
-            android:summary="@string/hide_software_keyboard_typing_with_physical_summary"
-            android:title="@string/hide_software_keyboard_typing_with_physical" />
+            android:key="display_number_keypads"
+            android:title="@string/display_number_keypads"
+            android:summary="@string/display_number_keypads_summary" />
         <ListPreference
             android:defaultValue="0"
             android:dialogTitle="@string/show_arrow_keys"
@@ -84,8 +61,6 @@
             android:entryValues="@array/show_arrow_keys_values"
             android:key="show_arrow_key"
             android:title="@string/show_arrow_keys" />
-        />
-
         <ListPreference
             android:defaultValue="0"
             android:dialogTitle="@string/split_keyboard"
@@ -93,40 +68,12 @@
             android:entryValues="@array/split_keyboard_values"
             android:key="split_keyboard_mode"
             android:title="@string/split_keyboard" />
-        />
+    </PreferenceCategory>
 
-        <!--<CheckBoxPreference
-            android:defaultValue="true"
-            android:disableDependentsState="true"
-            android:key="fixed_candidate_view_display"
-            android:title="@string/fixed_candidate_view_display" />-->
-
-        <!--<CheckBoxPreference
-            android:defaultValue="false"
-            android:dependency="fixed_candidate_view_display"
-            android:key="enable_transparent_candidate_view"
-            android:title="@string/enable_transparent_candidate_view" />-->
-
-        <!--<CheckBoxPreference
-            android:defaultValue="false"
-            android:key="enable_transparent_candidate_view"
-            android:title="@string/enable_transparent_candidate_view" />-->
-
-
-        <ListPreference
-            android:defaultValue="1"
-            android:dialogTitle="@string/keyboard_size"
-            android:entries="@array/five_size_scale_options"
-            android:entryValues="@array/five_size_scale_values"
-            android:key="keyboard_size"
-            android:title="@string/keyboard_size" />
-        <ListPreference
-            android:defaultValue="1"
-            android:dialogTitle="@string/font_size"
-            android:entries="@array/five_size_scale_options"
-            android:entryValues="@array/five_size_scale_values"
-            android:key="font_size"
-            android:title="@string/font_size" />
+    <!-- 2. 鍵盤回饋 -->
+    <PreferenceCategory
+        android:key="pref_section_feedback"
+        android:title="@string/pref_section_feedback">
         <CheckBoxPreference
             android:defaultValue="true"
             android:key="vibrate_on_keypress"
@@ -142,49 +89,58 @@
             android:defaultValue="false"
             android:key="sound_on_keypress"
             android:title="@string/sound_on_keypress" />
-        <CheckBoxPreference
-            android:defaultValue="false"
-            android:key="switch_english_mode"
-            android:summary="@string/switch_english_mode_summary_1"
-            android:title="@string/switch_english_mode_1" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="switch_english_mode_shift"
-            android:summary="@string/switch_english_mode_summary_2"
-            android:title="@string/switch_english_mode_2" />
     </PreferenceCategory>
 
-    <PreferenceCategory xmlns:android="http://schemas.android.com/apk/res/android"
-        android:key="lime_im"
-        android:summary=""
-        android:title="@string/im">
+    <!-- 3. 字型與顯示 -->
+    <PreferenceCategory
+        android:key="pref_section_font_display"
+        android:title="@string/pref_section_font_display">
+        <ListPreference
+            android:defaultValue="1.1"
+            android:dialogTitle="@string/font_size"
+            android:entries="@array/five_size_scale_options"
+            android:entryValues="@array/five_size_scale_values"
+            android:key="font_size"
+            android:title="@string/font_size" />
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="enable_emoji"
+            android:summary="@string/enable_emoji_summary"
+            android:title="@string/enable_emoji" />
+        <ListPreference
+            android:defaultValue="3"
+            android:dependency="enable_emoji"
+            android:dialogTitle="@string/enable_emoji_position_dialog_title"
+            android:entries="@array/emoji_display_position_title"
+            android:entryValues="@array/emoji_display_position"
+            android:key="enable_emoji_position"
+            android:title="@string/enable_emoji_position" />
+    </PreferenceCategory>
 
+    <!-- 4. 輸入法行為 -->
+    <PreferenceCategory
+        android:key="pref_section_im_behaviour"
+        android:title="@string/pref_section_im_behaviour">
         <CheckBoxPreference
             android:defaultValue="false"
             android:key="smart_chinese_input"
             android:summary="@string/preference_smart_chinese_input_message"
             android:title="@string/preference_smart_chinese_input" />
-
-
         <CheckBoxPreference
             android:defaultValue="false"
             android:key="auto_chinese_symbol"
             android:summary="@string/auto_chinese_symbol_summary"
             android:title="@string/auto_chinese_symbol" />
-
         <CheckBoxPreference
             android:defaultValue="false"
-            android:key="disable_physical_selkey"
-            android:title="@string/disable_physical_selkey_option" />
-
-        <ListPreference
-            android:defaultValue="0"
-            android:dialogTitle="@string/auto_commit_summary"
-            android:entries="@array/auto_commit_labels"
-            android:entryValues="@array/auto_commit_values"
-            android:key="auto_commit"
-            android:title="@string/auto_commit" />
-
+            android:key="persistent_language_mode"
+            android:summary="@string/persistent_language_mode_summary"
+            android:title="@string/persistent_language_mode" />
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="number_row_in_english"
+            android:summary="@string/number_row_in_english_summary"
+            android:title="@string/number_row_in_english" />
         <ListPreference
             android:defaultValue="0"
             android:dialogTitle="@string/selkey_option_list"
@@ -192,33 +148,17 @@
             android:entryValues="@array/selkey_options_values"
             android:key="selkey_option"
             android:title="@string/selkey_option_list" />
-        <!-- CheckBoxPreference
-                    android:key="three_rows_remapping"
-                    android:title="@string/three_rows_remapping"
-                    android:defaultValue="false"
-                    android:summary="@string/three_rows_remapping_summary" /-->
-        <ListPreference
-            android:defaultValue="standard"
-            android:dialogTitle="@string/phonetic_keyboard"
-            android:entries="@array/phonetic_keyboard_type"
-            android:entryValues="@array/phonetic_keyboard_type_values"
-            android:key="phonetic_keyboard_type"
-            android:title="@string/phonetic_keyboard" />
+    </PreferenceCategory>
 
-        <ListPreference
-            android:defaultValue="normal_keyboard"
-            android:dialogTitle="@string/physical_keyboard"
-            android:entries="@array/physical_keyboard_options"
-            android:entryValues="@array/physical_keyboard_options_values"
-            android:key="physical_keyboard_type"
-            android:title="@string/physical_keyboard" />
-
+    <!-- 5. 漢字轉換 -->
+    <PreferenceCategory
+        android:key="pref_section_han_convert"
+        android:title="@string/pref_section_han_convert">
         <CheckBoxPreference
             android:defaultValue="true"
             android:key="han_convert_notify"
             android:summary="@string/han_convert_notify_summary"
             android:title="@string/han_convert_notify" />
-
         <ListPreference
             android:defaultValue="0"
             android:dialogTitle="@string/han_convert_option_list"
@@ -226,12 +166,72 @@
             android:entryValues="@array/han_convert_options_values"
             android:key="han_convert_option"
             android:title="@string/han_convert_option_list" />
+    </PreferenceCategory>
 
+    <!-- 6. 關聯字與學習 -->
+    <PreferenceCategory
+        android:key="pref_section_related_learning"
+        android:title="@string/pref_section_related_learning">
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="candidate_switch"
+            android:summary="@string/candidate_switch_summary"
+            android:title="@string/candidate_switch" />
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="candidate_suggestion"
+            android:summary="@string/candidate_suggestion_summary"
+            android:title="@string/candidate_suggestion" />
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="learn_phrase"
+            android:summary="@string/learn_phrase_summary"
+            android:title="@string/learn_phrase" />
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="learning_switch"
+            android:summary="@string/learning_switch_summary"
+            android:title="@string/learning_switch" />
+    </PreferenceCategory>
+
+    <!-- 7. 英文字典 -->
+    <PreferenceCategory
+        android:key="pref_section_english_dictionary"
+        android:title="@string/pref_section_english_dictionary">
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="english_dictionary_enable"
+            android:summary="@string/enable_english_dictionary_summary"
+            android:title="@string/enable_english_dictionary" />
+    </PreferenceCategory>
+
+    <!-- 8. 進階 -->
+    <PreferenceCategory
+        android:key="pref_section_advanced"
+        android:title="@string/pref_section_advanced">
+        <ListPreference
+            android:defaultValue="20"
+            android:dialogTitle="@string/similiar_list"
+            android:entries="@array/similiar_codes"
+            android:entryValues="@array/similiar_codes"
+            android:key="similiar_list"
+            android:title="@string/similiar_list" />
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="similiar_enable"
+            android:summary="@string/similiar_enable_switch_summary"
+            android:title="@string/similiar_enable_switch" />
         <CheckBoxPreference
             android:defaultValue="true"
             android:key="reverse_lookup_notify"
             android:title="@string/reverse_lookup_notify" />
+        <PreferenceScreen
+            android:key="reverse_lookup_screen"
+            android:title="@string/im_reverse_lookup_screen_title">
 
+            <Preference
+                android:summary="@string/im_reverse_lookup_summary"
+                android:selectable="false" />
 
         <ListPreference
             android:defaultValue="none"
@@ -326,29 +326,39 @@
             android:key="pinyin_im_reverselookup"
             android:title="@string/pinyin_reverse_lookup_list" />
 
+        </PreferenceScreen>
     </PreferenceCategory>
 
-    <PreferenceCategory xmlns:android="http://schemas.android.com/apk/res/android"
-        android:key="lime_mapping"
-        android:summary=""
-        android:title="@string/mapping">
+    <!-- 9. 外接鍵盤 -->
+    <PreferenceCategory
+        android:key="pref_section_physical_keyboard"
+        android:title="@string/pref_section_physical_keyboard">
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="hide_software_keyboard_typing_with_physical"
+            android:summary="@string/hide_software_keyboard_typing_with_physical_summary"
+            android:title="@string/hide_software_keyboard_typing_with_physical" />
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:key="switch_english_mode"
+            android:summary="@string/switch_english_mode_summary_1"
+            android:title="@string/switch_english_mode_1" />
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="switch_english_mode_shift"
+            android:summary="@string/switch_english_mode_summary_2"
+            android:title="@string/switch_english_mode_2" />
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:key="disable_physical_selkey"
+            android:title="@string/disable_physical_selkey_option" />
         <ListPreference
-            android:defaultValue="20"
-            android:dialogTitle="@string/similiar_list"
-            android:entries="@array/similiar_codes"
-            android:entryValues="@array/similiar_codes"
-            android:key="similiar_list"
-            android:title="@string/similiar_list" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="similiar_enable"
-            android:summary="@string/similiar_enable_switch_summary"
-            android:title="@string/similiar_enable_switch" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="english_dictionary_enable"
-            android:summary="@string/enable_english_dictionary_summary"
-            android:title="@string/enable_english_dictionary" />
+            android:defaultValue="normal_keyboard"
+            android:dialogTitle="@string/physical_keyboard"
+            android:entries="@array/physical_keyboard_options"
+            android:entryValues="@array/physical_keyboard_options_values"
+            android:key="physical_keyboard_type"
+            android:title="@string/physical_keyboard" />
         <CheckBoxPreference
             android:defaultValue="false"
             android:dependency="english_dictionary_enable"
@@ -357,43 +367,9 @@
             android:title="@string/enable_english_dictionary_physical_keyboard" />
         <CheckBoxPreference
             android:defaultValue="true"
-            android:key="candidate_switch"
-            android:summary="@string/candidate_switch_summary"
-            android:title="@string/candidate_switch" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="candidate_suggestion"
-            android:summary="@string/candidate_suggestion_summary"
-            android:title="@string/candidate_suggestion" />
-        <!--<CheckBoxPreference
-            android:defaultValue="true"
-            android:dependency="candidate_suggestion"
-            android:key="candidate_suggestion_punctuation"
-            android:title="@string/candidate_suggestion_punctuation" />-->
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="learn_phrase"
-            android:summary="@string/learn_phrase_summary"
-            android:title="@string/learn_phrase" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="learning_switch"
-            android:summary="@string/learning_switch_summary"
-            android:title="@string/learning_switch" />
-        <CheckBoxPreference
-            android:defaultValue="true"
             android:key="physical_keyboard_sort"
             android:summary="@string/physical_keyboard_sort_summary"
             android:title="@string/physical_keyboard_sort" />
-        <CheckBoxPreference
-            android:key="accept_number_index"
-            android:summary="@string/accept_number_index_summary"
-            android:title="@string/accept_number_index" />
-        <CheckBoxPreference
-            android:key="accept_symbol_index"
-            android:summary="@string/accept_symbol_index_summary"
-            android:title="@string/accept_symbol_index" />
     </PreferenceCategory>
 
 </PreferenceScreen>
-

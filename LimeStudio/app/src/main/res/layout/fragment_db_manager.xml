@@ -4,7 +4,10 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp">
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="24dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -13,133 +16,128 @@
         android:maxWidth="560dp"
         android:layout_gravity="center_horizontal">
 
-        <!-- Backup Section -->
-        <com.google.android.material.card.MaterialCardView
+        <!-- Heading -->
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="8dp">
+            android:text="@string/title_db_manager"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/textColorPrimary"
+            android:paddingTop="8dp"
+            android:paddingBottom="16dp" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+        <!-- Backup section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="備份"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:layout_marginBottom="6dp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="備份"
-                    android:textAppearance="?attr/textAppearanceSubtitle1"
-                    android:layout_marginBottom="8dp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDbBackup"
+            style="@style/Widget.MaterialComponents.Button.UnelevatedButton"
+            app:cornerRadius="10dp"
+            app:backgroundTint="@color/setup_status_bg"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="備份資料庫"
+            android:textAllCaps="false"
+            android:textColor="@color/material_blue"
+            app:icon="@drawable/ic_folder_24"
+            app:iconTint="@color/material_blue"
+            app:iconGravity="textStart"
+            app:iconPadding="8dp"
+ />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnDbBackup"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="備份資料庫" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="備份包含所有字根、關聯字及偏好設定。"
-                    android:textAppearance="?attr/textAppearanceCaption"
-                    android:layout_marginTop="8dp" />
-
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Restore Section -->
-        <com.google.android.material.card.MaterialCardView
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="8dp">
+            android:text="備份包含所有字根、關聯字及偏好設定。"
+            android:textSize="12sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="16dp" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+        <!-- Restore section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="還原"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:layout_marginBottom="6dp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="還原"
-                    android:textAppearance="?attr/textAppearanceSubtitle1"
-                    android:layout_marginBottom="8dp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDbRestore"
+            style="@style/Widget.MaterialComponents.Button.UnelevatedButton"
+            app:cornerRadius="10dp"
+            app:backgroundTint="@color/setup_status_bg"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="還原資料庫"
+            android:textAllCaps="false"
+            android:textColor="@color/setup_status_fg_red"
+            app:icon="@drawable/ic_download_24"
+            app:iconTint="@color/setup_status_fg_red"
+            app:iconGravity="textStart"
+            app:iconPadding="8dp"
+ />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnDbRestore"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="還原資料庫" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="從先前的備份檔案還原所有設定與字根。"
-                    android:textAppearance="?attr/textAppearanceCaption"
-                    android:layout_marginTop="8dp" />
-
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Restore Default Section -->
-        <com.google.android.material.card.MaterialCardView
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="8dp">
+            android:text="還原後鍵盤將重新載入資料庫。"
+            android:textSize="12sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="16dp" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+        <!-- Restore default section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="初始資料庫"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:layout_marginBottom="6dp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="初始資料庫"
-                    android:textAppearance="?attr/textAppearanceSubtitle1"
-                    android:layout_marginBottom="8dp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDbRestoreDefault"
+            style="@style/Widget.MaterialComponents.Button.UnelevatedButton"
+            app:cornerRadius="10dp"
+            app:backgroundTint="@color/setup_status_bg"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="還原預設資料庫"
+            android:textAllCaps="false"
+            android:textColor="@color/setup_status_fg_red"
+            app:icon="@drawable/ic_refresh"
+            app:iconTint="@color/setup_status_fg_red"
+            app:iconGravity="textStart"
+            app:iconPadding="8dp"
+ />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnDbRestoreDefault"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="還原預設資料庫" />
-
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Status Section (hidden when empty) -->
+        <!-- Status section (hidden when empty) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/dbStatusCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
+            android:layout_marginTop="16dp"
             android:visibility="gone"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="8dp">
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/setup_status_bg"
+            app:cardCornerRadius="10dp">
 
-            <LinearLayout
+            <TextView
+                android:id="@+id/dbStatusText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="12dp"
+                android:textAppearance="?attr/textAppearanceBody2" />
 
-                <TextView
-                    android:id="@+id/dbStatusText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textAppearance="?attr/textAppearanceBody2" />
-
-            </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
     </LinearLayout>

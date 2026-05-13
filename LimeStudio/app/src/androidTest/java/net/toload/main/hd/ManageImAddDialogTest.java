@@ -9,7 +9,7 @@ import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
 
 /**
- * Tests for ManageImAddDialog.
+ * Tests for ManageImAddSheet.
  */
 @RunWith(AndroidJUnit4.class)
 public class ManageImAddDialogTest {
@@ -17,22 +17,22 @@ public class ManageImAddDialogTest {
     @Test
     public void testManageImAddDialogClassExists() {
         try {
-            Class<?> cls = Class.forName("net.toload.main.hd.ui.dialog.ManageImAddDialog");
+            Class<?> cls = Class.forName("net.toload.main.hd.ui.dialog.ManageImAddSheet");
             assertNotNull(cls);
         } catch (ClassNotFoundException e) {
-            fail("ManageImAddDialog class not found");
+            fail("ManageImAddSheet class not found");
         }
     }
 
     @Test
     public void testValidationAndControllerAddApis() throws Exception {
-        Class<?> dialog = Class.forName("net.toload.main.hd.ui.dialog.ManageImAddDialog");
+        Class<?> dialog = Class.forName("net.toload.main.hd.ui.dialog.ManageImAddSheet");
         boolean hasValidation = false;
         for (java.lang.reflect.Method m : dialog.getDeclaredMethods()) {
             String n = m.getName().toLowerCase();
             if (n.contains("validate") || n.contains("check")) { hasValidation = true; break; }
         }
-        assertTrue("ManageImAddDialog should perform validation", hasValidation);
+        assertTrue("ManageImAddSheet should perform validation", hasValidation);
 
         Class<?> ctrl = Class.forName("net.toload.main.hd.ui.controller.ManageImController");
         boolean hasAdd = false;

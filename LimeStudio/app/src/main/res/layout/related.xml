@@ -23,27 +23,46 @@
   ~  */
   -->
 
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-  android:layout_width="match_parent"
-  android:layout_height="wrap_content">
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="14dp"
+    android:background="?attr/selectableItemBackground">
 
     <TextView
-        android:layout_width="wrap_content"
+        android:id="@+id/txtPword"
+        android:layout_width="0dp"
+        android:layout_weight="2"
         android:layout_height="wrap_content"
-        android:text="W"
+        android:textSize="18sp"
+        android:gravity="start"
+        android:textAppearance="?attr/textAppearanceBody1"
+        tools:text="大" />
+
+    <TextView
         android:id="@+id/txtWord"
-        android:textSize="16sp"
-        android:layout_centerVertical="true"
-        android:layout_centerHorizontal="true"
-        android:layout_gravity="center" />
+        android:layout_width="0dp"
+        android:layout_weight="3"
+        android:layout_height="wrap_content"
+        android:textSize="18sp"
+        android:gravity="center"
+        android:textAppearance="?attr/textAppearanceBody1"
+        tools:text="陸" />
 
     <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="c"
         android:id="@+id/txtFreq"
-        android:textSize="12sp"
-        android:paddingTop="5dp"
-        android:layout_below="@+id/txtWord"
-        android:layout_centerHorizontal="true" />
-</RelativeLayout><!-- From: file:/C:/Data/Development/Android/Studio/LIMEIMEAS/app/src/main/res/layout/record.xml -->
+        android:layout_width="0dp"
+        android:layout_weight="2"
+        android:layout_height="wrap_content"
+        android:textSize="14sp"
+        android:gravity="end"
+        android:textColor="?android:attr/textColorSecondary"
+        tools:text="12" />
+
+</LinearLayout><!-- From: file:/C:/Data/Development/Android/Studio/LIMEIMEAS/app/src/main/res/layout/record.xml -->

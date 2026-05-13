@@ -71,6 +71,7 @@ public class ManageRelatedAddSheet extends BottomSheetDialogFragment {
         super.onViewCreated(view, savedInstanceState);
 
         TextInputEditText edtWord = view.findViewById(R.id.edt_word);
+        TextInputEditText edtRelated = view.findViewById(R.id.edt_related);
         TextView tvScore = view.findViewById(R.id.tv_score);
         tvScore.setText(String.valueOf(score));
 
@@ -86,13 +87,12 @@ public class ManageRelatedAddSheet extends BottomSheetDialogFragment {
         });
 
         view.findViewById(R.id.btn_save).setOnClickListener(v -> {
-            String source = edtWord.getText() != null ? edtWord.getText().toString().trim() : "";
-            if (source.length() < 2) {
+            String pword = edtWord.getText() != null ? edtWord.getText().toString().trim() : "";
+            String cword = edtRelated.getText() != null ? edtRelated.getText().toString().trim() : "";
+            if (pword.isEmpty() || cword.isEmpty()) {
                 Toast.makeText(requireContext(), R.string.insert_error, Toast.LENGTH_SHORT).show();
                 return;
             }
-            String pword = source.substring(0, 1);
-            String cword = source.substring(1);
             if (hostFragment != null) {
                 hostFragment.addRelated(pword, cword, score);
             }

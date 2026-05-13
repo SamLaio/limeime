@@ -83,11 +83,12 @@ public class ManageImAdapter extends ListAdapter<Record, ManageImAdapter.ViewHol
         if (record != null) {
             String wordtext = record.getWord() != null ? record.getWord() : "";
             if (wordtext.length() > MAX_WORD_LENGTH) {
-                wordtext = wordtext.substring(0, MAX_WORD_LENGTH - TRUNCATION_SUFFIX.length()) 
+                wordtext = wordtext.substring(0, MAX_WORD_LENGTH - TRUNCATION_SUFFIX.length())
                     + TRUNCATION_SUFFIX;
             }
             holder.txtCode.setText(record.getCode());
             holder.txtWord.setText(wordtext);
+            holder.txtScore.setText(String.valueOf(record.getScore()));
 
             holder.itemView.setOnClickListener(v -> {
                 if (onItemClickListener != null) {
@@ -104,11 +105,13 @@ public class ManageImAdapter extends ListAdapter<Record, ManageImAdapter.ViewHol
     static class ViewHolder extends RecyclerView.ViewHolder {
         TextView txtWord;
         TextView txtCode;
+        TextView txtScore;
 
         ViewHolder(View itemView) {
             super(itemView);
             txtWord = itemView.findViewById(R.id.txtWord);
             txtCode = itemView.findViewById(R.id.txtCode);
+            txtScore = itemView.findViewById(R.id.txtScore);
         }
     }
 }

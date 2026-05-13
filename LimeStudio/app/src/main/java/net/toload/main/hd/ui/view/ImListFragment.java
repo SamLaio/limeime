@@ -91,6 +91,11 @@ public class ImListFragment extends Fragment {
         return rootView;
     }
 
+    /** Re-query the IM config table and refresh the list. Safe to call from any thread. */
+    public void refreshList() {
+        loadImList();
+    }
+
     private void loadImList() {
         final ManageImController ctrl = manageImController;
         if (ctrl == null) return;
@@ -111,6 +116,15 @@ public class ImListFragment extends Fragment {
                 adapter.setData(list);
             });
         }).start();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Refresh the list when returning from IM Detail (e.g., after Remove-IM)
+        if (manageImController != null && adapter != null) {
+            loadImList();
+        }
     }
 
     @Override
@@ -135,6 +149,7 @@ public class ImListFragment extends Fragment {
 
         private static final int TYPE_IM = 0;
         private static final int TYPE_RELATED = 1;
+        private static final int TYPE_HEADER = 2;
 
         private List<ImConfig> imList;
 
@@ -149,18 +164,32 @@ public class ImListFragment extends Fragment {
 
         @Override
         public int getItemCount() {
-            // IM rows + one synthetic footer row for the related/linked phrase table
-            return imList.size() + 1;
+            // header(installed) + IM rows + header(related) + related row
+            return 1 + imList.size() + 1 + 1;
         }
 
         @Override
         public int getItemViewType(int position) {
-            return position < imList.size() ? TYPE_IM : TYPE_RELATED;
+            if (position == 0) return TYPE_HEADER; // installed header
+            int imEnd = 1 + imList.size();
+            if (position < imEnd) return TYPE_IM;
+            if (position == imEnd) return TYPE_HEADER; // related header
+            return TYPE_RELATED;
         }
 
         @NonNull
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            if (viewType == TYPE_HEADER) {
+                android.widget.TextView tv = new android.widget.TextView(parent.getContext());
+                tv.setPadding(32, 24, 32, 8);
+                tv.setTypeface(null, android.graphics.Typeface.BOLD);
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
+                tv.setLayoutParams(new android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT));
+                return new HeaderViewHolder(tv);
+            }
             View v = LayoutInflater.from(parent.getContext())
                     .inflate(R.layout.item_im_row, parent, false);
             if (viewType == TYPE_RELATED) {
@@ -171,11 +200,29 @@ public class ImListFragment extends Fragment {
 
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-            if (holder instanceof RelatedViewHolder) {
+            if (holder instanceof HeaderViewHolder) {
+                int labelRes = (position == 0) ? R.string.im_list_header_installed : R.string.im_list_header_related;
+                ((HeaderViewHolder) holder).bind(labelRes);
+            } else if (holder instanceof RelatedViewHolder) {
                 ((RelatedViewHolder) holder).bind();
             } else if (holder instanceof ImViewHolder) {
-                ((ImViewHolder) holder).bind(imList.get(position));
+                // position 0 is header, so IM data starts at position 1
+                ((ImViewHolder) holder).bind(imList.get(position - 1));
             }
+        }
+    }
+
+    private class HeaderViewHolder extends RecyclerView.ViewHolder {
+        final android.widget.TextView tvHeader;
+
+        HeaderViewHolder(@NonNull android.widget.TextView itemView) {
+            super(itemView);
+            tvHeader = itemView;
+        }
+
+        void bind(int labelRes) {
+            tvHeader.setText(labelRes);
+            tvHeader.setClickable(false);
         }
     }
 
@@ -202,6 +249,7 @@ public class ImListFragment extends Fragment {
                 ManageImController ctrl = manageImController;
                 if (ctrl != null) {
                     ctrl.setImEnabled(im.getId(), checked);
+                    new net.toload.main.hd.global.LIMEPreferenceManager(requireContext()).syncIMActivatedState(ctrl.getImConfigFullNameList());
                 }
             });
 
@@ -235,8 +283,12 @@ public class ImListFragment extends Fragment {
             itemView.setOnClickListener(v -> {
                 Fragment parent = getParentFragment();
                 if (parent instanceof TwoPaneHostFragment) {
+                    ImConfig synthetic = new ImConfig();
+                    synthetic.setId(-1);
+                    synthetic.setCode("related");
+                    synthetic.setDesc(itemView.getResources().getString(R.string.im_related_heading));
                     ((TwoPaneHostFragment) parent).navigateToDetail(
-                            ManageRelatedFragment.newInstance(1));
+                            ImDetailFragment.newInstance(synthetic));
                 }
             });
         }
