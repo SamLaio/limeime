@@ -465,8 +465,8 @@ public class ImInstallFragment extends Fragment {
         list.add(new ImFamily(LIME.DB_TABLE_CUSTOM, "自建", new ArrayList<>(), false, false, true,
                 R.drawable.ic_add));
 
-        // 聯想詞庫 (RELATED) — no restore switch, no cloud buttons, no txt import
-        list.add(new ImFamily(LIME.DB_TABLE_RELATED, "聯想詞庫", new ArrayList<>(), false, true, false,
+        // 關聯字庫 (RELATED) — no restore switch, no cloud buttons, no txt import
+        list.add(new ImFamily(LIME.DB_TABLE_RELATED, "關聯字庫", new ArrayList<>(), false, true, false,
                 R.drawable.ic_list_bullet));
 
         return list;

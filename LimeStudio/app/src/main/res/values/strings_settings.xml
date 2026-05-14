@@ -110,26 +110,22 @@
     <string name="enable_english_dictionary_physical_keyboard">實體鍵盤啟用英文字典</string>
     <string name="enable_english_dictionary_physical_keyboard_summary">實體鍵盤使用英文輸入模式時，顯示英文建議字</string>
     <string name="im_reverse_lookup_list">輸入法字根反查</string>
-    <string name="default_reverse_lookup_list">自建字根反查</string>
-    <string name="cj_reverse_lookup_list">倉頡字根反查</string>
-    <string name="scj_reverse_lookup_list">快倉字根反查</string>
-    <string name="dayi_reverse_lookup_list">大易字根反查</string>
-    <string name="bpmf_reverse_lookup_list">注音字根反查</string>
-    <string name="ez_reverse_lookup_list">輕鬆字根反查</string>
-    <string name="array_reverse_lookup_list">行列字根反查</string>
-    <string name="array10_reverse_lookup_list">行列10字根反查</string>
-    <string name="cj5_reverse_lookup_list">倉頡五代字根反查</string>
-    <string name="ecj_reverse_lookup_list">速成字根反查</string>
-    <string name="wb_reverse_lookup_list">筆順五碼字根反查</string>
-    <string name="hs_reverse_lookup_list">華象直覺字根反查</string>
-    <string name="pinyin_reverse_lookup_list">拼音字根反查</string>
+    <string name="default_reverse_lookup_list">自建</string>
+    <string name="cj_reverse_lookup_list">倉頡</string>
+    <string name="scj_reverse_lookup_list">快倉</string>
+    <string name="dayi_reverse_lookup_list">大易</string>
+    <string name="bpmf_reverse_lookup_list">注音</string>
+    <string name="ez_reverse_lookup_list">輕鬆</string>
+    <string name="array_reverse_lookup_list">行列</string>
+    <string name="array10_reverse_lookup_list">行列 10</string>
+    <string name="cj5_reverse_lookup_list">倉頡五代</string>
+    <string name="ecj_reverse_lookup_list">速成</string>
+    <string name="wb_reverse_lookup_list">筆順五碼</string>
+    <string name="hs_reverse_lookup_list">華象直覺</string>
+    <string name="pinyin_reverse_lookup_list">拼音</string>
 
     <string name="reverse_lookup_notify">啟用字根反查跳出提示</string>
 
-    <string name="han_convert_ts">繁轉簡</string>
-    <string name="han_convert_st">簡轉繁</string>
-    <string name="han_convert_notify">中文簡/繁體轉換提示</string>
-    <string name="han_convert_notify_summary">輸入間隔時間超過60s時提示轉換的設定</string>
     <string name="han_convert_option_list">中文簡/繁體字碼轉換</string>
     <string name="selkey_option_list">設定選字鍵預選順序</string>
 
@@ -138,10 +134,8 @@
     <string name="similiar_list">建議字顯示數量</string>
     <string name="vibrate_on_keypress">打字震動</string>
     <string name="sound_on_keypress">打字音效</string>
-    <string name="display_number_keypads">顯示數字鍵盤</string>
-    <string name="display_number_keypads_summary">顯示數字按鈕於鍵盤上</string>
-    <string name="similiar_enable_switch">啟用關聯字典</string>
-    <string name="similiar_enable_switch_summary">啟用關聯字典功能</string>
+    <string name="similiar_enable_switch">啟用關聯字庫</string>
+    <string name="similiar_enable_switch_summary">啟用關聯字庫功能</string>
     <string name="candidate_switch">滑動選取</string>
     <string name="candidate_switch_summary">滑動選取輸入法建議文字</string>
     <string name="candidate_suggestion">啟動自建關聯字</string>
@@ -814,14 +808,14 @@
     <string name="im_detail_backup_on_delete">刪除時備份已學習記錄</string>
     <string name="im_detail_remove_im">移除輸入法</string>
     <string name="im_detail_remove_confirm">確定要移除此輸入法的所有資料嗎？</string>
-    <string name="im_related_label">聯想詞庫</string>
-    <string name="im_related_heading">關聯詞庫</string>
-    <string name="im_detail_section_related">聯想詞庫</string>
-    <string name="im_detail_manage_related">瀏覽 / 編輯聯想詞庫</string>
+    <string name="im_related_label">關聯字庫</string>
+    <string name="im_related_heading">關聯字庫</string>
+    <string name="im_detail_section_related">關聯字庫</string>
+    <string name="im_detail_manage_related">瀏覽 / 編輯關聯字庫</string>
     <string name="im_detail_keyboard_picker_title">選擇鍵盤佈局</string>
     <string name="im_detail_label_version">版本</string>
     <string name="im_list_header_installed">已安裝的輸入法</string>
-    <string name="im_list_header_related">聯想詞庫</string>
+    <string name="im_list_header_related">關聯字庫</string>
     <string name="db_status_backup_ok">✅ 備份完成</string>
     <string name="db_status_restore_ok">✅ 還原完成</string>
     <string name="db_status_default_ok">✅ 已還原預設資料庫</string>
@@ -836,7 +830,6 @@
     <string name="pref_section_han_convert">漢字轉換</string>
     <string name="pref_section_related_learning">關聯字與學習</string>
     <string name="pref_section_english_dictionary">英文字典</string>
-    <string name="pref_section_advanced">進階</string>
     <string name="pref_section_physical_keyboard">外接鍵盤</string>
 
     <string name="share_format_text">.lime (文字)</string>

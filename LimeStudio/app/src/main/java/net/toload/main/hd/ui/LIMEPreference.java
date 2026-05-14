@@ -164,6 +164,24 @@ public class LIMEPreference extends AppCompatActivity {
 			// the XML root doesn't cascade — apply it recursively to every Preference).
 			disableIconSpaceReserved(getPreferenceScreen());
 
+			// Sync the host fragment's toolbar (title + back chevron) to this screen
+			// — the OnBackStackChangedListener fires before the new fragment loads
+			// its preferences, so we need a follow-up nudge once the screen is ready.
+			// Defer via view.post(...) so the sync runs after layout — calling it
+			// mid-transaction can leave the toolbar nav button in a state where the
+			// first tap is eaten.
+			androidx.fragment.app.Fragment parent = getParentFragment();
+			if (parent instanceof net.toload.main.hd.ui.view.LimePreferenceFragment) {
+				final net.toload.main.hd.ui.view.LimePreferenceFragment host =
+						(net.toload.main.hd.ui.view.LimePreferenceFragment) parent;
+				android.view.View hostView = host.getView();
+				if (hostView != null) {
+					hostView.post(host::syncToolbarToBackStack);
+				} else {
+					host.syncToolbarToBackStack();
+				}
+			}
+
 			if (ctx == null) {
 				ctx = requireActivity().getApplicationContext();
 			}
@@ -199,20 +217,14 @@ public class LIMEPreference extends AppCompatActivity {
 
 	
 
+		// Nested PreferenceScreen navigation: handle ONLY via onNavigateToScreen.
+		// PreferenceScreen also bubbles a tap up through onPreferenceTreeClick, so
+		// overriding both pushes the same fragment transaction twice — the visible
+		// symptom is the back chevron requiring two taps to return to the parent.
 		@Override
 		public void onNavigateToScreen(androidx.preference.PreferenceScreen preferenceScreen) {
 			android.util.Log.d(TAG, "onNavigateToScreen: " + preferenceScreen.getKey());
 			navigateToNested(preferenceScreen.getKey());
-		}
-
-		@Override
-		public boolean onPreferenceTreeClick(androidx.preference.Preference preference) {
-			if (preference instanceof androidx.preference.PreferenceScreen) {
-				android.util.Log.d(TAG, "onPreferenceTreeClick PreferenceScreen: " + preference.getKey());
-				navigateToNested(preference.getKey());
-				return true;
-			}
-			return super.onPreferenceTreeClick(preference);
 		}
 
 		private void disableIconSpaceReserved(PreferenceGroup group) {

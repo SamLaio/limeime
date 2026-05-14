@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 
 <!--
   ~ /*
@@ -43,17 +43,24 @@
             android:key="keyboard_theme"
             android:title="@string/keyboard_themes" />
         <ListPreference
-            android:defaultValue="1.1"
+            android:defaultValue="1"
             android:dialogTitle="@string/keyboard_size"
             android:entries="@array/five_size_scale_options"
             android:entryValues="@array/five_size_scale_values"
             android:key="keyboard_size"
             android:title="@string/keyboard_size" />
+        <ListPreference
+            android:defaultValue="1"
+            android:dialogTitle="@string/font_size"
+            android:entries="@array/five_size_scale_options"
+            android:entryValues="@array/five_size_scale_values"
+            android:key="font_size"
+            android:title="@string/font_size" />
         <CheckBoxPreference
-            android:defaultValue="false"
-            android:key="display_number_keypads"
-            android:title="@string/display_number_keypads"
-            android:summary="@string/display_number_keypads_summary" />
+            android:defaultValue="true"
+            android:key="number_row_in_english"
+            android:summary="@string/number_row_in_english_summary"
+            android:title="@string/number_row_in_english" />
         <ListPreference
             android:defaultValue="0"
             android:dialogTitle="@string/show_arrow_keys"
@@ -91,17 +98,30 @@
             android:title="@string/sound_on_keypress" />
     </PreferenceCategory>
 
-    <!-- 3. 字型與顯示 -->
+    <!-- 4. 輸入法行為 -->
     <PreferenceCategory
-        android:key="pref_section_font_display"
-        android:title="@string/pref_section_font_display">
-        <ListPreference
-            android:defaultValue="1.1"
-            android:dialogTitle="@string/font_size"
-            android:entries="@array/five_size_scale_options"
-            android:entryValues="@array/five_size_scale_values"
-            android:key="font_size"
-            android:title="@string/font_size" />
+        android:key="pref_section_im_behaviour"
+        android:title="@string/pref_section_im_behaviour">
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="smart_chinese_input"
+            android:summary="@string/preference_smart_chinese_input_message"
+            android:title="@string/preference_smart_chinese_input" />
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:key="auto_chinese_symbol"
+            android:summary="@string/auto_chinese_symbol_summary"
+            android:title="@string/auto_chinese_symbol" />
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="candidate_switch"
+            android:summary="@string/candidate_switch_summary"
+            android:title="@string/candidate_switch" />
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:key="persistent_language_mode"
+            android:summary="@string/persistent_language_mode_summary"
+            android:title="@string/persistent_language_mode" />
         <CheckBoxPreference
             android:defaultValue="true"
             android:key="enable_emoji"
@@ -115,50 +135,142 @@
             android:entryValues="@array/emoji_display_position"
             android:key="enable_emoji_position"
             android:title="@string/enable_emoji_position" />
-    </PreferenceCategory>
-
-    <!-- 4. 輸入法行為 -->
-    <PreferenceCategory
-        android:key="pref_section_im_behaviour"
-        android:title="@string/pref_section_im_behaviour">
-        <CheckBoxPreference
-            android:defaultValue="false"
-            android:key="smart_chinese_input"
-            android:summary="@string/preference_smart_chinese_input_message"
-            android:title="@string/preference_smart_chinese_input" />
-        <CheckBoxPreference
-            android:defaultValue="false"
-            android:key="auto_chinese_symbol"
-            android:summary="@string/auto_chinese_symbol_summary"
-            android:title="@string/auto_chinese_symbol" />
-        <CheckBoxPreference
-            android:defaultValue="false"
-            android:key="persistent_language_mode"
-            android:summary="@string/persistent_language_mode_summary"
-            android:title="@string/persistent_language_mode" />
         <CheckBoxPreference
             android:defaultValue="true"
-            android:key="number_row_in_english"
-            android:summary="@string/number_row_in_english_summary"
-            android:title="@string/number_row_in_english" />
-        <ListPreference
-            android:defaultValue="0"
-            android:dialogTitle="@string/selkey_option_list"
-            android:entries="@array/selkey_options"
-            android:entryValues="@array/selkey_options_values"
-            android:key="selkey_option"
-            android:title="@string/selkey_option_list" />
+            android:key="reverse_lookup_notify"
+            android:title="@string/reverse_lookup_notify" />
+        <PreferenceScreen
+            android:key="reverse_lookup_screen"
+            android:title="@string/im_reverse_lookup_screen_title">
+
+            <Preference
+                android:summary="@string/im_reverse_lookup_summary"
+                android:selectable="false" />
+
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="custom_im_reverselookup"
+                android:title="@string/default_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="cj_im_reverselookup"
+                android:title="@string/cj_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="scj_im_reverselookup"
+                android:title="@string/scj_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="cj5_im_reverselookup"
+                android:title="@string/cj5_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="ecj_im_reverselookup"
+                android:title="@string/ecj_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="dayi_im_reverselookup"
+                android:title="@string/dayi_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="bpmf_im_reverselookup"
+                android:title="@string/bpmf_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="ez_im_reverselookup"
+                android:title="@string/ez_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="array_im_reverselookup"
+                android:title="@string/array_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="array10_im_reverselookup"
+                android:title="@string/array10_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="wb_im_reverselookup"
+                android:title="@string/wb_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="hs_im_reverselookup"
+                android:title="@string/hs_reverse_lookup_list" />
+            <ListPreference
+                android:defaultValue="none"
+                android:dialogTitle="@string/im_reverse_lookup_list"
+                android:entries="@array/im_reverse_lookup"
+                android:entryValues="@array/im_reverse_lookup_codes"
+                android:layout="@layout/preference_value_right"
+                app:useSimpleSummaryProvider="true"
+                android:key="pinyin_im_reverselookup"
+                android:title="@string/pinyin_reverse_lookup_list" />
+        </PreferenceScreen>
     </PreferenceCategory>
 
     <!-- 5. 漢字轉換 -->
     <PreferenceCategory
         android:key="pref_section_han_convert"
         android:title="@string/pref_section_han_convert">
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="han_convert_notify"
-            android:summary="@string/han_convert_notify_summary"
-            android:title="@string/han_convert_notify" />
         <ListPreference
             android:defaultValue="0"
             android:dialogTitle="@string/han_convert_option_list"
@@ -174,9 +286,16 @@
         android:title="@string/pref_section_related_learning">
         <CheckBoxPreference
             android:defaultValue="true"
-            android:key="candidate_switch"
-            android:summary="@string/candidate_switch_summary"
-            android:title="@string/candidate_switch" />
+            android:key="similiar_enable"
+            android:summary="@string/similiar_enable_switch_summary"
+            android:title="@string/similiar_enable_switch" />
+        <ListPreference
+            android:defaultValue="20"
+            android:dialogTitle="@string/similiar_list"
+            android:entries="@array/similiar_codes"
+            android:entryValues="@array/similiar_codes"
+            android:key="similiar_list"
+            android:title="@string/similiar_list" />
         <CheckBoxPreference
             android:defaultValue="true"
             android:key="candidate_suggestion"
@@ -205,130 +324,6 @@
             android:title="@string/enable_english_dictionary" />
     </PreferenceCategory>
 
-    <!-- 8. 進階 -->
-    <PreferenceCategory
-        android:key="pref_section_advanced"
-        android:title="@string/pref_section_advanced">
-        <ListPreference
-            android:defaultValue="20"
-            android:dialogTitle="@string/similiar_list"
-            android:entries="@array/similiar_codes"
-            android:entryValues="@array/similiar_codes"
-            android:key="similiar_list"
-            android:title="@string/similiar_list" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="similiar_enable"
-            android:summary="@string/similiar_enable_switch_summary"
-            android:title="@string/similiar_enable_switch" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="reverse_lookup_notify"
-            android:title="@string/reverse_lookup_notify" />
-        <PreferenceScreen
-            android:key="reverse_lookup_screen"
-            android:title="@string/im_reverse_lookup_screen_title">
-
-            <Preference
-                android:summary="@string/im_reverse_lookup_summary"
-                android:selectable="false" />
-
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="custom_im_reverselookup"
-            android:title="@string/default_reverse_lookup_list" />
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="cj_im_reverselookup"
-            android:title="@string/cj_reverse_lookup_list" />
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="scj_im_reverselookup"
-            android:title="@string/scj_reverse_lookup_list" />
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="cj5_im_reverselookup"
-            android:title="@string/cj5_reverse_lookup_list" />
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="ecj_im_reverselookup"
-            android:title="@string/ecj_reverse_lookup_list" />
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="dayi_im_reverselookup"
-            android:title="@string/dayi_reverse_lookup_list" />
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="bpmf_im_reverselookup"
-            android:title="@string/bpmf_reverse_lookup_list" />
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="ez_im_reverselookup"
-            android:title="@string/ez_reverse_lookup_list" />
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="array_im_reverselookup"
-            android:title="@string/array_reverse_lookup_list" />
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="array10_im_reverselookup"
-            android:title="@string/array10_reverse_lookup_list" />
-
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="wb_im_reverselookup"
-            android:title="@string/wb_reverse_lookup_list" />
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="hs_im_reverselookup"
-            android:title="@string/hs_reverse_lookup_list" />
-        <ListPreference
-            android:defaultValue="none"
-            android:dialogTitle="@string/im_reverse_lookup_list"
-            android:entries="@array/im_reverse_lookup"
-            android:entryValues="@array/im_reverse_lookup_codes"
-            android:key="pinyin_im_reverselookup"
-            android:title="@string/pinyin_reverse_lookup_list" />
-
-        </PreferenceScreen>
-    </PreferenceCategory>
-
     <!-- 9. 外接鍵盤 -->
     <PreferenceCategory
         android:key="pref_section_physical_keyboard"
@@ -352,6 +347,13 @@
             android:defaultValue="false"
             android:key="disable_physical_selkey"
             android:title="@string/disable_physical_selkey_option" />
+        <ListPreference
+            android:defaultValue="0"
+            android:dialogTitle="@string/selkey_option_list"
+            android:entries="@array/selkey_options"
+            android:entryValues="@array/selkey_options_values"
+            android:key="selkey_option"
+            android:title="@string/selkey_option_list" />
         <ListPreference
             android:defaultValue="normal_keyboard"
             android:dialogTitle="@string/physical_keyboard"

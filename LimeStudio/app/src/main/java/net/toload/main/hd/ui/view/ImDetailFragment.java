@@ -131,7 +131,7 @@ public class ImDetailFragment extends Fragment {
 
         final boolean isRelated = "related".equals(tableCode);
 
-        // 字根資料表 row click -> navigate to ManageImFragment (or ManageRelatedFragment for the synthetic 聯想詞庫 row)
+        // 字根資料表 row click -> navigate to ManageImFragment (or ManageRelatedFragment for the synthetic 關聯字庫 row)
         LinearLayout rowManageTable = rootView.findViewById(R.id.row_manage_table);
         rowManageTable.setOnClickListener(v -> {
             Fragment parent = getParentFragment();

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  iOS-style preference row: title on the left, currently-selected value on the
+  right (in secondary text color). Used for the per-IM reverse-lookup ListPreferences
+  in xml/preference.xml > reverse_lookup_screen so each row matches the SwiftUI
+  Picker(.menu) layout on iOS.
+
+  Framework auto-binds these two IDs:
+    @android:id/title    populated from android:title (the IM name)
+    @android:id/summary  populated by the SimpleSummaryProvider (the selected lookup source)
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:minHeight="?android:attr/listPreferredItemHeightSmall"
+    android:orientation="horizontal"
+    android:paddingStart="?android:attr/listPreferredItemPaddingStart"
+    android:paddingEnd="?android:attr/listPreferredItemPaddingEnd"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:id="@android:id/title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceListItem"
+        android:singleLine="true"
+        android:ellipsize="end" />
+
+    <Space
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@android:id/summary"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceListItemSecondary"
+        android:textColor="?android:attr/textColorSecondary"
+        android:singleLine="true"
+        android:ellipsize="end" />
+
+</LinearLayout>

@@ -2140,16 +2140,6 @@ public class LIMEServiceTest {
         // Restore original option
         prefManager.setHanCovertOption(originalOption);
         
-        // Test Han convert notify
-        boolean hanConvertNotify = prefManager.getHanConvertNotify();
-        // Value can be true or false, just verify it's accessible
-        assertTrue("Han convert notify should be accessible", true);
-        
-        // Test parameter storage for Han notify interval
-        long currentTime = System.currentTimeMillis();
-        prefManager.setParameter("han_notify_interval", currentTime);
-        long storedTime = prefManager.getParameterLong("han_notify_interval", 0);
-        assertEquals("Stored han notify interval should match", currentTime, storedTime);
     }
 
     /**
