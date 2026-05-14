@@ -114,6 +114,7 @@ public class SearchServer {
     private static ConcurrentHashMap<String, List<Mapping>> cache = null;
     private static ConcurrentHashMap<String, List<Mapping>> engcache = null;
     private static ConcurrentHashMap<String, List<Mapping>> emojicache = null;
+    private static List<List<String>> emojiCategoryPagesCache = null;
     private static ConcurrentHashMap<String, String> keynamecache = null;
     /**
      * Store the mapping of typing code and mapped code from getMappingByCode on db  Jeremy '12,6,5
@@ -146,6 +147,9 @@ public class SearchServer {
             mLIMEPref = null; // Will be handled by null checks in methods that use it
         }
         initialCache();
+        if (dbadapter != null) {
+            preloadEmojiCategoryPages();
+        }
 
 
     }
@@ -157,6 +161,9 @@ public class SearchServer {
      */
     public static void resetCache(boolean resetCache) {
         mResetCache = resetCache;
+        if (resetCache) {
+            emojiCategoryPagesCache = null;
+        }
     }
 
     /**
@@ -785,11 +792,63 @@ public class SearchServer {
         return results;
     }
 
+    public synchronized List<List<String>> loadEmojiCategoryPages() {
+        if (emojiCategoryPagesCache != null) {
+            return copyEmojiCategoryPages(emojiCategoryPagesCache);
+        }
+
+        List<List<String>> pages = new ArrayList<>();
+        if (dbadapter == null) {
+            return pages;
+        }
+        List<Mapping> recent = loadRecentEmoji(32);
+        pages.add(mappingWords(recent));
+        pages.addAll(dbadapter.loadEmojiCategoryPages());
+        emojiCategoryPagesCache = copyEmojiCategoryPages(pages);
+        return pages;
+    }
+
+    public void preloadEmojiCategoryPages() {
+        new Thread(() -> {
+            try {
+                loadEmojiCategoryPages();
+            } catch (Exception e) {
+                Log.e(TAG, "Error preloading emoji category pages", e);
+            }
+        }, "emoji-category-preload").start();
+    }
+
+    private static List<String> mappingWords(List<Mapping> mappings) {
+        List<String> words = new ArrayList<>();
+        if (mappings == null) {
+            return words;
+        }
+        for (Mapping mapping : mappings) {
+            if (mapping != null && mapping.getWord() != null && !mapping.getWord().isEmpty()
+                    && !words.contains(mapping.getWord())) {
+                words.add(mapping.getWord());
+            }
+        }
+        return words;
+    }
+
+    private static List<List<String>> copyEmojiCategoryPages(List<List<String>> source) {
+        List<List<String>> copy = new ArrayList<>();
+        if (source == null) {
+            return copy;
+        }
+        for (List<String> page : source) {
+            copy.add(page == null ? new ArrayList<>() : new ArrayList<>(page));
+        }
+        return copy;
+    }
+
     public void recordEmojiUsage(String value) {
         dbadapter.recordEmojiUsage(value, System.currentTimeMillis() / 1000L);
         if (emojicache != null) {
             emojicache.clear();
         }
+        emojiCategoryPagesCache = null;
     }
 
     /**
@@ -1179,6 +1238,7 @@ public class SearchServer {
         cache = new ConcurrentHashMap<>(LIME.SEARCHSRV_RESET_CACHE_SIZE);
         engcache = new ConcurrentHashMap<>(LIME.SEARCHSRV_RESET_CACHE_SIZE);
         emojicache = new ConcurrentHashMap<>(LIME.SEARCHSRV_RESET_CACHE_SIZE);
+        emojiCategoryPagesCache = null;
         keynamecache = new ConcurrentHashMap<>(LIME.SEARCHSRV_RESET_CACHE_SIZE);
         coderemapcache = new ConcurrentHashMap<>(LIME.SEARCHSRV_RESET_CACHE_SIZE);
 

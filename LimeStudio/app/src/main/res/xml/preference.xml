@@ -127,6 +127,11 @@
             android:key="enable_emoji"
             android:summary="@string/enable_emoji_summary"
             android:title="@string/enable_emoji" />
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="enable_emoji_button"
+            android:summary="@string/enable_emoji_button_summary"
+            android:title="@string/enable_emoji_button" />
         <ListPreference
             android:defaultValue="3"
             android:dependency="enable_emoji"

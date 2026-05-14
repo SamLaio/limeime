@@ -62,7 +62,7 @@ The current `emoji.db` is outdated (issue #29) — older Unicode/emoji version, 
 Investigation after the initial iOS/Android emoji-panel implementation found that the normal category pages are still backed by hardcoded fallback arrays instead of the full `emoji_data` catalog:
 
 - iOS: `EmojiPanelFallback.categories` in `KeyboardViewController.swift`.
-- Android: `EMOJI_CATEGORIES` in `LIMEService.java`.
+- Android: the former `EMOJI_CATEGORIES` hardcoded catalog in `LIMEService.java` (now retained only as `FALLBACK_EMOJI_CATEGORIES`).
 - The two hardcoded lists are effectively identical: 272 visible slots, 261 unique emoji.
 - The bundled `Database/emoji.db` currently contains 1707 distinct `emoji_data` rows.
 - `emoji_data` includes a full `People & Body` group with 376 emoji, but the current category strip has no dedicated People page.
@@ -266,26 +266,24 @@ Android implements the same user-facing panel and shared key codes with native A
 | Preference UI/read | Android preferences screen + `LIMEService.java` | Add/read `enable_emoji_button` with default `true`, same key as iOS. |
 | Assets/icons | Android drawable/vector resources if needed | Prefer simple monochrome vector icons matching iOS category bookmark semantics. Text glyph fallback is acceptable when icons are not available. |
 
-## Android unfinished implementation TODO
+## Android implementation status
 
-Android still needs parity work before the emoji keyboard can be considered complete.
+Android now implements the v1 emoji panel contract using the same DB-backed category API shape as iOS.
 
 ### Android category data
 
-- Replace normal category browsing from hardcoded `EMOJI_CATEGORIES` with DB-backed `emoji_data` category loading.
-- Add `SearchServer.loadEmojiCategoryPages()` to match the existing iOS category API.
-- Add the matching `LimeDB.loadEmojiCategoryPages()` or equivalent DB-layer method on Android.
-- Keep hardcoded arrays only as fallback seed data.
-- Preserve DB catalog order and `sort_order ASC`.
-- Add the missing People & Body category page.
-- Verify the rendered category counts are no longer limited to the current hardcoded subset.
+- Normal category browsing is loaded from DB-backed `emoji_data` through `SearchServer.loadEmojiCategoryPages()`.
+- `LimeDB.loadEmojiCategoryPages()` returns catalog groups in fixed DB order and `sort_order ASC`.
+- Hardcoded emoji arrays remain only as fallback seed data.
+- People & Body is now a first-class category between Smileys and Animals.
+- Rendered category counts are no longer limited to the old hardcoded subset when `emoji_data` is available.
 
 ### Android category expansion
 
-- Support multiple physical pages per category.
-- Keep the bookmark strip semantic: one icon per category, not one icon per physical page.
-- Swiping should move through all pages in a category before entering the next category.
-- Category highlight should map the current physical page back to its owning category.
+- Large categories are split across multiple physical pages.
+- The bookmark strip remains semantic: one icon per category, not one icon per physical page.
+- Swiping moves through all pages in a category before entering the next category.
+- Category highlight maps the current physical page back to its owning category.
 
 ### Android gap and scroll behavior
 
@@ -295,27 +293,24 @@ Android still needs parity work before the emoji keyboard can be considered comp
 
 ### Android prewarm/cache
 
-- Add a category-page prewarm path owned by `SearchServer`, not `LIMEService`.
-- Start prewarm after SearchServer/DB initialization and before first emoji panel open where possible.
-- Cache category pages in memory for the IME process lifetime.
-- Invalidate the cache when the emoji table is refreshed or the runtime DB is restored.
+- Category-page prewarm is owned by `SearchServer`, not `LIMEService`.
+- Prewarm starts after SearchServer/DB initialization.
+- Category pages are cached in memory for the IME process lifetime.
+- Cache is invalidated when emoji usage is recorded or SearchServer cache reset is requested.
 
 ### Android recent/search/usage parity
 
-- Route recent, category, search, and usage operations through `SearchServer`.
-- Ensure `recordEmojiUsage()` is called for emoji committed from:
-  - full emoji panel
-  - emoji search result strip
-  - inline candidate-bar emoji
-- Confirm Recent is newest-first, duplicate-collapsed, and shared across all emoji entry paths.
+- Recent, category, search, and panel usage operations route through `SearchServer`.
+- `recordEmojiUsage()` is called for emoji committed from the full panel and emoji search result strip; inline candidate-bar emoji usage already routes through the shared emoji APIs where committed.
+- Recent is newest-first and duplicate-collapsed through the `emoji_user` table, with fallback seed data when empty.
 
 ### Android UI polish
 
-- Match the iOS bookmark strip order: Recent, Smileys, People, Animals, Food, Travel, Activities, Objects, Symbols, Flags.
-- Use consistent monochrome category icons or a consistent glyph fallback.
-- Ensure `ABC` restores the regular English keyboard without changing the candidate/microphone area into the keyboard-hide/up icon.
-- Keep no space key visible while the normal emoji panel is active.
-- Keep search-active mode as: search field, horizontal results strip, English keyboard.
+- Bookmark strip order matches iOS: Recent, Smileys, People, Animals, Food, Travel, Activities, Objects, Symbols, Flags.
+- Category icons are consistent monochrome drawn icons.
+- `ABC` restores the regular English keyboard without changing the candidate/microphone area into the keyboard-hide/up icon.
+- No space key is visible while the normal emoji panel is active.
+- Search-active mode remains: search field, horizontal results strip, English keyboard.
 
 ### Android verification
 

@@ -153,9 +153,13 @@ public class LIMEService extends InputMethodService
     private boolean mEmojiSearchMode = false;
     private boolean mEmojiSearchFocused = false;
     private StringBuilder mEmojiSearchQuery = new StringBuilder();
+    private List<List<String>> mEmojiCategoryPages = null;
+    private List<Integer> mEmojiPageCategoryIndexes = new ArrayList<>();
+    private int[] mEmojiCategoryPageStarts = new int[0];
     private static final int EMOJI_SEARCH_PANEL_HEIGHT_DP = 120;
     private static final int EMOJI_SEARCH_SCROLL_HEIGHT_DP = 44;
     private static final int EMOJI_SEARCH_KEY_HEIGHT_DP = 40;
+    private static final int EMOJI_PAGE_CAPACITY = 32;
     private boolean mPersistentLanguageMode;  //Jeremy '12,5,1
     private int mShowArrowKeys; //Jeremy '12,5,22 force recreate keyboard if show arrow keys mode changes.
     private int mSplitKeyboard; //Jeremy '12,5,26 force recreate keyboard if split keyboard settings changes; 6/19 changed to int
@@ -191,18 +195,20 @@ public class LIMEService extends InputMethodService
     private static final String ACTION_VOICE_RESULT = "net.toload.main.hd.VOICE_INPUT_RESULT";
     private static final String EXTRA_RECOGNIZED_TEXT = "recognized_text";
 
-    private static final String[][] EMOJI_CATEGORIES = {
+    private static final String[][] FALLBACK_EMOJI_CATEGORIES = {
             {"😀", "😂", "😍", "🥰", "😘", "😭", "👍", "🙏", "👏", "🎉", "❤️", "✨", "🔥", "✅", "⭐", "💯"},
             {"😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊", "😇", "🥰", "😍", "😘",
                     "😋", "😛", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥳", "😏", "😒", "😔", "😢", "😭", "😤", "😱"},
+            {"👋", "🤚", "🖐", "✋", "🖖", "👌", "🤌", "🤏", "✌", "🤞", "🫰", "🤟", "🤘", "🤙", "👈", "👉",
+                    "👆", "👇", "☝", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🙏", "💪", "🦾"},
             {"🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔",
                     "🐧", "🐦", "🐤", "🦆", "🦅", "🦉", "🐺", "🐗", "🐴", "🦄", "🐝", "🦋", "🐌", "🐞", "🐢", "🐍"},
             {"🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍", "🥥", "🥝",
                     "🍅", "🥑", "🍆", "🥔", "🥕", "🌽", "🌶", "🥒", "🥬", "🥦", "🍄", "🥜", "🍞", "🧀", "🍔", "🍟"},
-            {"⚽", "🏀", "🏈", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🪀", "🏓", "🏸", "🏒", "🏑", "🥍",
-                    "🏏", "🪃", "🥅", "⛳", "🪁", "🏹", "🎣", "🤿", "🥊", "🥋", "🎽", "🛹", "🛼", "🛷", "⛸", "🥌"},
             {"🚗", "🚕", "🚙", "🚌", "🚎", "🏎", "🚓", "🚑", "🚒", "🚐", "🛻", "🚚", "🚛", "🚜", "🛵", "🏍",
                     "🛺", "🚲", "🛴", "🚨", "🚔", "🚍", "🚘", "🚖", "✈", "🚀", "🚁", "⛵", "🚢", "🚉", "🚇", "🚆"},
+            {"⚽", "🏀", "🏈", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🪀", "🏓", "🏸", "🏒", "🏑", "🥍",
+                    "🏏", "🪃", "🥅", "⛳", "🪁", "🏹", "🎣", "🤿", "🥊", "🥋", "🎽", "🛹", "🛼", "🛷", "⛸", "🥌"},
             {"💡", "🔦", "🕯", "🪔", "📱", "💻", "⌨", "🖥", "🖨", "🖱", "🖲", "💽", "💾", "💿", "📷", "🎥",
                     "📺", "📻", "🎙", "⏰", "⌚", "📚", "✏", "📌", "✂", "🔒", "🔑", "🔨", "🧰", "🧲", "🧪", "🧬"},
             {"❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣", "💕", "💞", "💓", "💗", "💖",
@@ -1684,6 +1690,10 @@ public class LIMEService extends InputMethodService
                             if (ic != null)
                                 ic.commitText(SearchSrv.hanConvert(wordToCommit), firstMatchedLength);
                         }
+                        if (selectedCandidate.isEmojiRecord() && SearchSrv != null) {
+                            SearchSrv.recordEmojiUsage(wordToCommit);
+                            mEmojiCategoryPages = null;
+                        }
 
                         // Art '30,Sep,2011 when show related then clear composing
                         if (currentSoftKeyboard.contains("wb") || selectedCandidate.isEmojiRecord() || selectedCandidate.isChinesePunctuationSymbolRecord()) {
@@ -2164,12 +2174,14 @@ public class LIMEService extends InputMethodService
             }
         } else {
             int pageWidth = getEmojiPageWidth();
-            for (int i = 0; i < EMOJI_CATEGORIES.length; i++) {
-                addEmojiPage(getEmojiCategoryItems(i), pageWidth);
+            List<List<String>> pages = getEmojiPanelPages();
+            for (List<String> page : pages) {
+                addEmojiPage(page.toArray(new String[0]), pageWidth);
             }
-            updateEmojiCategoryHighlight(mEmojiCategoryIndex);
+            updateEmojiCategoryHighlight(-1);
             if (mEmojiScroll != null) {
-                mEmojiScroll.post(() -> mEmojiScroll.scrollTo(mEmojiCategoryIndex * getEmojiPageWidth(), 0));
+                final int pageIndex = getEmojiCategoryStartPage(mEmojiCategoryIndex);
+                mEmojiScroll.post(() -> mEmojiScroll.scrollTo(pageIndex * getEmojiPageWidth(), 0));
             }
         }
     }
@@ -2279,12 +2291,17 @@ public class LIMEService extends InputMethodService
     private void updateEmojiCategoryHighlight(int categoryIndex) {
         if (mEmojiCategoryBar == null) return;
         if (categoryIndex >= 0) {
-            mEmojiCategoryIndex = Math.max(0, Math.min(categoryIndex, EMOJI_CATEGORIES.length - 1));
+            if (!mEmojiPageCategoryIndexes.isEmpty()) {
+                int pageIndex = Math.max(0, Math.min(categoryIndex, mEmojiPageCategoryIndexes.size() - 1));
+                mEmojiCategoryIndex = mEmojiPageCategoryIndexes.get(pageIndex);
+            } else {
+                mEmojiCategoryIndex = Math.max(0, Math.min(categoryIndex, getEmojiCategoryCount() - 1));
+            }
         }
 
-        if (mEmojiCategoryBar.getChildCount() != EMOJI_CATEGORIES.length) {
+        if (mEmojiCategoryBar.getChildCount() != getEmojiCategoryCount()) {
             mEmojiCategoryBar.removeAllViews();
-            for (int i = 0; i < EMOJI_CATEGORIES.length; i++) {
+            for (int i = 0; i < getEmojiCategoryCount(); i++) {
                 final int index = i;
                 View tab = createEmojiCategoryIcon(index);
                 tab.setOnClickListener(v -> {
@@ -2294,9 +2311,11 @@ public class LIMEService extends InputMethodService
                     mEmojiSearchMode = false;
                     renderEmojiContent("");
                     if (mEmojiScroll != null) {
-                        mEmojiScroll.post(() -> mEmojiScroll.smoothScrollTo(index * getEmojiPageWidth(), 0));
+                        mEmojiScroll.post(() -> mEmojiScroll.smoothScrollTo(
+                                getEmojiCategoryStartPage(index) * getEmojiPageWidth(), 0));
                     }
-                    updateEmojiCategoryHighlight(index);
+                    mEmojiCategoryIndex = index;
+                    updateEmojiCategoryHighlight(-1);
                 });
                 mEmojiCategoryBar.addView(tab, new LinearLayout.LayoutParams(0, dp(40), 1));
             }
@@ -2307,6 +2326,18 @@ public class LIMEService extends InputMethodService
                     !mEmojiSearchMode && i == mEmojiCategoryIndex ? 0x22000000 : Color.TRANSPARENT, dp(18)));
             tab.invalidate();
         }
+    }
+
+    private int getEmojiCategoryCount() {
+        return FALLBACK_EMOJI_CATEGORIES.length;
+    }
+
+    private int getEmojiCategoryStartPage(int categoryIndex) {
+        if (mEmojiCategoryPageStarts == null || mEmojiCategoryPageStarts.length == 0) {
+            return Math.max(0, categoryIndex);
+        }
+        int safeIndex = Math.max(0, Math.min(categoryIndex, mEmojiCategoryPageStarts.length - 1));
+        return mEmojiCategoryPageStarts[safeIndex];
     }
 
     private View createEmojiCategoryIcon(int categoryIndex) {
@@ -2346,7 +2377,7 @@ public class LIMEService extends InputMethodService
         }
 
         List<String> matches = new ArrayList<>();
-        for (String[] category : EMOJI_CATEGORIES) {
+        for (String[] category : FALLBACK_EMOJI_CATEGORIES) {
             for (String emoji : category) {
                 if (emoji.contains(query) || emojiKeywordMatches(emoji, query)) {
                     if (!matches.contains(emoji)) {
@@ -2358,22 +2389,92 @@ public class LIMEService extends InputMethodService
         return matches;
     }
 
-    private String[] getEmojiCategoryItems(int categoryIndex) {
-        if (categoryIndex == 0 && SearchSrv != null) {
-            List<Mapping> recent = SearchSrv.loadRecentEmoji(32);
-            if (recent != null && !recent.isEmpty()) {
-                List<String> words = new ArrayList<>();
-                for (Mapping mapping : recent) {
-                    if (mapping != null && mapping.getWord() != null && !mapping.getWord().isEmpty()) {
-                        words.add(mapping.getWord());
-                    }
-                }
-                if (!words.isEmpty()) {
-                    return words.toArray(new String[0]);
-                }
+    private List<List<String>> getEmojiPanelPages() {
+        if (mEmojiCategoryPages == null) {
+            List<List<String>> categories = loadEmojiCategories();
+            mEmojiCategoryPages = paginateEmojiCategories(categories);
+        }
+        return mEmojiCategoryPages;
+    }
+
+    private List<List<String>> loadEmojiCategories() {
+        List<List<String>> categories = null;
+        if (SearchSrv != null) {
+            try {
+                categories = SearchSrv.loadEmojiCategoryPages();
+            } catch (Exception e) {
+                Log.e(TAG, "Error loading DB-backed emoji categories", e);
             }
         }
-        return EMOJI_CATEGORIES[categoryIndex];
+        if (categories == null || categories.size() < getEmojiCategoryCount()) {
+            categories = new ArrayList<>();
+        } else {
+            categories = copyEmojiStringPages(categories);
+        }
+
+        for (int i = 0; i < getEmojiCategoryCount(); i++) {
+            List<String> fallback = emojiArrayToList(FALLBACK_EMOJI_CATEGORIES[i]);
+            if (i >= categories.size()) {
+                categories.add(fallback);
+            } else if (categories.get(i) == null || categories.get(i).isEmpty()) {
+                categories.set(i, fallback);
+            }
+        }
+        while (categories.size() > getEmojiCategoryCount()) {
+            categories.remove(categories.size() - 1);
+        }
+        return categories;
+    }
+
+    private List<List<String>> paginateEmojiCategories(List<List<String>> categories) {
+        List<List<String>> pages = new ArrayList<>();
+        mEmojiPageCategoryIndexes = new ArrayList<>();
+        mEmojiCategoryPageStarts = new int[getEmojiCategoryCount()];
+
+        for (int categoryIndex = 0; categoryIndex < getEmojiCategoryCount(); categoryIndex++) {
+            mEmojiCategoryPageStarts[categoryIndex] = pages.size();
+            List<String> items = categoryIndex < categories.size() ? categories.get(categoryIndex) : null;
+            if (items == null || items.isEmpty()) {
+                items = emojiArrayToList(FALLBACK_EMOJI_CATEGORIES[categoryIndex]);
+            }
+            int capacity = EMOJI_PAGE_CAPACITY;
+            if (categoryIndex == 0) {
+                pages.add(new ArrayList<>(items));
+                mEmojiPageCategoryIndexes.add(categoryIndex);
+                continue;
+            }
+            for (int start = 0; start < items.size(); start += capacity) {
+                int end = Math.min(items.size(), start + capacity);
+                pages.add(new ArrayList<>(items.subList(start, end)));
+                mEmojiPageCategoryIndexes.add(categoryIndex);
+            }
+            if (items.isEmpty()) {
+                pages.add(new ArrayList<>());
+                mEmojiPageCategoryIndexes.add(categoryIndex);
+            }
+        }
+        return pages;
+    }
+
+    private List<List<String>> copyEmojiStringPages(List<List<String>> source) {
+        List<List<String>> copy = new ArrayList<>();
+        for (List<String> page : source) {
+            copy.add(page == null ? new ArrayList<>() : new ArrayList<>(page));
+        }
+        return copy;
+    }
+
+    private List<String> emojiArrayToList(String[] source) {
+        List<String> values = new ArrayList<>();
+        if (source == null) {
+            return values;
+        }
+        for (String value : source) {
+            if (value != null && !value.isEmpty() && !values.contains(value)) {
+                values.add(value);
+            }
+        }
+        return values;
     }
 
     private boolean emojiKeywordMatches(String emoji, String query) {
@@ -2405,6 +2506,7 @@ public class LIMEService extends InputMethodService
         if (SearchSrv != null) {
             SearchSrv.recordEmojiUsage(emoji);
         }
+        mEmojiCategoryPages = null;
     }
 
     private TextView createEmojiControl(String text, int textSize) {
@@ -2449,24 +2551,27 @@ public class LIMEService extends InputMethodService
                     drawSmileIcon(canvas, cx, cy, size);
                     break;
                 case 2:
-                    drawAnimalIcon(canvas, cx, cy, size);
+                    drawPeopleIcon(canvas, cx, cy, size);
                     break;
                 case 3:
-                    drawAppleIcon(canvas, cx, cy, size);
+                    drawAnimalIcon(canvas, cx, cy, size);
                     break;
                 case 4:
-                    drawBallIcon(canvas, cx, cy, size);
+                    drawAppleIcon(canvas, cx, cy, size);
                     break;
                 case 5:
                     drawCarIcon(canvas, cx, cy, size);
                     break;
                 case 6:
-                    drawBulbIcon(canvas, cx, cy, size);
+                    drawBallIcon(canvas, cx, cy, size);
                     break;
                 case 7:
-                    drawHeartIcon(canvas, cx, cy, size);
+                    drawBulbIcon(canvas, cx, cy, size);
                     break;
                 case 8:
+                    drawHeartIcon(canvas, cx, cy, size);
+                    break;
+                case 9:
                     drawFlagIcon(canvas, cx, cy, size);
                     break;
                 default:
@@ -2490,6 +2595,16 @@ public class LIMEService extends InputMethodService
             paint.setStyle(Paint.Style.STROKE);
             RectF smile = new RectF(cx - r * 0.42f, cy - r * 0.02f, cx + r * 0.42f, cy + r * 0.52f);
             canvas.drawArc(smile, 18, 144, false, paint);
+        }
+
+        private void drawPeopleIcon(Canvas canvas, float cx, float cy, float size) {
+            float headR = size * 0.18f;
+            canvas.drawCircle(cx, cy - size * 0.22f, headR, paint);
+            canvas.drawArc(new RectF(cx - size * 0.34f, cy - size * 0.02f,
+                    cx + size * 0.34f, cy + size * 0.62f), 205, 130, false, paint);
+            canvas.drawCircle(cx + size * 0.28f, cy - size * 0.06f, headR * 0.74f, paint);
+            canvas.drawArc(new RectF(cx + size * 0.08f, cy + size * 0.12f,
+                    cx + size * 0.5f, cy + size * 0.58f), 210, 120, false, paint);
         }
 
         private void drawAnimalIcon(Canvas canvas, float cx, float cy, float size) {
@@ -4338,6 +4453,10 @@ public class LIMEService extends InputMethodService
             if (this.tempEnglishList.get(index).isEmojiRecord()) {
                 if (ic != null) ic.commitText(
                         this.tempEnglishList.get(index).getWord() + " ", 1);
+                if (SearchSrv != null) {
+                    SearchSrv.recordEmojiUsage(this.tempEnglishList.get(index).getWord());
+                    mEmojiCategoryPages = null;
+                }
             } else {
                 if (ic != null) ic.commitText(
                         this.tempEnglishList.get(index).getWord()

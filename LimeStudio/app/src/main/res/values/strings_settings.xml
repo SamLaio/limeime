@@ -80,6 +80,8 @@
 
     <string name="enable_emoji">開啟 EMOJI 顯示</string>
     <string name="enable_emoji_summary">依字根或中文組字顯示圖示, 由於字型支援的差異所以部份圖示可能無法正確顯示</string>
+    <string name="enable_emoji_button">顯示 Emoji 鍵盤按鈕</string>
+    <string name="enable_emoji_button_summary">在英文鍵盤顯示 😀 按鈕以開啟 Emoji 面板</string>
     <string name="enable_emoji_position">設定 EMOJI 候選列顯示位置</string>
     <string name="enable_emoji_position_dialog_title">設定顯示位置</string>
     <string name="persistent_language_mode">記憶中英模式</string>

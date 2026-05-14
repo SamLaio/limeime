@@ -4745,6 +4745,42 @@ public class LimeDB extends LimeSQLiteOpenHelper {
         return output;
     }
 
+    public List<List<String>> loadEmojiCategoryPages() {
+        List<List<String>> pages = new ArrayList<>();
+        String[] groupOrder = new String[]{
+                "Smileys & Emotion",
+                "People & Body",
+                "Animals & Nature",
+                "Food & Drink",
+                "Travel & Places",
+                "Activities",
+                "Objects",
+                "Symbols",
+                "Flags"
+        };
+        if (checkDBConnection()) {
+            return pages;
+        }
+        checkEmojiDB();
+        String sql = "SELECT value FROM " + EMOJI_TABLE_DATA +
+                " WHERE group_name = ? ORDER BY sort_order ASC";
+        for (String group : groupOrder) {
+            List<String> values = new ArrayList<>();
+            try (Cursor cursor = db.rawQuery(sql, new String[]{group})) {
+                while (cursor != null && cursor.moveToNext()) {
+                    String value = cursor.getString(0);
+                    if (value != null && !value.isEmpty()) {
+                        values.add(value);
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error loading emoji category: " + group, e);
+            }
+            pages.add(values);
+        }
+        return pages;
+    }
+
     private List<Mapping> queryEmojiFts(String sourceCode, String query, int limit) {
         List<Mapping> output = new LinkedList<>();
         if (query.isEmpty()) {

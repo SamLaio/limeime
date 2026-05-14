@@ -304,13 +304,14 @@ public class LIME {
 	public static final int KEYCODE_EMOJI_ABC = -202;
 	public static final int KEYCODE_EMOJI_CATEGORY_RECENT = -203;
 	public static final int KEYCODE_EMOJI_CATEGORY_SMILEYS = -204;
-	public static final int KEYCODE_EMOJI_CATEGORY_ANIMALS = -205;
-	public static final int KEYCODE_EMOJI_CATEGORY_FOOD = -206;
-	public static final int KEYCODE_EMOJI_CATEGORY_SPORTS = -207;
+	public static final int KEYCODE_EMOJI_CATEGORY_PEOPLE = -205;
+	public static final int KEYCODE_EMOJI_CATEGORY_ANIMALS = -206;
+	public static final int KEYCODE_EMOJI_CATEGORY_FOOD = -207;
 	public static final int KEYCODE_EMOJI_CATEGORY_TRAVEL = -208;
-	public static final int KEYCODE_EMOJI_CATEGORY_OBJECTS = -209;
-	public static final int KEYCODE_EMOJI_CATEGORY_SYMBOLS = -210;
-	public static final int KEYCODE_EMOJI_CATEGORY_FLAGS = -211;
+	public static final int KEYCODE_EMOJI_CATEGORY_ACTIVITIES = -209;
+	public static final int KEYCODE_EMOJI_CATEGORY_OBJECTS = -210;
+	public static final int KEYCODE_EMOJI_CATEGORY_SYMBOLS = -211;
+	public static final int KEYCODE_EMOJI_CATEGORY_FLAGS = -212;
 	
 	// ========== Input Method Arrays (for buildActivatedIMList) ==========
 	// These arrays correspond to the order used in IM activation state

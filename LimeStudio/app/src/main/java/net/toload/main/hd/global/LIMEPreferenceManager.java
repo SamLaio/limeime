@@ -242,6 +242,11 @@ public class LIMEPreferenceManager {
 		return sp.getBoolean("enable_emoji", true);
 	}
 
+	public boolean getEmojiButtonEnabled(){
+		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
+		return sp.getBoolean("enable_emoji_button", true);
+	}
+
 	public Integer getEmojiDisplayPosition(){
 		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
 		return Integer.parseInt(sp.getString("enable_emoji_position", "3"));
