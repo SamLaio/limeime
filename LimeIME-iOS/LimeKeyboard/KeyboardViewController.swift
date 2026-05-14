@@ -75,8 +75,8 @@ final class KeyboardViewController: UIInputViewController {
     private var numberRowInEnglish:      Bool = true  // show number row on English layout
     private var enableEmoji:             Bool = true  // mirrors Android getEmojiMode() default true
     private var enableEmojiPosition:     Int  = 3     // mirrors Android getEmojiDisplayPosition() default 3
-    private var keyboardSize:            CGFloat = 1.1  // mirrors Android getKeyboardSize(); 0.8=特小 0.9=小 1.0=一般 1.1=大 1.2=特大
-    private var candidateFontScale:      CGFloat = 1.1  // mirrors Android getFontSize(); scales candidate bar fonts + bar height + composing popup
+    private var keyboardSize:            CGFloat = 1.0  // mirrors Android getKeyboardSize(); 0.8=特小 0.9=小 1.0=一般 1.1=大 1.2=特大
+    private var candidateFontScale:      CGFloat = 1.0  // mirrors Android getFontSize(); scales candidate bar fonts + bar height + composing popup
     private var candidateSwitch:         Bool = true    // mirrors Android candidate_switch; true=free scroll, false=paged
     private var showArrowKey:            Int  = 0       // 0=none, 1=above, 2=below
     private var splitKeyboardMode:       Int  = 0       // 0=off, 1=on, 2=landscape-only (iPad only)
@@ -580,12 +580,12 @@ final class KeyboardViewController: UIInputViewController {
         if let sizeStr = d?.string(forKey: "keyboard_size"), let sizeVal = Float(sizeStr) {
             keyboardSize = CGFloat(sizeVal)
         } else {
-            keyboardSize = 1.1
+            keyboardSize = 1.0
         }
         if let fontStr = d?.string(forKey: "font_size"), let fontVal = Float(fontStr) {
             candidateFontScale = CGFloat(fontVal)
         } else {
-            candidateFontScale = 1.1
+            candidateFontScale = 1.0
         }
         candidateSwitch = (d?.object(forKey: "candidate_switch") as? Bool) ?? true
         showArrowKey      = d?.integer(forKey: "show_arrow_key")      ?? 0

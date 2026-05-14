@@ -113,8 +113,8 @@ struct IMListView: View {
                         }
                     }
 
-                    Section(header: Text("聯想詞庫")) {
-                        Label("關聯詞庫", systemImage: "text.bubble")
+                    Section(header: Text("關聯字庫")) {
+                        Label("關聯字庫", systemImage: "text.bubble")
                             .tag(DetailSelection.related)
                     }
                 }
@@ -150,7 +150,7 @@ struct IMListView: View {
             }
         case .related:
             IMDetailView(
-                im: IMRow(id: -1, imName: "related", label: "關聯詞庫",
+                im: IMRow(id: -1, imName: "related", label: "關聯字庫",
                           tableNick: "related", fullName: "",
                           enabled: true, sortOrder: 0, keyboardId: ""),
                 onRefresh: nil,

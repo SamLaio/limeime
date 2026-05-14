@@ -22,7 +22,7 @@ struct AddRelatedView: View {
                 Section(header: Text("新增關聯字")) {
                     TextField("詞彙 (word)", text: $parentWord)
                         .disableAutocorrection(true)
-                    TextField("關聯詞 (related)", text: $childWord)
+                    TextField("關聯字 (related)", text: $childWord)
                         .disableAutocorrection(true)
                 }
 

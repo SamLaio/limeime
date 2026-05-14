@@ -70,19 +70,25 @@ final class LIMEPreferenceManager {
         set { defaults.set(newValue, forKey: "keyboard_theme") }
     }
 
-    var enableEmoji: Bool {
-        get { boolValue("enable_emoji", default: true) }
-        set { defaults.set(newValue, forKey: "enable_emoji") }
-    }
-
-    var enableEmojiPosition: Int {
-        get { intValue("enable_emoji_position", default: 3) }
-        set { defaults.set(newValue, forKey: "enable_emoji_position") }
-    }
-
     var keyboardSize: String {
-        get { stringValue("keyboard_size", default: "1.1") }
+        get { stringValue("keyboard_size", default: "1") }
         set { defaults.set(newValue, forKey: "keyboard_size") }
+    }
+
+    var fontSize: String {
+        get { stringValue("font_size", default: "1") }
+        set { defaults.set(newValue, forKey: "font_size") }
+    }
+
+    /// Raw candidate font size in points (14–28). Separate from font_size scale string.
+    var candidateFontSize: Double {
+        get { doubleValue("candidateFontSize", default: 18) }
+        set { defaults.set(newValue, forKey: "candidateFontSize") }
+    }
+
+    var numberRowInEnglish: Bool {
+        get { boolValue("number_row_in_english", default: true) }
+        set { defaults.set(newValue, forKey: "number_row_in_english") }
     }
 
     var showArrowKey: Int {
@@ -112,28 +118,10 @@ final class LIMEPreferenceManager {
         set { defaults.set(newValue, forKey: "sound_on_keypress") }
     }
 
-    // MARK: - §8.3 Font & Display
-
-    var fontSize: String {
-        get { stringValue("font_size", default: "1.1") }
-        set { defaults.set(newValue, forKey: "font_size") }
-    }
-
-    /// Raw candidate font size in points (14–28). Separate from font_size scale string.
-    var candidateFontSize: Double {
-        get { doubleValue("candidateFontSize", default: 18) }
-        set { defaults.set(newValue, forKey: "candidateFontSize") }
-    }
-
-    var numberRowInEnglish: Bool {
-        get { boolValue("number_row_in_english", default: true) }
-        set { defaults.set(newValue, forKey: "number_row_in_english") }
-    }
-
     // MARK: - §8.4 IM Behaviour
 
     var smartChineseInput: Bool {
-        get { boolValue("smart_chinese_input", default: false) }
+        get { boolValue("smart_chinese_input", default: true) }
         set { defaults.set(newValue, forKey: "smart_chinese_input") }
     }
 
@@ -142,33 +130,14 @@ final class LIMEPreferenceManager {
         set { defaults.set(newValue, forKey: "auto_chinese_symbol") }
     }
 
-    var autoCommit: Int {
-        get { intValue("auto_commit", default: 0) }
-        set { defaults.set(newValue, forKey: "auto_commit") }
-    }
-
     var candidateSwitch: Bool {
         get { boolValue("candidate_switch", default: true) }
         set { defaults.set(newValue, forKey: "candidate_switch") }
     }
 
-    // MARK: - §8.5 Phonetic Keyboard
-
-    var phoneticKeyboardType: String {
-        get { stringValue("phonetic_keyboard_type", default: "standard") }
-        set { defaults.set(newValue, forKey: "phonetic_keyboard_type") }
-    }
-
-    // MARK: - §8.6 Han Conversion
-
-    var hanConvertOption: Int {
-        get { intValue("han_convert_option", default: 0) }
-        set { defaults.set(newValue, forKey: "han_convert_option") }
-    }
-
-    var hanConvertNotify: Bool {
-        get { boolValue("han_convert_notify", default: true) }
-        set { defaults.set(newValue, forKey: "han_convert_notify") }
+    var persistentLanguageMode: Bool {
+        get { boolValue("persistent_language_mode", default: false) }
+        set { defaults.set(newValue, forKey: "persistent_language_mode") }
     }
 
     var reverseLookupNotify: Bool {
@@ -176,7 +145,50 @@ final class LIMEPreferenceManager {
         set { defaults.set(newValue, forKey: "reverse_lookup_notify") }
     }
 
-    // MARK: - §8.7 Related Phrases & Learning
+    var enableEmoji: Bool {
+        get { boolValue("enable_emoji", default: true) }
+        set { defaults.set(newValue, forKey: "enable_emoji") }
+    }
+
+    var enableEmojiPosition: Int {
+        get { intValue("enable_emoji_position", default: 3) }
+        set { defaults.set(newValue, forKey: "enable_emoji_position") }
+    }
+
+    // MARK: - §5.2 IMDetailView (per-IM prefs)
+
+    /// §5.2.2 — phonetic IM only.
+    var phoneticKeyboardType: String {
+        get { stringValue("phonetic_keyboard_type", default: "standard") }
+        set { defaults.set(newValue, forKey: "phonetic_keyboard_type") }
+    }
+
+    /// array10 only.
+    var autoCommit: Int {
+        get { intValue("auto_commit", default: 0) }
+        set { defaults.set(newValue, forKey: "auto_commit") }
+    }
+
+    /// custom IM only.
+    var acceptNumberIndex: Bool {
+        get { boolValue("accept_number_index", default: false) }
+        set { defaults.set(newValue, forKey: "accept_number_index") }
+    }
+
+    /// custom IM only.
+    var acceptSymbolIndex: Bool {
+        get { boolValue("accept_symbol_index", default: false) }
+        set { defaults.set(newValue, forKey: "accept_symbol_index") }
+    }
+
+    // MARK: - §8.5 Han Conversion
+
+    var hanConvertOption: Int {
+        get { intValue("han_convert_option", default: 0) }
+        set { defaults.set(newValue, forKey: "han_convert_option") }
+    }
+
+    // MARK: - §8.6 Related Phrases & Learning
 
     var similiarEnable: Bool {
         get { boolValue("similiar_enable", default: true) }
@@ -203,29 +215,14 @@ final class LIMEPreferenceManager {
         set { defaults.set(newValue, forKey: "learning_switch") }
     }
 
-    // MARK: - §8.8 English Dictionary
+    // MARK: - §8.7 English Dictionary
 
     var englishDictionaryEnable: Bool {
         get { boolValue("english_dictionary_enable", default: true) }
         set { defaults.set(newValue, forKey: "english_dictionary_enable") }
     }
 
-    // MARK: - §8.9 Advanced
-
-    var acceptNumberIndex: Bool {
-        get { boolValue("accept_number_index", default: false) }
-        set { defaults.set(newValue, forKey: "accept_number_index") }
-    }
-
-    var acceptSymbolIndex: Bool {
-        get { boolValue("accept_symbol_index", default: false) }
-        set { defaults.set(newValue, forKey: "accept_symbol_index") }
-    }
-
-    var persistentLanguageMode: Bool {
-        get { boolValue("persistent_language_mode", default: false) }
-        set { defaults.set(newValue, forKey: "persistent_language_mode") }
-    }
+    // MARK: - Internal storage state
 
     /// Stored Chinese/English state: "yes" = English-only, "no" = Chinese (spec §15).
     /// Written by setLanguageMode when persistentLanguageMode is enabled.
@@ -234,17 +231,14 @@ final class LIMEPreferenceManager {
         set { defaults.set(newValue, forKey: "language_mode") }
     }
 
-    var displayNumberKeypads: Bool {
-        get { boolValue("display_number_keypads", default: false) }
-        set { defaults.set(newValue, forKey: "display_number_keypads") }
-    }
-
+    /// Shadow accessor per spec §10.1: iOS uses `textDocumentProxy.autocapitalizationType`
+    /// instead. No UI surface and no runtime callers — kept for cross-platform SharedPreferences parity.
     var autoCap: Bool {
         get { boolValue("auto_cap", default: true) }
         set { defaults.set(newValue, forKey: "auto_cap") }
     }
 
-    // MARK: - §8.11 Reverse Lookup
+    // MARK: - §8.4.1 Reverse Lookup (sub-screen)
 
     var customImReverselookup: String {
         get { stringValue("custom_im_reverselookup", default: "none") }

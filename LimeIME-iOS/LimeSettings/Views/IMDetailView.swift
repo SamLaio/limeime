@@ -36,7 +36,7 @@ struct IMDetailView: View {
     private let autoCommitOpts   = [0, 4, 5, 6, 7, 8, 9, 10]
     private let autoCommitLabels = ["無", "4碼", "5碼", "6碼", "7碼", "8碼", "9碼", "10碼"]
 
-    // §8.5 — phonetic keyboard type (only shown when tableNick == "phonetic")
+    // §5.2.2 — phonetic keyboard type (only shown when tableNick == "phonetic")
     @AppStorage("phonetic_keyboard_type", store: sharedDefaults) private var phoneticKeyboardType: String = "standard"
     private let phoneticOptions = ["standard", "et_41", "eten26", "eten26_symbol", "hsu", "hsu_symbol"]
     private let phoneticLabels  = ["標準", "倚天 41 鍵", "倚天 26 鍵 (英文)", "倚天 26 鍵 (符號)", "許氏 (英文)", "許氏 (符號)"]
@@ -89,7 +89,7 @@ struct IMDetailView: View {
                 }
             }
 
-            // Phonetic keyboard type (§8.5 — moved here because the pref only
+            // Phonetic keyboard type (§5.2.2 — moved here because the pref only
             // affects the phonetic IM).
             if im.tableNick == "phonetic" {
                 Section(header: Text("注音鍵盤類型")) {
@@ -141,10 +141,10 @@ struct IMDetailView: View {
                 }
             }
 
-            Section(header: Text(im.tableNick == "related" ? "聯想詞庫" : "字根資料表")) {
+            Section(header: Text(im.tableNick == "related" ? "關聯字庫" : "字根資料表")) {
                 if im.tableNick == "related" {
                     NavigationLink(destination: RelatedListView(isEmbedded: true)) {
-                        Label("瀏覽 / 編輯聯想詞庫", systemImage: "text.bubble")
+                        Label("瀏覽 / 編輯關聯字庫", systemImage: "text.bubble")
                     }
                 } else {
                     NavigationLink(destination: RecordListView(tableName: im.tableNick,
@@ -161,7 +161,7 @@ struct IMDetailView: View {
                     } label: {
                         HStack {
                             Spacer()
-                            Text("清除聯想詞庫")
+                            Text("清除關聯字庫")
                             Spacer()
                         }
                     }
@@ -250,7 +250,7 @@ struct IMDetailView: View {
                 ? "此操作將清除「\(im.label)」的所有對應資料。\n已學習記錄將先備份，可在重新匯入時還原。確定繼續？"
                 : "此操作將清除「\(im.label)」的所有對應資料，無法還原。確定繼續？")
         }
-        .alert("清除聯想詞庫", isPresented: $showClearRelatedAlert) {
+        .alert("清除關聯字庫", isPresented: $showClearRelatedAlert) {
             Button("清除", role: .destructive) {
                 Task {
                     _ = await manageRelatedController.clearRelated()
@@ -259,7 +259,7 @@ struct IMDetailView: View {
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("此操作將清除所有聯想詞資料，無法還原。確定繼續？")
+            Text("此操作將清除所有關聯字資料，無法還原。確定繼續？")
         }
     }
 

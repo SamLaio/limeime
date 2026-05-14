@@ -40,7 +40,7 @@ final class ManageRelatedController: BaseController {
 
     func addRelated(parentWord: String, childWord: String) async -> Result<Void, Error> {
         guard !parentWord.isEmpty, !childWord.isEmpty else {
-            return .failure(ControllerError.validation("詞彙和關聯詞不能為空"))
+            return .failure(ControllerError.validation("詞彙和關聯字不能為空"))
         }
         let server = self.dbServer
         let rowID = await Task.detached(priority: .userInitiated) {
@@ -54,7 +54,7 @@ final class ManageRelatedController: BaseController {
     func updateRelated(id: Int64, parentWord: String,
                        childWord: String) async -> Result<Void, Error> {
         guard !parentWord.isEmpty, !childWord.isEmpty else {
-            return .failure(ControllerError.validation("詞彙和關聯詞不能為空"))
+            return .failure(ControllerError.validation("詞彙和關聯字不能為空"))
         }
         let server = self.dbServer
         let affected = await Task.detached(priority: .userInitiated) {
@@ -96,7 +96,7 @@ final class ManageRelatedController: BaseController {
 
     func addRelated(parentWord: String, childWord: String, view: (any ManageRelatedView)?) {
         guard !parentWord.isEmpty, !childWord.isEmpty else {
-            view?.onError("詞彙和關聯詞不能為空"); return
+            view?.onError("詞彙和關聯字不能為空"); return
         }
         let server = self.dbServer
         Task.detached(priority: .userInitiated) {
@@ -112,7 +112,7 @@ final class ManageRelatedController: BaseController {
     func updateRelated(id: Int64, parentWord: String, childWord: String,
                        view: (any ManageRelatedView)?) {
         guard !parentWord.isEmpty, !childWord.isEmpty else {
-            view?.onError("詞彙和關聯詞不能為空"); return
+            view?.onError("詞彙和關聯字不能為空"); return
         }
         let server = self.dbServer
         Task.detached(priority: .userInitiated) {

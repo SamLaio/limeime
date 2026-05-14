@@ -211,7 +211,7 @@ final class KeyboardView: UIView, UIInputViewAudioFeedback {
 
     /// Multiplier on row height (mirrors Android keySizeScale from getKeyboardSize()).
     /// Values: 0.8=特小 0.9=小 1.0=一般 1.1=大 1.2=特大. Set by KeyboardViewController from keyboard_size pref.
-    var keySizeScale: CGFloat = 1.1 {
+    var keySizeScale: CGFloat = 1.0 {
         didSet {
             guard keySizeScale != oldValue else { return }
             rowViews.forEach { $0.removeFromSuperview() }

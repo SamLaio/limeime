@@ -2,7 +2,7 @@
 // LimeIME-iOS
 //
 // Per-IM reverse lookup source pickers.
-// Spec §8.11.
+// Spec §8.4.1.
 
 import SwiftUI
 
@@ -25,7 +25,7 @@ struct ReverseLookupSettingsView: View {
     @AppStorage("hs_im_reverselookup",      store: sharedDefaults) private var hs: String      = "none"
     @AppStorage("pinyin_im_reverselookup",  store: sharedDefaults) private var pinyin: String  = "none"
 
-    // Available lookup source options (spec §8.11)
+    // Available lookup source options (spec §8.4.1)
     private let lookupValues = ["none", "custom", "cj", "scj", "cj5", "ecj",
                                  "dayi", "phonetic", "ez", "array", "array10",
                                  "wb", "hs", "pinyin"]

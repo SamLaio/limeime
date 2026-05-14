@@ -128,7 +128,7 @@ final class CandidateBarView: UIView {
     // MARK: - Layout constants
     /// Mirrors Android `font_size` scaler from LIMEPreferenceManager.getFontSize().
     /// Applied to candidate/selkey/composing fonts. Set by KeyboardViewController.
-    var fontScale: CGFloat = 1.1 {
+    var fontScale: CGFloat = 1.0 {
         didSet { guard oldValue != fontScale else { return }; rebuildButtons() }
     }
     /// Mirrors LayoutLoader.hostIsPad (set from traitCollection by the controller)

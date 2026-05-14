@@ -31,7 +31,7 @@ struct EditRelatedView: View {
                 Section(header: Text("編輯關聯字")) {
                     TextField("詞彙", text: $parentWord)
                         .disableAutocorrection(true)
-                    TextField("關聯詞", text: $childWord)
+                    TextField("關聯字", text: $childWord)
                         .disableAutocorrection(true)
                 }
 

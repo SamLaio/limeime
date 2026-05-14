@@ -115,7 +115,7 @@ struct IMInstallView: View {
                     }
                 } label: {
                     HStack {
-                        Label("聯想詞庫", systemImage: "text.bubble")
+                        Label("關聯字庫", systemImage: "text.bubble")
                         if relatedInstalled {
                             Spacer()
                             Text("已安裝")
@@ -214,7 +214,7 @@ struct IMInstallView: View {
                 await Task.detached(priority: .userInitiated) {
                     server.importDbRelated(sourcedb: url)
                 }.value
-                statusMessage = "聯想詞庫匯入完成"
+                statusMessage = "關聯字庫匯入完成"
                 manageRelatedController.invalidate()
             } else if ext == "db" || ext == "limedb" {
                 let restoreLearning = UserDefaults.standard.object(

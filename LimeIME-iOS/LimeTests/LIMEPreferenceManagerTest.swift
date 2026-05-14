@@ -42,11 +42,11 @@ final class LIMEPreferenceManagerTest: XCTestCase {
     }
 
     func testDefaultKeyboardSize() {
-        XCTAssertEqual(prefs.keyboardSize, "1.1")
+        XCTAssertEqual(prefs.keyboardSize, "1")
     }
 
     func testDefaultFontSize() {
-        XCTAssertEqual(prefs.fontSize, "1.1")
+        XCTAssertEqual(prefs.fontSize, "1")
     }
 
     func testDefaultCandidateFontSize() {
@@ -99,10 +99,6 @@ final class LIMEPreferenceManagerTest: XCTestCase {
 
     func testDefaultHanConvertOption() {
         XCTAssertEqual(prefs.hanConvertOption, 0)
-    }
-
-    func testDefaultHanConvertNotify() {
-        XCTAssertTrue(prefs.hanConvertNotify)
     }
 
     func testDefaultReverseLookupNotify() {
