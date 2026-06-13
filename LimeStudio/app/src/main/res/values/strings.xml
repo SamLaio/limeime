@@ -306,7 +306,6 @@
     <string name="keepass_auto_lock_timeout">自動鎖定時間</string>
     <string name="keepass_auto_lock_minutes">分鐘</string>
     <string name="keepass_auto_lock_hint">最小時間為 5 分鐘</string>
-    <string name="keepass_setup_required">請先完成「資料庫、金鑰、密碼」設定</string>
     <string name="keepass_fingerprint_unavailable">設備不支援指紋驗證，或尚未設定安全鎖屏與指紋</string>
     <string name="keepass_password_empty">密碼不可為空</string>
     <string name="keepass_password_saved">已新增密碼</string>

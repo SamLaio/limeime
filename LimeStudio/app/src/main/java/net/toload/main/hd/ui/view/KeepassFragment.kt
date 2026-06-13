@@ -199,11 +199,6 @@ class KeepassFragment : Fragment() {
             updateSectionStates()
         }
         switchFingerprint.setOnCheckedChangeListener { _, isChecked ->
-            if (!isDatabaseConfigured()) {
-                switchFingerprint.isChecked = false
-                Toast.makeText(requireContext(), R.string.keepass_setup_required, Toast.LENGTH_SHORT).show()
-                return@setOnCheckedChangeListener
-            }
             if (isChecked && !canUseFingerprint()) {
                 switchFingerprint.isChecked = false
                 Toast.makeText(requireContext(), R.string.keepass_fingerprint_unavailable, Toast.LENGTH_SHORT).show()
@@ -224,10 +219,6 @@ class KeepassFragment : Fragment() {
         inputDatabasePassword.addTextChangedListener(databaseTextWatcher)
 
         btnBrowseDatabase.setOnClickListener {
-            if (!isFeatureEnabled()) {
-                Toast.makeText(requireContext(), R.string.keepass_setup_required, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "*/*"
@@ -236,10 +227,6 @@ class KeepassFragment : Fragment() {
         }
 
         btnAddPassword.setOnClickListener {
-            if (!isFeatureEnabled()) {
-                Toast.makeText(requireContext(), R.string.keepass_setup_required, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
             showAddPasswordDialog()
         }
 
@@ -267,27 +254,15 @@ class KeepassFragment : Fragment() {
         updateSectionStates()
     }
 
-    private fun isFeatureEnabled(): Boolean {
-        return enableSwitch.isChecked && isDatabaseConfigured()
-    }
-
-    private fun isDatabaseConfigured(): Boolean {
-        val path = inputDatabasePath.text?.toString()?.trim().orEmpty()
-        val key = inputDatabaseKey.text?.toString()?.trim().orEmpty()
-        val password = inputDatabasePassword.text?.toString()?.trim().orEmpty()
-        return path.isNotEmpty() && key.isNotEmpty() && password.isNotEmpty()
-    }
-
     private fun updateSectionStates() {
         val isKeepassEnabled = enableSwitch.isChecked
-        setViewEnabled(sectionDatabaseSettings, isKeepassEnabled)
-        val allowSyncAndSecurity = isKeepassEnabled && isDatabaseConfigured()
-        setViewEnabled(sectionSync, allowSyncAndSecurity)
-        setViewEnabled(sectionSecurity, allowSyncAndSecurity)
-        sectionSync.alpha = if (allowSyncAndSecurity) 1f else 0.5f
-        sectionSecurity.alpha = if (allowSyncAndSecurity) 1f else 0.5f
+        setViewEnabled(sectionDatabaseSettings, true)
+        setViewEnabled(sectionSync, true)
+        setViewEnabled(sectionSecurity, true)
+        sectionSync.alpha = 1f
+        sectionSecurity.alpha = 1f
 
-        val canUseFingerprint = allowSyncAndSecurity && canUseFingerprint()
+        val canUseFingerprint = canUseFingerprint()
         switchFingerprint.isEnabled = canUseFingerprint
         if (!canUseFingerprint && switchFingerprint.isChecked) {
             switchFingerprint.isChecked = false
