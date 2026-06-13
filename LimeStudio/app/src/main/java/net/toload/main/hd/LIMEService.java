@@ -2260,7 +2260,7 @@ public class LIMEService extends InputMethodService
     private void updateEmojiSearchText() {
         if (mEmojiSearchField != null) {
             if (mEmojiSearchQuery.length() == 0 && !mEmojiSearchFocused) {
-                mEmojiSearchField.setText("搜尋表情符號");
+                mEmojiSearchField.setText(getString(R.string.emoji_search_hint));
                 mEmojiSearchField.setTextColor(0xFF8A8A8A);
             } else {
                 mEmojiSearchField.setText(mEmojiSearchQuery.toString());

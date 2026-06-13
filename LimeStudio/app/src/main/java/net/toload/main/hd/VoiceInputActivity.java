@@ -146,7 +146,7 @@ public class VoiceInputActivity extends ComponentActivity {
         android.content.ComponentName componentName = voiceIntent.resolveActivity(getPackageManager());
         if (componentName == null) {
             Log.e(TAG, "onCreate(): RecognizerIntent not available on this device");
-            android.widget.Toast.makeText(this, "Voice recognition not available", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, getString(R.string.voice_recognition_not_available), android.widget.Toast.LENGTH_SHORT).show();
             finish();
             return;
         }
@@ -156,11 +156,11 @@ public class VoiceInputActivity extends ComponentActivity {
             Log.i(TAG, "onCreate(): Launched RecognizerIntent: " + componentName.getPackageName() + "/" + componentName.getClassName());
         } catch (android.content.ActivityNotFoundException e) {
             Log.e(TAG, "onCreate(): ActivityNotFoundException launching RecognizerIntent: " + e.getMessage(), e);
-            android.widget.Toast.makeText(this, "Voice recognition activity not found", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, getString(R.string.voice_recognition_activity_not_found), android.widget.Toast.LENGTH_SHORT).show();
             finish();
         } catch (Exception e) {
             Log.e(TAG, "onCreate(): Failed to launch RecognizerIntent: " + e.getMessage(), e);
-            android.widget.Toast.makeText(this, "Failed to start voice recognition: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, getString(R.string.voice_recognition_start_failed, e.getMessage()), android.widget.Toast.LENGTH_SHORT).show();
             finish();
         }
     }

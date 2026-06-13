@@ -2,6 +2,7 @@
 <androidx.core.widget.NestedScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/setup_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -31,7 +32,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="萊姆輸入法"
+                android:text="@string/app_name"
                 android:textAppearance="?attr/textAppearanceHeadline5"
                 android:layout_marginStart="16dp" />
 
@@ -113,6 +114,65 @@
             android:text="@string/setup_im_system_selectLIME"
             android:layout_marginBottom="24dp" />
 
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/voicePermissionCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            app:cardElevation="0dp"
+            app:cardBackgroundColor="@color/setup_status_bg"
+            android:layout_marginBottom="24dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:id="@+id/voicePermissionIcon"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/sym_keyboard_voice_light"
+                        android:contentDescription="@null"
+                        android:layout_marginEnd="10dp" />
+
+                    <TextView
+                        android:id="@+id/voicePermissionTitle"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/setup_voice_permission_title"
+                        android:textAppearance="?attr/textAppearanceBody2" />
+
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/voicePermissionDetail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/setup_voice_permission_not_granted"
+                    android:textAppearance="?android:attr/textAppearanceMedium"
+                    android:layout_marginTop="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/voicePermissionButton"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/setup_voice_permission_open_settings"
+                    android:layout_marginTop="12dp" />
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- About Card -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
@@ -127,7 +187,7 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <!-- Version Row -->
+                <!-- App Version Row -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -136,14 +196,42 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="版本" />
+                        android:text="@string/about_label_version" />
 
                     <TextView
-                        android:id="@+id/txtVersion"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:gravity="end" />
+                        android:gravity="end"
+                        android:text="@string/app_display_version" />
+
+                </LinearLayout>
+
+                <!-- Divider -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="?attr/colorControlHighlight"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="8dp" />
+
+                <!-- Source Version Row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/about_label_source_version" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="end"
+                        android:text="@string/source_version_value" />
 
                 </LinearLayout>
 
@@ -164,14 +252,18 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="授權" />
+                        android:text="@string/about_label_license" />
 
                     <TextView
+                        android:id="@+id/txtLicenseUrl"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:gravity="end"
-                        android:text="GPL-3.0" />
+                        android:text="@string/about_license_link"
+                        android:textColor="?attr/colorPrimary"
+                        android:clickable="true"
+                        android:focusable="true" />
 
                 </LinearLayout>
 
@@ -192,7 +284,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="原始碼" />
+                        android:text="@string/about_label_source_code" />
 
                     <TextView
                         android:id="@+id/txtGithubUrl"
@@ -201,7 +293,7 @@
                         android:layout_weight="1"
                         android:gravity="end"
                         android:text="@string/url_github_limeime"
-                        android:textColor="@color/material_blue"
+                        android:textColor="?attr/colorPrimary"
                         android:clickable="true"
                         android:focusable="true" />
 

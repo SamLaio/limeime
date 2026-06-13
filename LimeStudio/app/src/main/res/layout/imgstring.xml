@@ -4,7 +4,7 @@
   ~  *
   ~  **    Copyright 2025, The LimeIME Open Source Project
   ~  **
-  ~  **    Project Url: http://github.com/lime-ime/limeime/
+  ~  **    Project Url: https://github.com/SamLaio/limeime/
   ~  **                 http://android.toload.net/
   ~  **
   ~  **    This program is free software: you can redistribute it and/or modify
@@ -49,7 +49,7 @@
             android:layout_marginBottom="5dp"
             android:layout_marginTop="5dp"
             android:layout_toRightOf="@+id/img_function_icon"
-            android:text="Large Text"
+            android:text="@string/ui_imgstring_text_014"
             android:textAppearance="?android:attr/textAppearanceLarge" />
 
     </RelativeLayout>

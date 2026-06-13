@@ -79,7 +79,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
-                android:text="還原已學習記錄" />
+                android:text="@string/ui_item_im_family_card_text_015" />
 
             <!-- Dynamic cloud download rows injected here -->
             <LinearLayout
@@ -95,7 +95,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="匯入 .limedb"
+                android:text="@string/ui_item_im_family_card_text_016"
                 app:icon="@drawable/ic_archivebox"
                 app:iconGravity="start"
                 app:iconPadding="8dp" />
@@ -107,7 +107,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="匯入 .cin / .lime"
+                android:text="@string/ui_item_im_family_card_text_017"
                 android:visibility="gone"
                 app:icon="@drawable/ic_list_bullet"
                 app:iconGravity="start"

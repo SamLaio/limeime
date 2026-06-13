@@ -31,6 +31,7 @@
     </FrameLayout>
 
     <androidx.core.widget.NestedScrollView
+        android:id="@+id/im_detail_scroll"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
@@ -84,6 +85,7 @@
 
                     <!-- 名稱 row -->
                     <LinearLayout
+                        android:id="@+id/row_name"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
@@ -105,6 +107,15 @@
                             android:textAppearance="?attr/textAppearanceBody2"
                             android:textColor="?android:attr/textColorSecondary"
                             android:gravity="end" />
+
+                        <ImageView
+                            android:id="@+id/iv_edit_name"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_marginStart="6dp"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?android:attr/textColorSecondary"
+                            android:contentDescription="@string/im_detail_edit_name_title" />
                     </LinearLayout>
 
                     <View
@@ -136,11 +147,62 @@
                             android:textAppearance="?attr/textAppearanceBody2"
                             android:textColor="?android:attr/textColorSecondary"
                             android:gravity="end"
-                            android:text="-" />
+                            android:text="@string/ui_fragment_im_detail_text_006" />
+
+                        <ImageView
+                            android:id="@+id/iv_edit_version"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_marginStart="6dp"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?android:attr/textColorSecondary"
+                            android:contentDescription="@string/im_detail_edit_version_title" />
                     </LinearLayout>
 
                     <View
                         android:id="@+id/divider_version"
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="?android:attr/listDivider" />
+
+                    <!-- 結束鍵 row -->
+                    <LinearLayout
+                        android:id="@+id/row_endkey"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/im_detail_label_endkey"
+                            android:textAppearance="?attr/textAppearanceBody2" />
+
+                        <TextView
+                            android:id="@+id/txtImEndkey"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="2"
+                            android:textAppearance="?attr/textAppearanceBody2"
+                            android:textColor="?android:attr/textColorSecondary"
+                            android:gravity="end"
+                            android:text="@string/ui_fragment_im_detail_text_007" />
+
+                        <ImageView
+                            android:id="@+id/iv_edit_endkey"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_marginStart="6dp"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?android:attr/textColorSecondary"
+                            android:contentDescription="@string/im_detail_edit_endkey_title" />
+                    </LinearLayout>
+
+                    <View
+                        android:id="@+id/divider_endkey"
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:background="?android:attr/listDivider" />
@@ -168,7 +230,7 @@
                             android:textAppearance="?attr/textAppearanceBody2"
                             android:textColor="?android:attr/textColorSecondary"
                             android:gravity="end"
-                            android:text="…" />
+                            android:text="@string/ui_fragment_im_detail_text_008" />
                     </LinearLayout>
 
                 </LinearLayout>
@@ -249,7 +311,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="注音鍵盤類型"
+                    android:text="@string/ui_fragment_im_detail_text_009"
                     android:textSize="13sp"
                     android:textColor="?android:attr/textColorSecondary"
                     android:paddingStart="4dp"
@@ -311,7 +373,7 @@
                         android:layout_height="22dp"
                         android:layout_marginEnd="12dp"
                         android:src="@drawable/ic_grid_on_24"
-                        app:tint="@color/material_blue"
+                        app:tint="?attr/colorPrimary"
                         android:contentDescription="@null" />
 
                     <TextView
@@ -343,7 +405,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="字根對應設定"
+                    android:text="@string/ui_fragment_im_detail_text_010"
                     android:textSize="13sp"
                     android:textColor="?android:attr/textColorSecondary"
                     android:paddingStart="4dp"
@@ -401,7 +463,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="電話鍵盤設定"
+                    android:text="@string/ui_fragment_im_detail_text_011"
                     android:textSize="13sp"
                     android:textColor="?android:attr/textColorSecondary"
                     android:paddingStart="4dp"
@@ -415,15 +477,47 @@
                     app:cardCornerRadius="10dp"
                     app:strokeWidth="0dp">
 
-                    <android.widget.Spinner
-                        android:id="@+id/spinnerAutoCommit"
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingStart="8dp"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:minHeight="56dp"
+                        android:paddingStart="16dp"
                         android:paddingEnd="8dp"
-                        android:paddingTop="6dp"
-                        android:paddingBottom="6dp"
-                        android:entries="@array/auto_commit_labels" />
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:paddingEnd="12dp">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/auto_commit"
+                                android:textColor="?android:attr/textColorPrimary"
+                                android:textSize="15sp" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="@string/auto_commit_summary"
+                                android:textColor="?android:attr/textColorSecondary"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <android.widget.Spinner
+                            android:id="@+id/spinnerAutoCommit"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:minWidth="88dp"
+                            android:entries="@array/auto_commit_labels" />
+                    </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
 
@@ -464,17 +558,23 @@
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
 
-            <!-- 移除輸入法 button (borderless red text, centered) -->
+            <!-- 移除輸入法 button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_remove_im"
-                style="?attr/borderlessButtonStyle"
+                style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
+                android:minHeight="48dp"
                 android:text="@string/im_detail_remove_im"
                 android:textAllCaps="false"
                 android:textColor="@color/setup_status_fg_red"
-                android:gravity="center" />
+                android:gravity="center"
+                app:backgroundTint="@android:color/transparent"
+                app:cornerRadius="4dp"
+                app:rippleColor="@color/setup_status_red"
+                app:strokeColor="@color/setup_status_fg_red"
+                app:strokeWidth="1dp" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

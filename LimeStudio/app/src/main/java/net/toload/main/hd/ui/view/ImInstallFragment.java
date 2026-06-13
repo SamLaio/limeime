@@ -362,7 +362,7 @@ public class ImInstallFragment extends Fragment {
                 LIME.DATABASE_CLOUD_IM_PHONETICCOMPLETE_BIG5));
         phonetic.add(new CloudVariant(R.string.l3_im_download_from_phonetic_adv, "95,029", "1.6 MB",
                 LIME.DATABASE_CLOUD_IM_PHONETICCOMPLETE));
-        list.add(new ImFamily(LIME.DB_TABLE_PHONETIC, "注音", phonetic, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_PHONETIC, getString(R.string.im_install_family_phonetic), phonetic, true, false, false,
                 R.drawable.ic_keyboard_outline));
 
         // 倉頡
@@ -373,21 +373,21 @@ public class ImInstallFragment extends Fragment {
                 LIME.DATABASE_CLOUD_IM_CJ));
         cj.add(new CloudVariant(R.string.l3_im_download_from_cjk_hk_cj, "30,278", "884 KB",
                 LIME.DATABASE_CLOUD_IM_CJHK));
-        list.add(new ImFamily(LIME.DB_TABLE_CJ, "倉頡", cj, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_CJ, getString(R.string.im_install_family_cj), cj, true, false, false,
                 R.drawable.ic_archivebox));
 
         // 倉頡五代
         List<CloudVariant> cj5 = new ArrayList<>();
         cj5.add(new CloudVariant(R.string.l3_im_download_from_cj5, "24,004", "491 KB",
                 LIME.DATABASE_CLOUD_IM_CJ5));
-        list.add(new ImFamily(LIME.DB_TABLE_CJ5, "倉頡五代", cj5, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_CJ5, getString(R.string.im_install_family_cj5), cj5, true, false, false,
                 R.drawable.ic_archivebox));
 
         // 速倉
         List<CloudVariant> scj = new ArrayList<>();
         scj.add(new CloudVariant(R.string.l3_im_download_from_scj, "74,250", "1.2 MB",
                 LIME.DATABASE_CLOUD_IM_SCJ));
-        list.add(new ImFamily(LIME.DB_TABLE_SCJ, "速倉", scj, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_SCJ, getString(R.string.im_install_family_scj), scj, true, false, false,
                 R.drawable.ic_archivebox));
 
         // 英文倉頡
@@ -396,7 +396,7 @@ public class ImInstallFragment extends Fragment {
                 LIME.DATABASE_CLOUD_IM_ECJ));
         ecj.add(new CloudVariant(R.string.l3_im_download_from_cjk_hk_ecj, "27,853", "625 KB",
                 LIME.DATABASE_CLOUD_IM_ECJHK));
-        list.add(new ImFamily(LIME.DB_TABLE_ECJ, "英文倉頡", ecj, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_ECJ, getString(R.string.im_install_family_ecj), ecj, true, false, false,
                 R.drawable.ic_archivebox));
 
         // 大易
@@ -407,28 +407,28 @@ public class ImInstallFragment extends Fragment {
                 LIME.DATABASE_CLOUD_IM_DAYIUNIP));
         dayi.add(new CloudVariant(R.string.l3_im_download_from_dayi, "18,638", "465 KB",
                 LIME.DATABASE_CLOUD_IM_DAYI));
-        list.add(new ImFamily(LIME.DB_TABLE_DAYI, "大易", dayi, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_DAYI, getString(R.string.im_install_family_dayi), dayi, true, false, false,
                 R.drawable.ic_keyboard_outline));
 
         // 輕鬆
         List<CloudVariant> ez = new ArrayList<>();
         ez.add(new CloudVariant(R.string.l3_im_download_from_ez, "14,422", "340 KB",
                 LIME.DATABASE_CLOUD_IM_EZ));
-        list.add(new ImFamily(LIME.DB_TABLE_EZ, "輕鬆", ez, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_EZ, getString(R.string.im_install_family_ez), ez, true, false, false,
                 R.drawable.ic_keyboard_outline));
 
         // 行列
         List<CloudVariant> array = new ArrayList<>();
         array.add(new CloudVariant(R.string.l3_im_download_from_array, "32,386", "680 KB",
                 LIME.DATABASE_CLOUD_IM_ARRAY));
-        list.add(new ImFamily(LIME.DB_TABLE_ARRAY, "行列", array, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_ARRAY, getString(R.string.im_install_family_array), array, true, false, false,
                 R.drawable.ic_keyboard_outline));
 
         // 行列十
         List<CloudVariant> array10 = new ArrayList<>();
         array10.add(new CloudVariant(R.string.l3_im_download_from_array10, "32,120", "670 KB",
                 LIME.DATABASE_CLOUD_IM_ARRAY10));
-        list.add(new ImFamily(LIME.DB_TABLE_ARRAY10, "行列十", array10, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_ARRAY10, getString(R.string.im_install_family_array10), array10, true, false, false,
                 R.drawable.ic_keyboard_outline));
 
         // 華象
@@ -441,14 +441,14 @@ public class ImInstallFragment extends Fragment {
                 LIME.DATABASE_CLOUD_IM_HS_V2));
         hs.add(new CloudVariant(R.string.l3_im_download_from_hs_v3, "64,324", "1.2 MB",
                 LIME.DATABASE_CLOUD_IM_HS_V3));
-        list.add(new ImFamily(LIME.DB_TABLE_HS, "華象", hs, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_HS, getString(R.string.im_install_family_hs), hs, true, false, false,
                 R.drawable.ic_keyboard_outline));
 
         // 五筆
         List<CloudVariant> wb = new ArrayList<>();
         wb.add(new CloudVariant(R.string.l3_im_download_from_wb, "26,378", "590 KB",
                 LIME.DATABASE_CLOUD_IM_WB));
-        list.add(new ImFamily(LIME.DB_TABLE_WB, "五筆", wb, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_WB, getString(R.string.im_install_family_wb), wb, true, false, false,
                 R.drawable.ic_keyboard_outline));
 
         // 拼音
@@ -457,16 +457,16 @@ public class ImInstallFragment extends Fragment {
                 LIME.DATABASE_CLOUD_IM_PINYIN));
         pinyin.add(new CloudVariant(R.string.l3_im_download_from_pinyin_big5, "34,753", "730 KB",
                 LIME.DATABASE_CLOUD_IM_PINYINGB)); // TODO §2.3 — confirm URL and label with product
-        list.add(new ImFamily(LIME.DB_TABLE_PINYIN, "拼音", pinyin, true, false, false,
+        list.add(new ImFamily(LIME.DB_TABLE_PINYIN, getString(R.string.im_install_family_pinyin), pinyin, true, false, false,
                 R.drawable.ic_keyboard_outline));
 
         // 自建 (CUSTOM) — no restore switch, no cloud buttons
         // TODO §2.3 — seedCustomIM verification: ensure seedCustomIM is invoked after successful custom-IM import
-        list.add(new ImFamily(LIME.DB_TABLE_CUSTOM, "自建", new ArrayList<>(), false, false, true,
+        list.add(new ImFamily(LIME.DB_TABLE_CUSTOM, getString(R.string.im_install_family_custom), new ArrayList<>(), false, false, true,
                 R.drawable.ic_add));
 
         // 關聯字庫 (RELATED) — no restore switch, no cloud buttons, no txt import
-        list.add(new ImFamily(LIME.DB_TABLE_RELATED, "關聯字庫", new ArrayList<>(), false, true, false,
+        list.add(new ImFamily(LIME.DB_TABLE_RELATED, getString(R.string.im_install_family_related), new ArrayList<>(), false, true, false,
                 R.drawable.ic_list_bullet));
 
         return list;

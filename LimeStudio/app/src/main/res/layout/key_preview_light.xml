@@ -4,7 +4,7 @@
   ~  *
   ~  **    Copyright 2025, The LimeIME Open Source Project
   ~  **
-  ~  **    Project Url: http://github.com/lime-ime/limeime/
+  ~  **    Project Url: https://github.com/SamLaio/limeime/
   ~  **                 http://android.toload.net/
   ~  **
   ~  **    This program is free software: you can redistribute it and/or modify
@@ -31,5 +31,5 @@
     android:minWidth="32dip"
     android:gravity="center|top"
     android:background="@drawable/btn_flat_keyboard_key_preview_light"
-    android:text="W"
+    android:text="@string/ui_key_preview_light_text_020"
     />

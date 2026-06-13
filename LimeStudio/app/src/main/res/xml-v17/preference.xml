@@ -1,11 +1,11 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 
 <!--
   ~ /*
   ~  *
   ~  **    Copyright 2025, The LimeIME Open Source Project
   ~  **
-  ~  **    Project Url: http://github.com/lime-ime/limeime/
+  ~  **    Project Url: https://github.com/SamLaio/limeime/
   ~  **                 http://android.toload.net/
   ~  **
   ~  **    This program is free software: you can redistribute it and/or modify
@@ -36,7 +36,7 @@
         android:key="pref_section_appearance"
         android:title="@string/pref_section_appearance">
         <ListPreference
-            android:defaultValue="0"
+            android:defaultValue="6"
             android:dialogTitle="@string/keyboard_themes"
             android:entries="@array/keyboard_themes_options"
             android:entryValues="@array/keyboard_themes_values"
@@ -113,37 +113,24 @@
             android:summary="@string/auto_chinese_symbol_summary"
             android:title="@string/auto_chinese_symbol" />
         <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="candidate_switch"
-            android:summary="@string/candidate_switch_summary"
-            android:title="@string/candidate_switch" />
-        <CheckBoxPreference
             android:defaultValue="false"
             android:key="persistent_language_mode"
             android:summary="@string/persistent_language_mode_summary"
             android:title="@string/persistent_language_mode" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="enable_emoji"
-            android:summary="@string/enable_emoji_summary"
-            android:title="@string/enable_emoji" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="enable_emoji_button"
-            android:summary="@string/enable_emoji_button_summary"
-            android:title="@string/enable_emoji_button" />
         <ListPreference
-            android:defaultValue="3"
-            android:dependency="enable_emoji"
+            android:defaultValue="5"
             android:dialogTitle="@string/enable_emoji_position_dialog_title"
             android:entries="@array/emoji_display_position_title"
             android:entryValues="@array/emoji_display_position"
             android:key="enable_emoji_position"
             android:title="@string/enable_emoji_position" />
-        <CheckBoxPreference
-            android:defaultValue="true"
-            android:key="reverse_lookup_notify"
-            android:title="@string/reverse_lookup_notify" />
+        <ListPreference
+            android:defaultValue="20"
+            android:dialogTitle="@string/similiar_list"
+            android:entries="@array/similiar_codes"
+            android:entryValues="@array/similiar_codes"
+            android:key="similiar_list"
+            android:title="@string/similiar_list" />
         <PreferenceScreen
             android:key="reverse_lookup_screen"
             android:title="@string/im_reverse_lookup_screen_title">
@@ -294,13 +281,6 @@
             android:key="similiar_enable"
             android:summary="@string/similiar_enable_switch_summary"
             android:title="@string/similiar_enable_switch" />
-        <ListPreference
-            android:defaultValue="20"
-            android:dialogTitle="@string/similiar_list"
-            android:entries="@array/similiar_codes"
-            android:entryValues="@array/similiar_codes"
-            android:key="similiar_list"
-            android:title="@string/similiar_list" />
         <CheckBoxPreference
             android:defaultValue="true"
             android:key="candidate_suggestion"
@@ -318,7 +298,7 @@
             android:title="@string/learning_switch" />
     </PreferenceCategory>
 
-    <!-- 7. 英文字典 -->
+    <!-- 7. 英文鍵盤 -->
     <PreferenceCategory
         android:key="pref_section_english_dictionary"
         android:title="@string/pref_section_english_dictionary">
@@ -327,6 +307,11 @@
             android:key="english_dictionary_enable"
             android:summary="@string/enable_english_dictionary_summary"
             android:title="@string/enable_english_dictionary" />
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:key="auto_cap"
+            android:summary="@string/auto_cap_summary"
+            android:title="@string/auto_cap" />
     </PreferenceCategory>
 
     <!-- 9. 外接鍵盤 -->
@@ -359,13 +344,6 @@
             android:entryValues="@array/selkey_options_values"
             android:key="selkey_option"
             android:title="@string/selkey_option_list" />
-        <ListPreference
-            android:defaultValue="normal_keyboard"
-            android:dialogTitle="@string/physical_keyboard"
-            android:entries="@array/physical_keyboard_options"
-            android:entryValues="@array/physical_keyboard_options_values"
-            android:key="physical_keyboard_type"
-            android:title="@string/physical_keyboard" />
         <CheckBoxPreference
             android:defaultValue="false"
             android:dependency="english_dictionary_enable"

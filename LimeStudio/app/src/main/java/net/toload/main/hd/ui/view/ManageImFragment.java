@@ -355,10 +355,8 @@ public class ManageImFragment extends Fragment implements ManageImView {
 
         int totalPages = (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT;
         if (totalPages < 1) totalPages = 1;
-        String nav = ("第 " + (page + 1) + " / "
-                + ((total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT == 0 ? 1
-                        : (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT)
-                + " 頁 · " + String.format(java.util.Locale.US, "%,d", total) + " 筆");
+        String formattedTotal = String.format(java.util.Locale.US, "%,d", total);
+        String nav = getString(R.string.manage_page_info, page + 1, totalPages, formattedTotal);
 
         Log.i(TAG, "updateGridView(): total=" + total + ", page=" + page + ", start=" + startrecord + ", end=" + endrecord + ", wordlistSize=" + (this.wordlist == null ? 0 : this.wordlist.size()));
         this.txtNavigationInfo.setText(nav);
@@ -450,10 +448,9 @@ public class ManageImFragment extends Fragment implements ManageImView {
         if (txtNavigationInfo != null) {
             int totalPages = (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT;
             if (totalPages < 1) totalPages = 1;
-            txtNavigationInfo.setText(("第 " + (page + 1) + " / "
-                + ((total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT == 0 ? 1
-                        : (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT)
-                + " 頁 · " + String.format(java.util.Locale.US, "%,d", total) + " 筆"));
+            String formattedTotal = String.format(java.util.Locale.US, "%,d", total);
+            txtNavigationInfo.setText(getString(R.string.manage_page_info,
+                    page + 1, totalPages, formattedTotal));
         }
     }
 

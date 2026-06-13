@@ -297,8 +297,8 @@ public class ManageRelatedFragment extends Fragment implements ManageRelatedView
 
         int totalPages = (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT;
         if (totalPages < 1) totalPages = 1;
-        String nav = "第 " + (page + 1) + " / " + totalPages + " 頁 · "
-                + String.format(java.util.Locale.US, "%,d", total) + " 筆";
+        String formattedTotal = String.format(java.util.Locale.US, "%,d", total);
+        String nav = getString(R.string.manage_page_info, page + 1, totalPages, formattedTotal);
 
         this.txtNavigationInfo.setText(nav);
     }
@@ -398,8 +398,9 @@ public class ManageRelatedFragment extends Fragment implements ManageRelatedView
         if (txtNavigationInfo != null) {
             int totalPages = (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT;
             if (totalPages < 1) totalPages = 1;
-            txtNavigationInfo.setText("第 " + (page + 1) + " / " + totalPages + " 頁 · "
-                    + String.format(java.util.Locale.US, "%,d", total) + " 筆");
+            String formattedTotal = String.format(java.util.Locale.US, "%,d", total);
+            txtNavigationInfo.setText(getString(R.string.manage_page_info,
+                    page + 1, totalPages, formattedTotal));
         }
     }
 
