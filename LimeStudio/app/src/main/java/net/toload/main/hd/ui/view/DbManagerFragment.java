@@ -24,6 +24,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.FileProvider;
+import androidx.core.widget.NestedScrollView;
 import androidx.fragment.app.Fragment;
 
 import com.google.android.material.button.MaterialButton;
@@ -39,6 +40,12 @@ import java.util.List;
 public class DbManagerFragment extends Fragment {
 
     private static final String TAG = "DbManagerFragment";
+
+    private enum BackupRestoreType {
+        BACKUP,
+        RESTORE,
+        BACKUP_TO_DOWNLOADS
+    }
 
     private SetupImController setupImController;
     private Activity activity;
@@ -86,6 +93,10 @@ public class DbManagerFragment extends Fragment {
         }
 
         View root = inflater.inflate(R.layout.fragment_db_manager, container, false);
+        NestedScrollView scrollView = root.findViewById(R.id.db_manager_scroll);
+        if (scrollView != null) {
+            ScrollableTabHelper.applyToNestedScrollView(activity, scrollView);
+        }
 
         dbStatusCard = root.findViewById(R.id.dbStatusCard);
         dbStatusText = root.findViewById(R.id.dbStatusText);
@@ -119,10 +130,10 @@ public class DbManagerFragment extends Fragment {
             PackageManager pm = requireActivity().getPackageManager();
             List<ResolveInfo> activities = pm.queryIntentActivities(intent, 0);
             if (intent.resolveActivity(pm) == null || activities == null || activities.isEmpty()) {
-                showAlertDialog(SetupImView.BackupRestoreType.BACKUP_TO_DOWNLOADS);
+                showAlertDialog(BackupRestoreType.BACKUP_TO_DOWNLOADS);
                 return;
             }
-            showAlertDialog(SetupImView.BackupRestoreType.BACKUP);
+            showAlertDialog(BackupRestoreType.BACKUP);
         } catch (Exception e) {
             Log.e(TAG, "Error checking backup options", e);
             showToastMessage(getString(R.string.l3_initial_backup_error), Toast.LENGTH_SHORT);
@@ -227,7 +238,7 @@ public class DbManagerFragment extends Fragment {
                 showToastMessage(getString(R.string.l3_initial_restore_error), Toast.LENGTH_SHORT);
                 return;
             }
-            showAlertDialog(SetupImView.BackupRestoreType.RESTORE);
+            showAlertDialog(BackupRestoreType.RESTORE);
         } catch (Exception e) {
             Log.e(TAG, "Error checking restore options", e);
             showToastMessage(getString(R.string.l3_initial_restore_error), Toast.LENGTH_SHORT);
@@ -252,8 +263,14 @@ public class DbManagerFragment extends Fragment {
     }
 
     private void performRestore(Uri uri) {
+        if (setupImController == null) {
+            showToastMessage(getString(R.string.l3_initial_restore_error), Toast.LENGTH_LONG);
+            runOnUi(() -> setStatus(getString(R.string.db_status_restore_fail, "controller unavailable")));
+            return;
+        }
         try {
-            if (setupImController != null) setupImController.performRestore(uri);
+            setupImController.performRestore(uri);
+            // Only reached when no exception propagated from the controller/DBServer chain.
             runOnUi(() -> setStatus(getString(R.string.db_status_restore_ok)));
         } catch (Exception e) {
             Log.e(TAG, "Failed to restore database", e);
@@ -284,7 +301,7 @@ public class DbManagerFragment extends Fragment {
     // Shared confirm dialog (backup / restore)
     // -----------------------------------------------------------------------
 
-    private void showAlertDialog(SetupImView.BackupRestoreType type) {
+    private void showAlertDialog(BackupRestoreType type) {
         int messageResId;
         Runnable onConfirm;
         switch (type) {

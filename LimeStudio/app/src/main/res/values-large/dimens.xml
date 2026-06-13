@@ -5,7 +5,7 @@
   ~  *
   ~  **    Copyright 2025, The LimeIME Open Source Project
   ~  **
-  ~  **    Project Url: http://github.com/lime-ime/limeime/
+  ~  **    Project Url: https://github.com/SamLaio/limeime/
   ~  **                 http://android.toload.net/
   ~  **
   ~  **    This program is free software: you can redistribute it and/or modify
@@ -41,7 +41,6 @@
     <dimen name="notice_text_size">20sp</dimen>
     <dimen name="keyboard_vertical_correction">-0.05in</dimen>
     <dimen name="spacebar_vertical_correction">0dp</dimen>
-    <dimen name="spacebar_preview_text_size">26sp</dimen>
     <dimen name="spacebar_preview_top_padding">20dp</dimen>
  	<dimen name="mini_keyboard_vertical_correction">-0.05in</dimen>
 

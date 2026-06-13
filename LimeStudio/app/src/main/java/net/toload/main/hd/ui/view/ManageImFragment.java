@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -26,6 +26,7 @@ package net.toload.main.hd.ui.view;
 
 import android.app.Activity;
 import android.content.Context;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Looper;
 
@@ -45,6 +46,7 @@ import android.widget.Toast;
 import android.util.Log;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButtonToggleGroup;
+import com.google.android.material.color.MaterialColors;
 
 import net.toload.main.hd.data.Record;
 import net.toload.main.hd.global.LIME;
@@ -134,6 +136,7 @@ public class ManageImFragment extends Fragment implements ManageImView {
             });
 
             toolbar.inflateMenu(R.menu.menu_manage_im);
+            tintToolbarMenuIcons(toolbar);
 
             toolbar.setOnMenuItemClickListener(item -> {
                 if (item.getItemId() == R.id.action_manage_im_add) {
@@ -283,6 +286,16 @@ public class ManageImFragment extends Fragment implements ManageImView {
         return rootView;
     }
 
+    private void tintToolbarMenuIcons(MaterialToolbar toolbar) {
+        int tint = MaterialColors.getColor(toolbar, com.google.android.material.R.attr.colorOnSurface);
+        for (int i = 0; i < toolbar.getMenu().size(); i++) {
+            Drawable icon = toolbar.getMenu().getItem(i).getIcon();
+            if (icon != null) {
+                icon.mutate().setTint(tint);
+            }
+        }
+    }
+
     public void searchword(){
         searchword(prequery);
     }
@@ -347,10 +360,6 @@ public class ManageImFragment extends Fragment implements ManageImView {
         if (adapter != null) {
             adapter.submitList(this.wordlist);
             gridManageIm.scrollToPosition(0);
-        }
-
-        if (total == 0) {
-            Toast.makeText(activity, R.string.no_search_result, Toast.LENGTH_SHORT).show();
         }
 
         int totalPages = (total + LIME.IM_MANAGE_DISPLAY_AMOUNT - 1) / LIME.IM_MANAGE_DISPLAY_AMOUNT;

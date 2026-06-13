@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -25,7 +25,6 @@
 package net.toload.main.hd;
 
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -33,7 +32,6 @@ import net.toload.main.hd.data.ImConfig;
 import net.toload.main.hd.data.Keyboard;
 import net.toload.main.hd.global.LIME;
 import net.toload.main.hd.global.LIMEPreferenceManager;
-import net.toload.main.hd.keyboard.LIMEBaseKeyboard;
 import net.toload.main.hd.keyboard.LIMEKeyboard;
 import net.toload.main.hd.keyboard.LIMEKeyboardView;
 
@@ -69,6 +67,12 @@ public class LIMEKeyboardSwitcher {
     private static final int SYMBOLS_KEYBOARD_2 = 2;
     private static final int SYMBOLS_KEYBOARD_3 = 3;
 
+    static String resolveEnglishLayoutId(Keyboard keyboard, boolean showNumberRow, boolean isShift) {
+        // There is no user-facing English layout picker, so ignore legacy engkb fields in lime.db.
+        if (showNumberRow) return isShift ? "lime_english_number_shift" : "lime_english_number";
+        return isShift ? "lime_english_shift" : "lime_english";
+    }
+
     LIMEKeyboardView mInputView;
     LIMEService mService;
 	Context mThemedContext;
@@ -90,7 +94,6 @@ public class LIMEKeyboardSwitcher {
     private int mCurrentSymbolsKeyboard = SYMBOLS_KEYBOARD_1;
 
     private int mLastDisplayWidth;
-    private boolean mLastEmojiButtonEnabled = true;
     
     private String ImCode = null;
     
@@ -261,11 +264,6 @@ public class LIMEKeyboardSwitcher {
     		clearKeyboards();
     		mKeySizeScale = mLIMEPref.getKeyboardSize();
     	}
-		boolean emojiButtonEnabled = mLIMEPref.getEmojiButtonEnabled();
-		if (emojiButtonEnabled != mLastEmojiButtonEnabled) {
-			clearKeyboards();
-			mLastEmojiButtonEnabled = emojiButtonEnabled;
-		}
 	    if(id != null){
 	        if (!mKeyboards.containsKey(id)) {
 				if(DEBUG)
@@ -279,34 +277,12 @@ public class LIMEKeyboardSwitcher {
 	            if (id.mEnableShiftLock) {
 	                keyboard.enableShiftLock();
 	            }
-				applyEmojiButtonVisibility(keyboard);
 	            mKeyboards.put(id, keyboard);
 	        }
 	        return mKeyboards.get(id);
 	    }
 	    return null;
     }
-
-	private void applyEmojiButtonVisibility(LIMEKeyboard keyboard) {
-		if (keyboard == null || mLIMEPref.getEmojiButtonEnabled()) {
-			return;
-		}
-		removeEmojiKeys(keyboard.getKeys());
-		removeEmojiKeys(keyboard.getModifierKeys());
-	}
-
-	private void removeEmojiKeys(List<LIMEBaseKeyboard.Key> keys) {
-		if (keys == null) {
-			return;
-		}
-		for (Iterator<LIMEBaseKeyboard.Key> iterator = keys.iterator(); iterator.hasNext(); ) {
-			LIMEBaseKeyboard.Key key = iterator.next();
-			if (key != null && key.codes != null && key.codes.length > 0
-					&& key.codes[0] == LIME.KEYCODE_EMOJI_PANEL) {
-				iterator.remove();
-			}
-		}
-	}
     
     /**
      * Get XML resource ID for keyboard layout.
@@ -445,12 +421,6 @@ public class LIMEKeyboardSwitcher {
 			case "lime_number_symbol_shift":
 				return R.xml.lime_number_symbol_shift;
 			
-			// Special keyboards
-			case "lime_url":
-				return R.xml.lime_url;
-			case "lime_email":
-				return R.xml.lime_email;
-			
 			default:
 				// Return 0 for unknown keyboard layouts (should not happen with valid database entries)
 				if (DEBUG) {
@@ -517,46 +487,16 @@ public class LIMEKeyboardSwitcher {
 	                kid = new KeyboardId(getKeyboardXMLID("phone_number"));
 	                break;
 	            case MODE_URL:
-	            	//Log.i("ART","KBMODE ->: url");
-	            	if(!localImCode.equals("wb")){
-		            	if(mLIMEPref.getShowNumberRowInEnglish()){
-		            		if(isShift)
-		            			kid = new KeyboardId(getKeyboardXMLID("lime_english_number_shift"), KEYBOARD_MODE_URL, true);
-		            		else
-		            			kid = new KeyboardId(getKeyboardXMLID("lime_english_number"), KEYBOARD_MODE_URL, true);
-		            	}else{
-		            		if(isShift)
-		            			kid = new KeyboardId(getKeyboardXMLID("lime_english_shift"), KEYBOARD_MODE_URL, true);
-		            		else
-		            			kid = new KeyboardId(getKeyboardXMLID("lime_english"), KEYBOARD_MODE_URL, true);
-		            	}	
-	            	}else{
-	            		if(isShift)
-	            			kid = new KeyboardId(getKeyboardXMLID("lime_abc_shift"), KEYBOARD_MODE_URL, true);
-	            		else
-	            			kid = new KeyboardId(getKeyboardXMLID("lime_abc"), KEYBOARD_MODE_URL, true);
-	            	}
+	                //Log.i("ART","KBMODE ->: url");
+	                kid = new KeyboardId(
+	                        getKeyboardXMLID(resolveEnglishLayoutId(kConfig, mLIMEPref.getShowNumberRowInEnglish(), isShift)),
+                            KEYBOARD_MODE_URL, true);
 	                break;
 	            case MODE_EMAIL:
-	            	//Log.i("ART","KBMODE ->: email");
-	            	if(!localImCode.equals("wb")){
-		            	if(mLIMEPref.getShowNumberRowInEnglish()){
-		            		if(isShift)
-		            			kid = new KeyboardId(getKeyboardXMLID("lime_english_number_shift"), KEYBOARD_MODE_EMAIL, true);
-		            		else
-		            			kid = new KeyboardId(getKeyboardXMLID("lime_english_number"), KEYBOARD_MODE_EMAIL, true);
-		            	}else{
-		            		if(isShift)
-		            			kid = new KeyboardId(getKeyboardXMLID("lime_english_shift"), KEYBOARD_MODE_EMAIL, true);
-		            		else
-		            			kid = new KeyboardId(getKeyboardXMLID("lime_english"), KEYBOARD_MODE_EMAIL, true);
-		            	}
-	            	}else{
-	            		if(isShift)
-	            			kid = new KeyboardId(getKeyboardXMLID("lime_abc_shift"), KEYBOARD_MODE_URL, true);
-	            		else
-	            			kid = new KeyboardId(getKeyboardXMLID("lime_abc"), KEYBOARD_MODE_URL, true);
-	            	}
+	                //Log.i("ART","KBMODE ->: email");
+	                kid = new KeyboardId(
+	                        getKeyboardXMLID(resolveEnglishLayoutId(kConfig, mLIMEPref.getShowNumberRowInEnglish(), isShift)),
+                            KEYBOARD_MODE_EMAIL, true);
 	                break;
 	            default:
 	            	if(isIm){  // Chinese IM keyboards
@@ -569,32 +509,9 @@ public class LIMEKeyboardSwitcher {
 	            		}
 		                mIsChinese = true;
 	            	}else {//if(!isIm){  //English normal keyboard
-
-		            	if(!localImCode.equals("wb")){
-		            		if(isShift){
-		    	            	//Log.i("ART","KBMODE ->: " + kConfig.getEngshiftkb());
-		                    	kid = new KeyboardId(
-		                    			getKeyboardXMLID(kConfig.getEngshiftkb(mLIMEPref.getShowNumberRowInEnglish())),
-                                        KEYBOARD_MODE_NORMAL, true );
-		            		}else{
-		    	            	//Log.i("ART","KBMODE ->: " + kConfig.getEngkb());
-		                    	kid = new KeyboardId(
-		                    			getKeyboardXMLID(kConfig.getEngkb(mLIMEPref.getShowNumberRowInEnglish())),
-                                        KEYBOARD_MODE_NORMAL, true );
-		            		}
-		            	}else{
-		            		if(isShift){
-		    	            	//Log.i("ART","KBMODE ->: " + kConfig.getEngshiftkb());
-		                    	kid = new KeyboardId(
-		                    			getKeyboardXMLID(kConfig.getEngshiftkb()),
-                                        KEYBOARD_MODE_NORMAL, true );
-		            		}else{
-		    	            	//Log.i("ART","KBMODE ->: " + kConfig.getEngkb());
-		                    	kid = new KeyboardId(
-		                    			getKeyboardXMLID(kConfig.getEngkb()),
-                                        KEYBOARD_MODE_NORMAL, true );
-		            		}
-		            	}
+	                    kid = new KeyboardId(
+	                            getKeyboardXMLID(resolveEnglishLayoutId(kConfig, mLIMEPref.getShowNumberRowInEnglish(), isShift)),
+                                KEYBOARD_MODE_NORMAL, true );
 	            	}
 	            	
             	}

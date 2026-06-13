@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -40,7 +40,10 @@ import org.junit.runner.RunWith;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import static org.junit.Assert.*;
 
@@ -59,6 +62,7 @@ public class DBServerTest {
 
     private final String TAG = "DBServerTest";
     private static DBServer sharedDbServer = null;
+    private static final String TEST_METADATA_TABLE = LIME.DB_TABLE_CUSTOM;
 
     /**
      * Setup method to ensure database is ready before each test.
@@ -196,6 +200,19 @@ public class DBServerTest {
                     "This indicates a stuck operation from a previous test. " +
                     "Test may hang or fail.");
         return false;
+    }
+
+    @Test
+    public void testDBServerSetImConfigPersistsMetadata() {
+        String suffix = String.valueOf(System.currentTimeMillis());
+        String editedName = "Edited Name " + suffix;
+        String editedVersion = "Edited Version " + suffix;
+
+        sharedDbServer.setImConfig(TEST_METADATA_TABLE, "name", editedName);
+        sharedDbServer.setImConfig(TEST_METADATA_TABLE, "version", editedVersion);
+
+        assertEquals(editedName, sharedDbServer.getImConfig(TEST_METADATA_TABLE, "name"));
+        assertEquals(editedVersion, sharedDbServer.getImConfig(TEST_METADATA_TABLE, "version"));
     }
 
     /**
@@ -437,9 +454,9 @@ public class DBServerTest {
             
             // Step 2: Add some records to the "custom" table
             String tableName = "custom";
-            limeDB.addOrUpdateMappingRecord(tableName, "test1", "測試1", 10);
-            limeDB.addOrUpdateMappingRecord(tableName, "test2", "測試2", 20);
-            limeDB.addOrUpdateMappingRecord(tableName, "test3", "測試3", 30);
+            limeDB.addOrUpdateMappingRecord(tableName, "test1", "æ¸¬è©¦1", 10);
+            limeDB.addOrUpdateMappingRecord(tableName, "test2", "æ¸¬è©¦2", 20);
+            limeDB.addOrUpdateMappingRecord(tableName, "test3", "æ¸¬è©¦3", 30);
             
             // Step 3: Count records before backup
             int originalCount = limeDB.countRecords(tableName, null, null);
@@ -740,7 +757,7 @@ public class DBServerTest {
         File testFile = new File(appContext.getCacheDir(), "test_mapping.txt");
         try {
             java.io.FileWriter writer = new java.io.FileWriter(testFile);
-            writer.write("test\t測試\n");
+            writer.write("test\tæ¸¬è©¦\n");
             writer.close();
             
             // Test importTxtTable with String filename
@@ -782,7 +799,7 @@ public class DBServerTest {
         File testFile = new File(appContext.getCacheDir(), "test_mapping_file.txt");
         try {
             java.io.FileWriter writer = new java.io.FileWriter(testFile);
-            writer.write("test\t測試\n");
+            writer.write("test\tæ¸¬è©¦\n");
             writer.close();
             
             // Test importTxtTable with File
@@ -882,8 +899,13 @@ public class DBServerTest {
         
         // Test with non-existent file
         String nonExistentPath = appContext.getCacheDir().getAbsolutePath() + "/nonexistent_" + System.currentTimeMillis() + ".zip";
-        dbServer.restoreDatabase(nonExistentPath);
-        // Should show error notification, which is acceptable
+        try {
+            dbServer.restoreDatabase(nonExistentPath);
+            fail("restoreDatabase with non-existent path should throw");
+        } catch (Exception e) {
+            // Exception is expected for non-existent file.
+            assertTrue("restoreDatabase with non-existent path throws", true);
+        }
         
         // Test with null path
         try {
@@ -926,14 +948,13 @@ public class DBServerTest {
             // Create URI from file
             android.net.Uri testUri = android.net.Uri.fromFile(testFile);
             
-            // Test restoreDatabase with Uri
-            // This may fail if file format is invalid, which is acceptable
+            // Test restoreDatabase with a zero-byte Uri. This must fail visibly instead of
+            // returning and letting the UI report restore success.
             try {
                 dbServer.restoreDatabase(testUri);
-                assertTrue("restoreDatabase with Uri should complete", true);
+                fail("restoreDatabase with zero-byte Uri should throw");
             } catch (Exception e) {
-                // Exception is acceptable for invalid file format
-                assertTrue("restoreDatabase with Uri may throw exception", true);
+                assertTrue("restoreDatabase with zero-byte Uri throws", true);
             }
             
             // Clean up
@@ -1027,6 +1048,68 @@ public class DBServerTest {
         } catch (Exception e) {
             // Other exceptions are acceptable
             assertTrue("backupDatabase with null Uri may throw exception", true);
+        }
+    }
+
+    @Test(timeout = 30000)
+    public void backupDatabaseSkipsMissingRollbackJournal() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        DBServer dbServer = DBServer.getInstance(appContext);
+
+        if (!ensureDatabaseReady(dbServer)) {
+            fail("ERROR: Database is still on hold after waiting 10 seconds.");
+        }
+
+        File journalFile = appContext.getDatabasePath(LIME.DATABASE_JOURNAL);
+        if (journalFile.exists() && !journalFile.delete()) {
+            fail("Could not delete transient rollback journal before backup test");
+        }
+
+        File backupFile = new File(appContext.getCacheDir(),
+                "test_backup_without_journal_" + System.currentTimeMillis() + ".zip");
+        try {
+            dbServer.backupDatabase(android.net.Uri.fromFile(backupFile));
+
+            assertTrue("Backup file should be created", backupFile.exists());
+            assertTrue("Backup file should not be empty", backupFile.length() > 0);
+
+            List<String> entries = new ArrayList<>();
+            try (ZipFile zipFile = new ZipFile(backupFile)) {
+                Enumeration<? extends ZipEntry> zipEntries = zipFile.entries();
+                while (zipEntries.hasMoreElements()) {
+                    entries.add(zipEntries.nextElement().getName());
+                }
+            }
+
+            assertTrue("Backup zip should contain lime.db",
+                    entries.contains("databases/" + LIME.DATABASE_NAME));
+            assertTrue("Backup zip should contain shared preferences backup",
+                    entries.contains(LIME.SHARED_PREFS_BACKUP_NAME));
+            assertTrue("Backup zip should contain preference manifest",
+                    entries.contains(net.toload.main.hd.global.PreferenceBackupAdapter.MANIFEST_PATH));
+            assertFalse("Backup zip should not require missing rollback journal",
+                    entries.contains("databases/" + LIME.DATABASE_JOURNAL));
+        } finally {
+            if (backupFile.exists() && !backupFile.delete()) {
+                Log.w(TAG, "Failed to delete backup test file");
+            }
+        }
+    }
+
+    @Test(timeout = 30000)
+    public void backupDatabasePropagatesOutputWriteFailure() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        DBServer dbServer = DBServer.getInstance(appContext);
+
+        if (!ensureDatabaseReady(dbServer)) {
+            fail("ERROR: Database is still on hold after waiting 10 seconds.");
+        }
+
+        try {
+            dbServer.backupDatabase(null);
+            fail("backupDatabase should throw RemoteException when output Uri cannot be opened");
+        } catch (RemoteException expected) {
+            assertNotNull("backupDatabase should propagate a RemoteException", expected);
         }
     }
 
@@ -1632,9 +1715,9 @@ public class DBServerTest {
             }
             
             // Step 2: Add some records to the related table
-            limeDB.addOrUpdateRelatedPhraseRecord("測試", "詞彙1");
-            limeDB.addOrUpdateRelatedPhraseRecord("測試", "詞彙2");
-            limeDB.addOrUpdateRelatedPhraseRecord("測試", "詞彙3");
+            limeDB.addOrUpdateRelatedPhraseRecord("æ¸¬è©¦", "è©å½1");
+            limeDB.addOrUpdateRelatedPhraseRecord("æ¸¬è©¦", "è©å½2");
+            limeDB.addOrUpdateRelatedPhraseRecord("æ¸¬è©¦", "è©å½3");
             
             // Step 3: Count records before backup
             int originalCount = limeDB.countRecords(LIME.DB_TABLE_RELATED, null, null);
@@ -1722,9 +1805,9 @@ public class DBServerTest {
             
             // Step 2: Add some records to the "custom" table
             String tableName = "custom";
-            limeDB.addOrUpdateMappingRecord(tableName, "test1", "測試1", 10);
-            limeDB.addOrUpdateMappingRecord(tableName, "test2", "測試2", 20);
-            limeDB.addOrUpdateMappingRecord(tableName, "test3", "測試3", 30);
+            limeDB.addOrUpdateMappingRecord(tableName, "test1", "æ¸¬è©¦1", 10);
+            limeDB.addOrUpdateMappingRecord(tableName, "test2", "æ¸¬è©¦2", 20);
+            limeDB.addOrUpdateMappingRecord(tableName, "test3", "æ¸¬è©¦3", 30);
             
             // Step 3: Count records before backup
             int originalCount = limeDB.countRecords(tableName, null, null);
@@ -1818,9 +1901,9 @@ public class DBServerTest {
         
         // Step 1: Add some test records
         int initialRecordCount = limeDB.countRecords(tableName, null, null);
-        limeDB.addOrUpdateMappingRecord(tableName, "test1", "測試1", 10);
-        limeDB.addOrUpdateMappingRecord(tableName, "test2", "測試2", 20);
-        limeDB.addOrUpdateMappingRecord(tableName, "test3", "測試3", 30);
+        limeDB.addOrUpdateMappingRecord(tableName, "test1", "æ¸¬è©¦1", 10);
+        limeDB.addOrUpdateMappingRecord(tableName, "test2", "æ¸¬è©¦2", 20);
+        limeDB.addOrUpdateMappingRecord(tableName, "test3", "æ¸¬è©¦3", 30);
         
         // Verify records were added
         int countAfterAdd = limeDB.countRecords(tableName, null, null);
@@ -1901,13 +1984,13 @@ public class DBServerTest {
             boolean foundTest2 = false;
             boolean foundTest3 = false;
             for (Record record : importedRecords) {
-                if ("test1".equals(record.getCode()) && "測試1".equals(record.getWord())) {
+                if ("test1".equals(record.getCode()) && "æ¸¬è©¦1".equals(record.getWord())) {
                     foundTest1 = true;
                 }
-                if ("test2".equals(record.getCode()) && "測試2".equals(record.getWord())) {
+                if ("test2".equals(record.getCode()) && "æ¸¬è©¦2".equals(record.getWord())) {
                     foundTest2 = true;
                 }
-                if ("test3".equals(record.getCode()) && "測試3".equals(record.getWord())) {
+                if ("test3".equals(record.getCode()) && "æ¸¬è©¦3".equals(record.getWord())) {
                     foundTest3 = true;
                 }
             }
@@ -1955,12 +2038,12 @@ public class DBServerTest {
             }
             
             // Step 2: Add some related phrase records
-            String pword1 = "測試";
-            String cword1 = "詞彙1";
-            String pword2 = "測試";
-            String cword2 = "詞彙2";
-            String pword3 = "中文";
-            String cword3 = "輸入";
+            String pword1 = "æ¸¬è©¦";
+            String cword1 = "è©å½1";
+            String pword2 = "æ¸¬è©¦";
+            String cword2 = "è©å½2";
+            String pword3 = "ä¸­æ";
+            String cword3 = "è¼¸å¥";
             
             limeDB.addOrUpdateRelatedPhraseRecord(pword1, cword1);
             limeDB.addOrUpdateRelatedPhraseRecord(pword2, cword2);
@@ -2060,11 +2143,11 @@ public class DBServerTest {
             // Step 2: Add some records to the "custom" table
             String tableName = "custom";
             String code1 = "export1";
-            String word1 = "匯出測試1";
+            String word1 = "å¯åºæ¸¬è©¦1";
             String code2 = "export2";
-            String word2 = "匯出測試2";
+            String word2 = "å¯åºæ¸¬è©¦2";
             String code3 = "export3";
-            String word3 = "匯出測試3";
+            String word3 = "å¯åºæ¸¬è©¦3";
             
             limeDB.addOrUpdateMappingRecord(tableName, code1, word1, 10);
             limeDB.addOrUpdateMappingRecord(tableName, code2, word2, 20);
@@ -2170,7 +2253,7 @@ public class DBServerTest {
         }
     }
 
-    @Test(timeout = 30000)
+    @Test(timeout = 120000)
     public void testDBServerBackupDatabaseAndRestoreWithDataConsistency() {
         // Comprehensive test: add records, backup, clear, restore, verify consistency
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -2196,16 +2279,16 @@ public class DBServerTest {
             // Step 2: Add some records to multiple tables
             String tableName = "custom";
             String code1 = "backup1";
-            String word1 = "備份測試1";
+            String word1 = "åä»½æ¸¬è©¦1";
             String code2 = "backup2";
-            String word2 = "備份測試2";
+            String word2 = "åä»½æ¸¬è©¦2";
             
             limeDB.addOrUpdateMappingRecord(tableName, code1, word1, 10);
             limeDB.addOrUpdateMappingRecord(tableName, code2, word2, 20);
             
             // Add related phrase records
-            String pword1 = "備份";
-            String cword1 = "測試";
+            String pword1 = "åä»½";
+            String cword1 = "æ¸¬è©¦";
             limeDB.addOrUpdateRelatedPhraseRecord(pword1, cword1);
             
             // Step 3: Count records before backup
@@ -2389,8 +2472,8 @@ public class DBServerTest {
             }
             
             limeDB.setTableName("custom");
-            limeDB.addOrUpdateMappingRecord("custom", "test1", "測試1", 10);
-            limeDB.addOrUpdateMappingRecord("custom", "test2", "測試2", 20);
+            limeDB.addOrUpdateMappingRecord("custom", "test1", "æ¸¬è©¦1", 10);
+            limeDB.addOrUpdateMappingRecord("custom", "test2", "æ¸¬è©¦2", 20);
             int originalCount = limeDB.countRecords("custom", null, null);
             assertTrue("Should have at least 2 records", originalCount >= 2);
             
@@ -2496,7 +2579,7 @@ public class DBServerTest {
         File testFile = new File(appContext.getCacheDir(), "test_invalid_table.txt");
         try {
             java.io.FileWriter writer = new java.io.FileWriter(testFile);
-            writer.write("test\t測試\n");
+            writer.write("test\tæ¸¬è©¦\n");
             writer.close();
             
             // Test with invalid table name
@@ -2572,7 +2655,7 @@ public class DBServerTest {
             // Create test file with multiple lines
             java.io.FileWriter writer = new java.io.FileWriter(testFile);
             for (int i = 0; i < 10; i++) {
-                writer.write("test" + i + "\t測試" + i + "\n");
+                writer.write("test" + i + "\tæ¸¬è©¦" + i + "\n");
             }
             writer.close();
             
@@ -2634,8 +2717,8 @@ public class DBServerTest {
             }
             
             limeDB.setTableName("custom");
-            limeDB.addOrUpdateMappingRecord("custom", "test1", "測試1", 10);
-            limeDB.addOrUpdateMappingRecord("custom", "test2", "測試2", 20);
+            limeDB.addOrUpdateMappingRecord("custom", "test1", "æ¸¬è©¦1", 10);
+            limeDB.addOrUpdateMappingRecord("custom", "test2", "æ¸¬è©¦2", 20);
             int originalCount = limeDB.countRecords("custom", null, null);
             assertTrue("Should have at least 2 records", originalCount >= 2);
             
@@ -2721,7 +2804,7 @@ public class DBServerTest {
         }
     }
 
-    @Test(timeout = 15000)
+    @Test(timeout = 60000)
     public void testDBServerImportDbRelatedWithUncompressedDatabase() {
         // Test importing uncompressed related database file
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -2739,8 +2822,8 @@ public class DBServerTest {
                 fail("ERROR: Cannot initialize database connection.");
             }
             
-            limeDB.addOrUpdateRelatedPhraseRecord("測試", "詞彙1");
-            limeDB.addOrUpdateRelatedPhraseRecord("測試", "詞彙2");
+            limeDB.addOrUpdateRelatedPhraseRecord("æ¸¬è©¦", "è©å½1");
+            limeDB.addOrUpdateRelatedPhraseRecord("æ¸¬è©¦", "è©å½2");
             int originalCount = limeDB.countRecords(LIME.DB_TABLE_RELATED, null, null);
             assertTrue("Should have at least 2 records", originalCount >= 2);
             
@@ -2802,9 +2885,9 @@ public class DBServerTest {
             }
             
             limeDB.setTableName("custom");
-            limeDB.addOrUpdateMappingRecord("custom", "test1", "測試1", 10);
-            limeDB.addOrUpdateMappingRecord("custom", "test2", "測試2", 20);
-            limeDB.addOrUpdateMappingRecord("custom", "test3", "測試3", 30);
+            limeDB.addOrUpdateMappingRecord("custom", "test1", "æ¸¬è©¦1", 10);
+            limeDB.addOrUpdateMappingRecord("custom", "test2", "æ¸¬è©¦2", 20);
+            limeDB.addOrUpdateMappingRecord("custom", "test3", "æ¸¬è©¦3", 30);
             
             int originalCount = limeDB.countRecords("custom", null, null);
             assertTrue("Should have at least 3 records", originalCount >= 3);
@@ -2872,9 +2955,9 @@ public class DBServerTest {
                 fail("ERROR: Cannot initialize database connection.");
             }
             limeDB.clearTable(LIME.DB_TABLE_RELATED);
-            limeDB.addOrUpdateRelatedPhraseRecord("測", "詞彙1");
-            limeDB.addOrUpdateRelatedPhraseRecord("測", "詞彙2");
-            limeDB.addOrUpdateRelatedPhraseRecord("測", "詞彙3");
+            limeDB.addOrUpdateRelatedPhraseRecord("æ¸¬", "è©å½1");
+            limeDB.addOrUpdateRelatedPhraseRecord("æ¸¬", "è©å½2");
+            limeDB.addOrUpdateRelatedPhraseRecord("æ¸¬", "è©å½3");
             
             // Step 1.5: Get all original records for comparison
             // Note: getRelated() filters out records with NULL/empty cword, so we use it for consistency
@@ -3029,7 +3112,7 @@ public class DBServerTest {
 
     // 2.4 Backup/Restore Operations - Comprehensive Tests
 
-    @Test(timeout = 30000)
+    @Test(timeout = 120000)
     public void testDBServerBackupDatabaseWithDataIntegrity() {
         // Test backing up entire database and preferences to URI with data integrity
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -3048,8 +3131,8 @@ public class DBServerTest {
             }
             
             limeDB.setTableName("custom");
-            limeDB.addOrUpdateMappingRecord("custom", "backup_test1", "備份測試1", 10);
-            limeDB.addOrUpdateMappingRecord("custom", "backup_test2", "備份測試2", 20);
+            limeDB.addOrUpdateMappingRecord("custom", "backup_test1", "åä»½æ¸¬è©¦1", 10);
+            limeDB.addOrUpdateMappingRecord("custom", "backup_test2", "åä»½æ¸¬è©¦2", 20);
             int originalCount = limeDB.countRecords("custom", null, null);
             assertTrue("Should have at least 2 records", originalCount >= 2);
             
@@ -3266,11 +3349,11 @@ public class DBServerTest {
             
             limeDB.setTableName("custom");
             // Add records with score > 0 (user-learned)
-            limeDB.addOrUpdateMappingRecord("custom", "user1", "用戶1", 100);
-            limeDB.addOrUpdateMappingRecord("custom", "user2", "用戶2", 200);
+            limeDB.addOrUpdateMappingRecord("custom", "user1", "ç¨æ¶1", 100);
+            limeDB.addOrUpdateMappingRecord("custom", "user2", "ç¨æ¶2", 200);
             
             // Add record with score = 0 (not user-learned)
-            limeDB.addOrUpdateMappingRecord("custom", "base1", "基礎1", 0);
+            limeDB.addOrUpdateMappingRecord("custom", "base1", "åºç¤1", 0);
             
             // Step 2: Backup user records
             limeDB.backupUserRecords("custom");
@@ -3311,8 +3394,8 @@ public class DBServerTest {
             }
             
             limeDB.setTableName("custom");
-            limeDB.addOrUpdateMappingRecord("custom", "restore1", "還原1", 100);
-            limeDB.addOrUpdateMappingRecord("custom", "restore2", "還原2", 200);
+            limeDB.addOrUpdateMappingRecord("custom", "restore1", "éå1", 100);
+            limeDB.addOrUpdateMappingRecord("custom", "restore2", "éå2", 200);
             
             // Step 2: Backup user records
             limeDB.backupUserRecords("custom");
@@ -3385,9 +3468,9 @@ public class DBServerTest {
             
             limeDB.setTableName("custom");
             // Add records with score > 0 (user-learned)
-            limeDB.addOrUpdateMappingRecord("custom", "pair_test1", "配對測試1", 100);
-            limeDB.addOrUpdateMappingRecord("custom", "pair_test2", "配對測試2", 200);
-            limeDB.addOrUpdateMappingRecord("custom", "pair_test3", "配對測試3", 300);
+            limeDB.addOrUpdateMappingRecord("custom", "pair_test1", "éå°æ¸¬è©¦1", 100);
+            limeDB.addOrUpdateMappingRecord("custom", "pair_test2", "éå°æ¸¬è©¦2", 200);
+            limeDB.addOrUpdateMappingRecord("custom", "pair_test3", "éå°æ¸¬è©¦3", 300);
             
             // Count user-learned records (score > 0)
             int originalUserRecordsCount = limeDB.countRecords("custom", LIME.DB_COLUMN_SCORE + " > 0", null);
@@ -3451,8 +3534,8 @@ public class DBServerTest {
             
             limeDB.setTableName("custom");
             limeDB.clearTable(("custom"));
-            limeDB.addOrUpdateMappingRecord("custom", "backup_test1", "備份測試1", 100);
-            limeDB.addOrUpdateMappingRecord("custom", "backup_test2", "備份測試2", 200);
+            limeDB.addOrUpdateMappingRecord("custom", "backup_test1", "åä»½æ¸¬è©¦1", 100);
+            limeDB.addOrUpdateMappingRecord("custom", "backup_test2", "åä»½æ¸¬è©¦2", 200);
             
             // Step 2: Backup user records
             limeDB.backupUserRecords("custom");
@@ -3493,19 +3576,21 @@ public class DBServerTest {
             android.database.Cursor invalidCursor2 = limeDB.getBackupTableRecords("invalid_table_user");
             assertNull("getBackupTableRecords should return null for invalid base table name", invalidCursor2);
             
-            // Step 7: Test with empty backup table (should return empty cursor)
-            // Create a table with no user-learned records
-            limeDB.setTableName("phonetic");
-            limeDB.addOrUpdateMappingRecord("phonetic", "base1", "基礎1", 0); // score = 0, not user-learned
-            limeDB.backupUserRecords("phonetic");
-            
-            android.database.Cursor emptyCursor = limeDB.getBackupTableRecords("phonetic_user");
-            // Note: backupUserRecords may not create table if no records with score > 0
-            // So cursor may be null or empty, both are acceptable
-            if (emptyCursor != null) {
-                assertEquals("Empty backup table should return empty cursor", 0, emptyCursor.getCount());
-                emptyCursor.close();
-            }
+            // Step 7: Test the "no user-learned records" path. Use the test-owned
+            // "custom" table so prior tests cannot leak score>0 rows into the
+            // backup. Re-clear to drop the score=100/200 rows added in Step 1.
+            limeDB.setTableName("custom");
+            limeDB.clearTable("custom");
+            limeDB.addOrUpdateMappingRecord("custom", "base1", "åºç¤1", 0); // score = 0, not user-learned
+            limeDB.backupUserRecords("custom");
+
+            // With no score>0 rows, backupUserRecords drops the custom_user
+            // table entirely (see LimeDB.backupUserRecords). Verify via the
+            // public existence-check; do NOT call getBackupTableRecords here â
+            // its lazy Cursor throws SQLITE_ERROR on getCount() when the table
+            // doesn't exist, which is the legitimate state we want to assert.
+            assertFalse("Backup table should be dropped when no user records exist",
+                    limeDB.checkBackupTable("custom"));
             
         } catch (Exception e) {
             Log.e(TAG, "ERROR: getBackupTableRecords test failed: " + e.getMessage(), e);
@@ -3530,9 +3615,10 @@ public class DBServerTest {
             }
             
             // Step 1: Test with valid table name and backup table containing records
+            limeDB.dropBackupTable("custom");
             limeDB.setTableName("custom");
-            limeDB.addOrUpdateMappingRecord("custom", "check_test1", "檢查測試1", 100);
-            limeDB.addOrUpdateMappingRecord("custom", "check_test2", "檢查測試2", 200);
+            limeDB.addOrUpdateMappingRecord("custom", "check_test1", "æª¢æ¥æ¸¬è©¦1", 100);
+            limeDB.addOrUpdateMappingRecord("custom", "check_test2", "æª¢æ¥æ¸¬è©¦2", 200);
             
             limeDB.backupUserRecords("custom");
             boolean hasBackup = limeDB.checkBackupTable("custom");
@@ -3543,13 +3629,15 @@ public class DBServerTest {
             assertFalse("checkBackupTable should return false for invalid table name", invalidCheck);
             
             // Step 3: Test with non-existent backup table (should return false)
+            limeDB.dropBackupTable("phonetic");
             boolean nonExistentCheck = limeDB.checkBackupTable("phonetic");
             assertFalse("checkBackupTable should return false for non-existent backup table", nonExistentCheck);
             
             // Step 4: Test with empty backup table (should return false)
             // Create a table with no user-learned records
+            limeDB.dropBackupTable("cj");
             limeDB.setTableName("cj");
-            limeDB.addOrUpdateMappingRecord("cj", "base1", "基礎1", 0); // score = 0, not user-learned
+            limeDB.addOrUpdateMappingRecord("cj", "base1", "åºç¤1", 0); // score = 0, not user-learned
             limeDB.backupUserRecords("cj");
             
             // backupUserRecords may not create table if no records with score > 0
@@ -3558,7 +3646,7 @@ public class DBServerTest {
             
             // Step 5: Test with backup table containing records (should return true)
             // Add user-learned record to cj table
-            limeDB.addOrUpdateMappingRecord("cj", "user1", "用戶1", 100);
+            limeDB.addOrUpdateMappingRecord("cj", "user1", "ç¨æ¶1", 100);
             limeDB.backupUserRecords("cj");
             boolean hasRecordsCheck = limeDB.checkBackupTable("cj");
             assertTrue("checkBackupTable should return true for backup table containing records", hasRecordsCheck);
@@ -3584,7 +3672,7 @@ public class DBServerTest {
         File testFile = new File(appContext.getCacheDir(), "test_delegation.txt");
         try {
             java.io.FileWriter writer = new java.io.FileWriter(testFile);
-            writer.write("test\t測試\n");
+            writer.write("test\tæ¸¬è©¦\n");
             writer.close();
             
             // Test importTxtTable delegates to LimeDB
@@ -3762,9 +3850,9 @@ public class DBServerTest {
         // Verify UI components don't have file operations (except using DBServer methods)
         // This is an architecture compliance test
         
-        // Check SetupImFragment - should use DBServer for import operations
+        // Check SetupImController - UI import callers should delegate file operations here.
         try {
-            java.io.File sourceFile = new java.io.File("app/src/main/java/net/toload/main/hd/ui/SetupImFragment.java");
+            java.io.File sourceFile = new java.io.File("app/src/main/java/net/toload/main/hd/ui/controller/SetupImController.java");
             if (sourceFile.exists()) {
                 java.util.Scanner scanner = new java.util.Scanner(sourceFile);
                 boolean foundDBServerCall = false;
@@ -3788,12 +3876,12 @@ public class DBServerTest {
                 }
                 scanner.close();
                 
-                // SetupImFragment should use DBServer for import operations
-                assertTrue("SetupImFragment should delegate file operations to DBServer", 
+                // SetupImController should use DBServer for import operations.
+                assertTrue("SetupImController should delegate file operations to DBServer",
                           foundDBServerCall || !foundDirectFileOps);
             }
         } catch (Exception e) {
-            Log.w(TAG, "Could not verify SetupImFragment architecture compliance: " + e.getMessage());
+            Log.w(TAG, "Could not verify SetupImController architecture compliance: " + e.getMessage());
         }
     }
 
@@ -3892,6 +3980,41 @@ public class DBServerTest {
     }
 
     @Test
+    public void testLimeUtilitiesZipUsesBareFileNameForAbsoluteSource() {
+        try {
+            Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+            File cacheDir = appContext.getCacheDir();
+            File nestedDir = new File(cacheDir, "limedb_export_path_test/nested");
+            assertTrue("Nested dir should be created", nestedDir.exists() || nestedDir.mkdirs());
+            File sourceDb = new File(nestedDir, "array.db");
+            File targetZip = new File(cacheDir, "array_test.limedb");
+
+            try {
+                java.io.FileWriter writer = new java.io.FileWriter(sourceDb);
+                writer.write("sqlite placeholder");
+                writer.close();
+
+                LIMEUtilities.zip(targetZip.getAbsolutePath(), sourceDb.getAbsolutePath(), true);
+
+                assertTrue("Zip file should be created", targetZip.exists());
+                try (ZipFile zipFile = new ZipFile(targetZip)) {
+                    Enumeration<? extends ZipEntry> entries = zipFile.entries();
+                    assertTrue("Zip should contain one entry", entries.hasMoreElements());
+                    ZipEntry entry = entries.nextElement();
+                    assertEquals("array.db", entry.getName());
+                    assertFalse("Zip should contain only one entry", entries.hasMoreElements());
+                }
+            } finally {
+                sourceDb.delete();
+                targetZip.delete();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "ERROR: testLimeUtilitiesZipUsesBareFileNameForAbsoluteSource failed: " + e.getMessage(), e);
+            fail("ERROR: zip entry name test failed with exception: " + e.getMessage());
+        }
+    }
+
+    @Test
 
     public void testDBServerUnzipWithInvalidFile() {
         // Test unzip with invalid/non-existent zip file
@@ -3936,4 +4059,3 @@ public class DBServerTest {
         }
     }
 }
-

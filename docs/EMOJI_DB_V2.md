@@ -7,7 +7,7 @@ LimeIME's `emoji.db` ships in [Database/emoji.db](Database/emoji.db) and is cons
 - iOS: [LimeIME-iOS/Shared/Database/LimeDB.swift:2104-2143](LimeIME-iOS/Shared/Database/LimeDB.swift#L2104-L2143) (`emojiConvert(_, _)`)
 - Android: [LimeStudio/app/src/main/java/net/toload/main/hd/limedb/EmojiConverter.java](LimeStudio/app/src/main/java/net/toload/main/hd/limedb/EmojiConverter.java) (`convert(tag, emoji)`)
 
-The DB is **outdated and structurally too narrow** to fix the bugs reported in [issue #29](https://github.com/lime-ime/limeime/issues/29) (open since 2018). Verified against today's DB:
+The DB is **outdated and structurally too narrow** to fix the bugs reported in [issue #29](https://github.com/SamLaio/limeime/issues/29) (open since 2018). Verified against today's DB:
 
 ```text
 sqlite> SELECT COUNT(DISTINCT value) FROM en WHERE value GLOB '*[🇦-🇿]*';

@@ -22,11 +22,13 @@ import net.toload.main.hd.R;
 import net.toload.main.hd.SearchServer;
 import net.toload.main.hd.global.LIME;
 import net.toload.main.hd.global.LIMEPreferenceManager;
+import net.toload.main.hd.global.SystemAccentColor;
 import net.toload.main.hd.ui.controller.ManageImController;
 import net.toload.main.hd.ui.controller.SetupImController;
 import net.toload.main.hd.ui.dialog.HelpDialog;
 import net.toload.main.hd.ui.dialog.NewsDialog;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
+import com.google.android.material.color.DynamicColors;
 import com.google.android.material.navigationrail.NavigationRailView;
 import net.toload.main.hd.ui.view.LIMESettingsView;
 
@@ -35,7 +37,7 @@ import net.toload.main.hd.ui.view.LIMESettingsView;
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -57,7 +59,7 @@ import net.toload.main.hd.ui.view.LIMESettingsView;
  *   <li><b>Controllers</b>: {@link SetupImController}, {@link ManageImController} - handle business logic</li>
  *   <li><b>Managers</b>: {@link NavigationManager}, {@link ProgressManager}, {@link ShareManager} - manage UI concerns</li>
  *   <li><b>Handlers</b>: {@link IntentHandler} - process incoming intents</li>
- *   <li><b>Fragments</b>: SetupImFragment, ManageRelatedFragment, ManageImFragment - provide UI</li>
+ *   <li><b>Fragments</b>: SetupFragment, TwoPaneHostFragment, LimePreferenceFragment, DbManagerFragment - provide UI</li>
  * </ul>
  *
  * <h2>Initialization Sequence</h2>
@@ -69,7 +71,7 @@ import net.toload.main.hd.ui.view.LIMESettingsView;
  * <p>Fragment navigation is delegated to {@link NavigationManager}, which orchestrates:
  * <ul>
  *   <li>Fragment transaction management</li>
- *   <li>Navigation drawer item selection</li>
+ *   <li>Tab selection and legacy position mapping</li>
  *   <li>ActionBar title updates</li>
  * </ul>
  *
@@ -144,6 +146,7 @@ public class LIMESettings extends AppCompatActivity implements LIMESettingsView 
      */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        DynamicColors.applyToActivityIfAvailable(this, SystemAccentColor.dynamicColorOptions(this));
         super.onCreate(savedInstanceState);
         // Register back gesture/press callback for AndroidX
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
@@ -187,7 +190,7 @@ public class LIMESettings extends AppCompatActivity implements LIMESettingsView 
 
         LIME.PACKAGE_NAME = getApplicationContext().getPackageName();
 
-        setupImController.setMainActivityView(this);
+        setupImController.setSettingsView(this);
 
         // Initialize managers
         progressManager = new ProgressManager(this);
@@ -244,7 +247,7 @@ public class LIMESettings extends AppCompatActivity implements LIMESettingsView 
         }
 
         String currentVersion = mLIMEPref.getParameterString("current_version", "");
-        if (currentVersion == null || currentVersion.isEmpty() || !currentVersion.equals(versionStr)) {
+        if (shouldShowInitialHelpDialog(currentVersion, versionStr)) {
             // Skip HelpDialog in test environment to prevent blocking startActivitySync()
             boolean isTest = isRunningInTestMode();
             Log.d(TAG, "isRunningInTestMode: " + isTest);
@@ -260,6 +263,10 @@ public class LIMESettings extends AppCompatActivity implements LIMESettingsView 
 
     }
 
+    public static boolean shouldShowInitialHelpDialog(String currentVersion, String versionStr) {
+        return false;
+    }
+
 
 
     /**
@@ -272,15 +279,14 @@ public class LIMESettings extends AppCompatActivity implements LIMESettingsView 
      * <p>This method handles navigation to different fragments based on the selected
      * position:
      * <ul>
-     *   <li>Position 0: Shows SetupImFragment (IM setup)</li>
-     *   <li>Position 1: Shows ManageRelatedFragment (related phrases)</li>
-     *   <li>Position 2+: Shows ManageImFragment for the corresponding IM table</li>
+     *   <li>Position 0: Shows the setup tab</li>
+     *   <li>Position 1+: Shows the input-method manager tab</li>
      * </ul>
      *
      * <p>All fragment transactions are added to the back stack to allow navigation
      * back through the history.
      *
-     * @param position The position of the selected item in the navigation drawer
+     * @param position The legacy navigation position
      * @see NavigationManager#navigateToFragment(int)
      */
     @Override

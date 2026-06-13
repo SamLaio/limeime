@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -54,9 +54,11 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.util.TypedValue;
 import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.KeyCharacterMap;
@@ -65,6 +67,7 @@ import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewConfiguration;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.CompletionInfo;
@@ -76,16 +79,16 @@ import android.widget.GridLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import net.toload.main.hd.candidate.CandidateInInputViewContainer;
 import net.toload.main.hd.candidate.CandidateView;
-import net.toload.main.hd.candidate.CandidateViewContainer;
 import net.toload.main.hd.data.ChineseSymbol;
+import net.toload.main.hd.data.ImConfig;
 import net.toload.main.hd.data.Mapping;
 import net.toload.main.hd.global.LIME;
 import net.toload.main.hd.global.LIMEPreferenceManager;
 import net.toload.main.hd.global.LIMEUtilities;
+import net.toload.main.hd.global.SystemAccentColor;
 import net.toload.main.hd.keyboard.LIMEBaseKeyboard;
 import net.toload.main.hd.keyboard.LIMEKeyboard;
 import net.toload.main.hd.keyboard.LIMEKeyboardBaseView;
@@ -93,24 +96,36 @@ import net.toload.main.hd.keyboard.LIMEKeyboardView;
 import net.toload.main.hd.keyboard.LIMEMetaKeyKeyListener;
 import net.toload.main.hd.limedb.LimeDB;
 import net.toload.main.hd.ui.LIMEPreference;
+import net.toload.main.hd.voice.AndroidSpeechRecognizerAdapter;
+import net.toload.main.hd.voice.DictationResultListener;
+import net.toload.main.hd.voice.DictationState;
+import net.toload.main.hd.voice.LIMEDictationController;
+import net.toload.main.hd.voice.LIMEVoiceInputRouter;
+import net.toload.main.hd.voice.VoiceInputMode;
+import net.toload.main.hd.voice.VoiceInputRoute;
+import net.toload.main.hd.voice.VoicePermissionHelper;
+import net.toload.main.hd.voice.VoicePermissionState;
+
+import com.google.android.material.color.DynamicColors;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
+import androidx.core.graphics.drawable.DrawableCompat;
 import androidx.core.os.ConfigurationCompat;
 import androidx.core.content.ContextCompat;
 import java.util.Objects;
 
 
 public class LIMEService extends InputMethodService
-        implements LIMEKeyboardBaseView.OnKeyboardActionListener {
+        implements LIMEKeyboardBaseView.OnKeyboardActionListener, DictationResultListener {
 
     private static final boolean DEBUG = false;
     private static final String TAG = "LIMEService";
+    private static final String IMKEYS_CONFIG = "imkeys";
 
     private static Thread queryThread; // queryThread for no-blocking I/O  Jeremy '15,6,1
 
@@ -119,8 +134,37 @@ public class LIMEService extends InputMethodService
     static final int KEYCODE_SWITCH_TO_IM_MODE = -10;
     static final int KEYCODE_SWITCH_SYMBOL_KEYBOARD = -15;
 
+    static int getRestrictedFieldKeyboardMode(int inputType) {
+        if ((inputType & EditorInfo.TYPE_MASK_CLASS) == EditorInfo.TYPE_CLASS_NUMBER) {
+            return LIMEKeyboardSwitcher.MODE_PHONE;
+        }
+        return LIMEKeyboardSwitcher.MODE_TEXT;
+    }
+
+    static boolean getRestrictedFieldSymbolFlag(int inputType) {
+        return (inputType & EditorInfo.TYPE_MASK_CLASS) != EditorInfo.TYPE_CLASS_NUMBER;
+    }
+
+    static boolean isForcedEnglishTextVariation(int variation) {
+        return variation == EditorInfo.TYPE_TEXT_VARIATION_PASSWORD
+                || variation == EditorInfo.TYPE_TEXT_VARIATION_WEB_PASSWORD
+                || variation == EditorInfo.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                || variation == EditorInfo.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+                || variation == EditorInfo.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS;
+    }
+
     //Jeremy '16,7,22 To control delayed hiding candidate view and avoid hide and show candidate view in short time.
     private static final int DELAY_BEFORE_HIDE_CANDIDATE_VIEW = 200;
+
+    // ENGLISH_KB.md #0 / §2a — pick-space punctuation swap (replicate LatinIME).
+    // When the user picks an English suggestion we auto-append a space (word ).
+    // Typing punctuation next should produce "word, " not "word ,".
+    // Character classes from AOSP donottranslate-config-spacing-and-punctuations.xml (en_US).
+    private static final String ENG_SWAP_FOLLOWED_BY_SPACE = ".,;:!?)]}"; // delete space, commit punct + " "
+    private static final String ENG_SWAP_PRECEDED_BY_SPACE = "([{";       // keep space, commit bracket
+    private static final String ENG_SWAP_STRIP = "-/@_'";                 // delete space, commit punct bare
+    // True only immediately after an English suggestion pick auto-appended a space.
+    private boolean mPickedAutoSpace = false;
 
     public static final int THREAD_YIELD_DELAY_MS = 0;
     private LIMEKeyboardView mInputView = null;
@@ -135,12 +179,14 @@ public class LIMEService extends InputMethodService
     private boolean mPredictionOn;
     private boolean mCompletionOn;
     private boolean mCapsLock;
+    private long mLastShiftTime = -1;
     private boolean mAutoCap;
     private boolean mHasShift;
 
     private boolean mEnglishOnly;
     private boolean mEnglishFlagShift;
     private boolean mEmojiKeyboardShown;
+    private boolean mEmojiSourceWasEnglish = true;
     private View mEmojiKeyboardView = null;
     private HorizontalScrollView mEmojiScroll = null;
     private LinearLayout mEmojiPages = null;
@@ -148,7 +194,9 @@ public class LIMEService extends InputMethodService
     private LinearLayout mEmojiBottomBar = null;
     private LinearLayout mEmojiCategoryBar = null;
     private TextView mEmojiSearchField = null;
-    private int mEmojiCategoryIndex = 1;
+    private TextView mEmojiAbcButton = null;
+    private boolean mEmojiContentRendered = false;
+    private int mEmojiCategoryIndex = 0;
     private int mInputCandidateStripVisibilityBeforeEmoji = View.VISIBLE;
     private boolean mEmojiSearchMode = false;
     private boolean mEmojiSearchFocused = false;
@@ -156,10 +204,17 @@ public class LIMEService extends InputMethodService
     private List<List<String>> mEmojiCategoryPages = null;
     private List<Integer> mEmojiPageCategoryIndexes = new ArrayList<>();
     private int[] mEmojiCategoryPageStarts = new int[0];
-    private static final int EMOJI_SEARCH_PANEL_HEIGHT_DP = 120;
-    private static final int EMOJI_SEARCH_SCROLL_HEIGHT_DP = 44;
-    private static final int EMOJI_SEARCH_KEY_HEIGHT_DP = 40;
+    private int[] mEmojiCategoryStartOffsets = new int[0];
+    private static final int EMOJI_SEARCH_FIELD_HEIGHT_DP = 52;
+    private static final int EMOJI_PANEL_HORIZONTAL_PADDING_DP = 12;
+    private static final int EMOJI_PANEL_VERTICAL_PADDING_DP = 8;
     private static final int EMOJI_PAGE_CAPACITY = 32;
+    private static final int EMOJI_GRID_COLUMNS = 8;
+    private static final int EMOJI_GRID_ROWS = 4;
+    private static final int EMOJI_CATEGORY_TAB_WIDTH_DP = 56;
+    private static final int EMOJI_CATEGORY_TAB_HEIGHT_DP = 46;
+    private static final int EMOJI_CATEGORY_BOTTOM_BAR_HEIGHT_DP = 54;
+    private static final int EMOJI_PANEL_GLYPH_SIZE = 28;
     private boolean mPersistentLanguageMode;  //Jeremy '12,5,1
     private int mShowArrowKeys; //Jeremy '12,5,22 force recreate keyboard if show arrow keys mode changes.
     private int mSplitKeyboard; //Jeremy '12,5,26 force recreate keyboard if split keyboard settings changes; 6/19 changed to int
@@ -185,12 +240,14 @@ public class LIMEService extends InputMethodService
     private List<Mapping> tempEnglishList;
 
     private boolean hasPhysicalKeyPressed;
+    private boolean preservePhysicalComposingOnNextInputView;
 
     // Voice input monitoring
     private ContentObserver mInputMethodObserver = null;
     private boolean mIsVoiceInputActive = false;
     private String mPendingVoiceText = null; // text to commit once InputConnection is re-established
     private String mLIMEId = null;
+    private LIMEDictationController mDictationController = null;
     private BroadcastReceiver mVoiceInputReceiver = null;
     private static final String ACTION_VOICE_RESULT = "net.toload.main.hd.VOICE_INPUT_RESULT";
     private static final String EXTRA_RECOGNIZED_TEXT = "recognized_text";
@@ -306,6 +363,21 @@ public class LIMEService extends InputMethodService
     // might incorrectly include keyboard height when keyboard is restored
     private final int mLastKnownBottomPadding = -1;
     private int mLastUiNightMode = -1;
+    private long mAppliedStartupConfigVersion = -1L;
+    private boolean mStartupConfigSnapshotReady = false;
+    private List<net.toload.main.hd.data.Keyboard> mStartupKeyboardConfigList = null;
+    private List<ImConfig> mStartupImKeyboardConfigList = null;
+    private int mInputViewGeneration = 0;
+    private int mAppliedFollowSystemAccent = 0;
+    private boolean mAppliedFollowSystemDarkTheme = false;
+    private View mAppliedFollowSystemInputView = null;
+    private View mAppliedFollowSystemCandidateView = null;
+    private View mAppliedFollowSystemEmbeddedCandidateView = null;
+    private boolean mNavigationBarThemeApplied = false;
+    private android.view.Window mAppliedNavigationBarWindow = null;
+    private View mAppliedNavigationBarCandidateView = null;
+    private int mAppliedNavigationBarColor = 0;
+    private boolean mAppliedNavigationBarLightBackground = false;
 
 
     /**
@@ -332,6 +404,7 @@ public class LIMEService extends InputMethodService
 
         // Construct Preference Access Tool
         mLIMEPref = new LIMEPreferenceManager(this);
+        mDictationController = new LIMEDictationController(new AndroidSpeechRecognizerAdapter(this), this);
 
         // Initialize hasVibration flag from preferences immediately (so it's available for first keypress)
         hasVibration = mLIMEPref.getVibrateOnKeyPressed();
@@ -439,6 +512,8 @@ public class LIMEService extends InputMethodService
         mLastUiNightMode = newUiMode;
         if (mKeyboardThemeIndex == 6 && newUiMode != oldUiMode) {
             mThemeContext = null;   // force theme rebuild
+            clearAppliedFollowSystemAccentState();
+            clearAppliedNavigationBarThemeState();
         }
 
         initialViewAndSwitcher(true);
@@ -507,19 +582,12 @@ public class LIMEService extends InputMethodService
 
     @Override
     public View onCreateCandidatesView() {
-
-
         if (DEBUG)
             Log.i(TAG, "onCreateCandidatesView()");
 
-
-        @SuppressLint("InflateParams")
-        CandidateViewContainer candidateViewContainer = (CandidateViewContainer) getLayoutInflater().inflate(R.layout.candidates, null);
-        candidateViewContainer.initViews();
-
-        return candidateViewContainer;
-
-
+        // Candidates are embedded in R.layout.inputcandidate. Returning a
+        // framework candidates view here creates a second strip above the IME.
+        return null;
     }
 
     /**
@@ -551,8 +619,12 @@ public class LIMEService extends InputMethodService
         if (DEBUG) {
             Log.i(TAG, "onFinishInput()");
         }
-        // Stop monitoring IME changes when input finishes
-        stopMonitoringIMEChanges();
+        // Stop monitoring IME changes when input finishes, except while a delegated
+        // VoiceIME handoff is in progress. The handoff itself triggers onFinishInput().
+        if (!mIsVoiceInputActive) {
+            stopMonitoringIMEChanges();
+        }
+        cancelInlineDictationIfActive();
         // Don't unregister voice input receiver if voice input is in progress,
         // otherwise the broadcast carrying recognized text will be lost.
         if (!mIsVoiceInputActive) {
@@ -691,7 +763,11 @@ public class LIMEService extends InputMethodService
     public void onStartInput(EditorInfo attribute, boolean restarting) {
         if (DEBUG)
             Log.i(TAG, "onStartInput()");
-        super.onStartInputView(attribute, restarting);
+        super.onStartInput(attribute, restarting);
+        if (!restarting) {
+            preservePhysicalComposingOnNextInputView = false;
+            hasPhysicalKeyPressed = false;
+        }
         initOnStartInput(attribute);
 
         // Don't restore keyboard view here - only restore when user explicitly touches
@@ -713,7 +789,7 @@ public class LIMEService extends InputMethodService
         // Save composing text before initOnStartInput() in case it clears state
         String savedComposing = (mComposing != null && mComposing.length() > 0) ? mComposing.toString() : null;
         // Save hasPhysicalKeyPressed state before initOnStartInput()
-        boolean savedHasPhysicalKeyPressed = hasPhysicalKeyPressed;
+        boolean savedHasPhysicalKeyPressed = hasPhysicalKeyPressed && preservePhysicalComposingOnNextInputView;
 
         initOnStartInput(attribute);
 
@@ -735,9 +811,11 @@ public class LIMEService extends InputMethodService
             if (mInputView != null) {
                 mInputView.setVisibility(View.GONE);
             }
+            preservePhysicalComposingOnNextInputView = false;
         } else {
             // No composing text to preserve, reset hasPhysicalKeyPressed and show keyboard view
             hasPhysicalKeyPressed = false;
+            preservePhysicalComposingOnNextInputView = false;
             if (mInputView != null) {
                 mInputView.setVisibility(View.VISIBLE);
             }
@@ -756,8 +834,9 @@ public class LIMEService extends InputMethodService
         if (voiceText != null) {
             InputConnection ic = getCurrentInputConnection();
             if (ic != null) {
-                ic.commitText(voiceText, 1);
-                Log.i(TAG, "onStartInputView(): Committed voice text: '" + voiceText + "'");
+                String textToCommit = prepareVoiceTextForCommit(voiceText);
+                ic.commitText(textToCommit, 1);
+                Log.i(TAG, "onStartInputView(): Committed voice text: '" + textToCommit + "'");
             } else {
                 Log.w(TAG, "onStartInputView(): IC still null, storing voice text for retry");
                 mPendingVoiceText = voiceText;
@@ -819,23 +898,21 @@ public class LIMEService extends InputMethodService
             hasCandidatesShown = false;
         }
 
-        // Reset the IM soft keyboard settings. Jeremy '11,6,19
-        try {
-            mKeyboardSwitcher.setImConfigKeyboardList(SearchSrv.getAllImKeyboardConfigList());
-        } catch (RemoteException e) {
-            Log.e(TAG, "Error setting IM list on keyboard reset", e);
-        }
-
+        activeIM = mLIMEPref.getActiveIM();
+        boolean startupConfigRefreshed = refreshStartupConfigSnapshotIfNeeded();
+        applyStartupConfigSnapshotToKeyboardSwitcher();
 
         mKeyboardSwitcher.resetKeyboards(
-                mShowArrowKeys != mLIMEPref.getShowArrowKeys() //Jeremy '12,5,22 recreate keyboard if the setting altered.
+                startupConfigRefreshed
+                        || mShowArrowKeys != mLIMEPref.getShowArrowKeys() //Jeremy '12,5,22 recreate keyboard if the setting altered.
                         || mSplitKeyboard != mLIMEPref.getSplitKeyboard()); //Jeremy '12,5,26 recreate keyboard if the setting altered.
-
 
         loadSettings();
         mImeOptions = attribute.imeOptions;
 
-        buildActivatedIMList();  //Jeremy '12,4,29 only this is required here, instead of fully initialKeybaord
+        if (mKeyboardSwitcher != null) {
+            mKeyboardSwitcher.setActivatedIMList(activatedIMList, activatedIMShortNameList);
+        }
         mPredictionOn = true;
         mCompletionOn = false;
         mCompletions = null;
@@ -849,6 +926,11 @@ public class LIMEService extends InputMethodService
 
         switch (attribute.inputType & EditorInfo.TYPE_MASK_CLASS) {
             case EditorInfo.TYPE_CLASS_NUMBER:  //0x02
+                mEnglishOnly = true;
+                mKeyboardSwitcher.setKeyboardMode(activeIM,
+                        getRestrictedFieldKeyboardMode(attribute.inputType), mImeOptions, false,
+                        getRestrictedFieldSymbolFlag(attribute.inputType), false);
+                break;
             case EditorInfo.TYPE_CLASS_DATETIME: //0x04
                 mEnglishOnly = true;
                 mKeyboardSwitcher.setKeyboardMode(activeIM, LIMEKeyboardSwitcher.MODE_TEXT, mImeOptions, false, true, false);
@@ -896,31 +978,11 @@ public class LIMEService extends InputMethodService
                 }
 
                 // Switch keyboard here.
-                if (variation == EditorInfo.TYPE_TEXT_VARIATION_PASSWORD
-                        || variation == EditorInfo.TYPE_TEXT_VARIATION_WEB_PASSWORD
-                        || variation == EditorInfo.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD) {
+                if (isForcedEnglishTextVariation(variation)) {
                     mPredictionOn = false;
-                    //isModePassword = true;
                     mEnglishOnly = true;
-                    //onIM = false;//Jeremy '12,4,29 use mEnglishOnly instead of onIM
-                    mKeyboardSwitcher.setKeyboardMode(activeIM, LIMEKeyboardSwitcher.MODE_EMAIL,
-                            mImeOptions, false, false, false);
-                    break;
-                } else if (variation == EditorInfo.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-                        || variation == EditorInfo.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS) {
-                    mEnglishOnly = true;
-                    //onIM = false; //Jeremy '12,4,29 use mEnglishOnly instead of onIM
-                    mPredictionOn = false;
                     mKeyboardSwitcher.setKeyboardMode(activeIM,
                             LIMEKeyboardSwitcher.MODE_EMAIL, mImeOptions, false, false, false);
-                    break;
-                } else if (variation == EditorInfo.TYPE_TEXT_VARIATION_URI) {
-                    mPredictionOn = false;
-                    mEnglishOnly = true;
-                    //onIM = false; //Jeremy '12,4,29 use mEnglishOnly instead of onIM
-                    //isModeURL = true;
-                    mKeyboardSwitcher.setKeyboardMode(activeIM,
-                            LIMEKeyboardSwitcher.MODE_URL, mImeOptions, false, false, false);
                     break;
                 } else if (variation == EditorInfo.TYPE_TEXT_VARIATION_SHORT_MESSAGE) {
                     mEnglishOnly = false;
@@ -945,13 +1007,12 @@ public class LIMEService extends InputMethodService
         }
 
 
-        if (mEnglishOnly && !mPredictionOn) //Jeremy '12,5,20 Only hide candidateview when prediction mode is not on.
-            //Jeremy '12,5,6 clear internal composing buffer in forceHideCandiateView
-            forceHideCandidateView();  //Jeremy '12,5,6 zero the canidateView height to force hide it for eng/numeric keyboard
-        else {
+        if (!(mEnglishOnly && !mPredictionOn)) {
             clearComposing(false);//Jeremy '12,5,24 clear the suggesions and also restore the height of fixed candaiteview if it's hide before
             //clearSuggestions();  // do this in clearcomposing already.
         }
+        // Keep toolbar visible for mic/emoji even when no candidates are active.
+        showEmptyCandidateToolbar();
 
         mPredicting = false;
         updateShiftKeyState(getCurrentInputEditorInfo());
@@ -969,7 +1030,7 @@ public class LIMEService extends InputMethodService
         mPersistentLanguageMode = mLIMEPref.getPersistentLanguageMode();
         activeIM = mLIMEPref.getActiveIM();
         hasQuickSwitch = mLIMEPref.getSwitchEnglishModeHotKey();
-        mAutoCap = true;
+        mAutoCap = mLIMEPref.getAutoCaptalization();
 
         mPersistentLanguageMode = mLIMEPref.getPersistentLanguageMode();
         mShowArrowKeys = mLIMEPref.getShowArrowKeys();
@@ -981,6 +1042,90 @@ public class LIMEService extends InputMethodService
         currentSoftKeyboard = mKeyboardSwitcher.getImConfigKeyboard(activeIM);
 
 
+    }
+
+    private boolean isStartupConfigSnapshotDirty() {
+        if (mLIMEPref == null || !mStartupConfigSnapshotReady) return true;
+        long currentVersion = mLIMEPref.getStartupConfigVersion();
+        return currentVersion == 0L || currentVersion != mAppliedStartupConfigVersion;
+    }
+
+    private void invalidateStartupConfigSnapshot() {
+        mStartupConfigSnapshotReady = false;
+        mAppliedStartupConfigVersion = -1L;
+    }
+
+    private boolean refreshStartupConfigSnapshotIfNeeded() {
+        return refreshStartupConfigSnapshotIfNeeded(true);
+    }
+
+    private boolean refreshStartupConfigSnapshotIfNeeded(boolean rebuildActivatedIMList) {
+        if (!isStartupConfigSnapshotDirty()) return false;
+
+        if (rebuildActivatedIMList) {
+            buildActivatedIMList();
+        }
+
+        if (SearchSrv != null) {
+            try {
+                mStartupKeyboardConfigList = SearchSrv.getKeyboardConfigList();
+                mStartupImKeyboardConfigList = SearchSrv.getAllImKeyboardConfigList();
+            } catch (RemoteException e) {
+                Log.e(TAG, "Error refreshing startup keyboard config snapshot", e);
+            }
+        }
+
+        mStartupConfigSnapshotReady = true;
+        markStartupConfigSnapshotApplied();
+        return true;
+    }
+
+    private void markStartupConfigSnapshotApplied() {
+        if (mLIMEPref == null) return;
+        long currentVersion = mLIMEPref.getStartupConfigVersion();
+        if (currentVersion == 0L) {
+            currentVersion = mLIMEPref.initializeStartupConfigVersion();
+        }
+        mAppliedStartupConfigVersion = currentVersion;
+    }
+
+    private void applyStartupConfigSnapshotToKeyboardSwitcher() {
+        if (mKeyboardSwitcher == null) return;
+        if (mStartupKeyboardConfigList != null && !mStartupKeyboardConfigList.isEmpty()) {
+            mKeyboardSwitcher.setKeyboardConfigList(mStartupKeyboardConfigList);
+        }
+        if (mStartupImKeyboardConfigList != null && !mStartupImKeyboardConfigList.isEmpty()) {
+            mKeyboardSwitcher.setImConfigKeyboardList(mStartupImKeyboardConfigList);
+        }
+    }
+
+    private void advanceInputViewGeneration() {
+        mInputViewGeneration++;
+        clearAppliedFollowSystemAccentState();
+        clearAppliedNavigationBarThemeState();
+    }
+
+    private void postAfterFirstFrame(Runnable task) {
+        if (mCandidateInInputView == null || task == null) return;
+        final int generation = mInputViewGeneration;
+        mCandidateInInputView.post(() -> runIfCurrentInputViewGeneration(generation, task));
+    }
+
+    private void runIfCurrentInputViewGeneration(int generation, Runnable task) {
+        if (task == null || generation != mInputViewGeneration) return;
+        task.run();
+    }
+
+    int getInputViewGenerationForTesting() {
+        return mInputViewGeneration;
+    }
+
+    void advanceInputViewGenerationForTesting() {
+        advanceInputViewGeneration();
+    }
+
+    void runIfCurrentInputViewGenerationForTesting(int generation, Runnable task) {
+        runIfCurrentInputViewGeneration(generation, task);
     }
 
     /**
@@ -1073,6 +1218,7 @@ public class LIMEService extends InputMethodService
         // Show InputView when physical key is pressed to display embedded candidate view
         // Store flag to show InputView after key is processed to avoid losing the first key
         final boolean needToShowInputView = !isInputViewShown();
+        preservePhysicalComposingOnNextInputView = needToShowInputView;
 
         //Jeremy '25/12/14 Always use fix candidateView even for physical keyboard. (API 34+ cannot shown candidateView well)
         // If user use the physical keyboard then not fixed the candidate view also use the transparent background
@@ -1647,7 +1793,8 @@ public class LIMEService extends InputMethodService
         try {
             if ((mComposing.length() > 0   //denotes composing just finished
                     || !selectedCandidate.isComposingCodeRecord()) // commit selected candidate if it is not the composing text. '15,6,4 Jeremy  (like related phrase or English suggestions)
-                    && !LIMEUtilities.isUnicodeSurrogate(selectedCandidate.getWord())) {   //check if it's surrogate characters (emoji) '15,7,19 Jeremy
+                    && !(LIMEUtilities.isUnicodeSurrogate(selectedCandidate.getWord())
+                            && selectedCandidate.isEmojiRecord())) {   //emoji surrogate path bypasses related-phrase flow; CJK Ext-B (non-emoji surrogate) must use main flow for #62
 
                 if (!mEnglishOnly
                         || !selectedCandidate.isComposingCodeRecord()
@@ -1798,7 +1945,8 @@ public class LIMEService extends InputMethodService
                 }
 
 
-            } else if (LIMEUtilities.isUnicodeSurrogate(selectedCandidate.getWord())) { //Jeremy '15,7,16
+            } else if (LIMEUtilities.isUnicodeSurrogate(selectedCandidate.getWord())
+                    && selectedCandidate.isEmojiRecord()) { //Jeremy '15,7,16; narrowed to emoji-only so CJK Ext-B uses main flow (#62)
                 ic.commitText(selectedCandidate.getWord(), 1);
                 clearComposing(false);
             }
@@ -1821,6 +1969,10 @@ public class LIMEService extends InputMethodService
             EditorInfo ei = getCurrentInputEditorInfo();
             if (mAutoCap && ei != null && ei.inputType != EditorInfo.TYPE_NULL) {
                 caps = ic.getCursorCapsMode(attr.inputType);
+                if (caps == 0 && mEnglishOnly
+                        && shouldAutoCapitalizeEnglishText(ic.getTextBeforeCursor(64, 0))) {
+                    caps = 1;
+                }
             }
             mInputView.setShifted(mCapsLock || caps != 0);
         } else {
@@ -1830,6 +1982,91 @@ public class LIMEService extends InputMethodService
             }
         }
 
+    }
+
+    static boolean shouldAutoCapitalizeEnglishText(CharSequence beforeCursor) {
+        if (beforeCursor == null || beforeCursor.length() == 0) {
+            return true;
+        }
+
+        int end = beforeCursor.length();
+        boolean hasBoundaryWhitespace = false;
+        while (end > 0) {
+            char c = beforeCursor.charAt(end - 1);
+            if (c == ' ' || c == '\t') {
+                hasBoundaryWhitespace = true;
+                end--;
+            } else {
+                break;
+            }
+        }
+        while (end > 0 && isEnglishClosingPunctuation(beforeCursor.charAt(end - 1))) {
+            end--;
+        }
+        if (end == 0) {
+            return true;
+        }
+
+        char term = beforeCursor.charAt(end - 1);
+        if (term == '\n' || term == '\r') {
+            return true;
+        }
+        if (!hasBoundaryWhitespace) {
+            return false;
+        }
+        if (term != '.' && term != '!' && term != '?') {
+            return false;
+        }
+        return term != '.' || !isEnglishAbbreviationBeforeDot(beforeCursor, end - 1);
+    }
+
+    static boolean shouldInsertPeriodForEnglishDoubleSpace(CharSequence beforeCursor) {
+        if (beforeCursor == null || beforeCursor.length() < 2
+                || beforeCursor.charAt(beforeCursor.length() - 1) != ' ') {
+            return false;
+        }
+
+        int previousIndex = beforeCursor.length() - 2;
+        char previous = beforeCursor.charAt(previousIndex);
+        if (".!?,:;".indexOf(previous) >= 0) {
+            return false;
+        }
+
+        int tokenStart = previousIndex;
+        while (tokenStart > 0 && !Character.isWhitespace(beforeCursor.charAt(tokenStart - 1))) {
+            tokenStart--;
+        }
+        String token = beforeCursor.subSequence(tokenStart, previousIndex + 1).toString();
+        if (token.contains("://") || token.contains(".")) {
+            return false;
+        }
+
+        return Character.isLetterOrDigit(previous) || isEnglishClosingPunctuation(previous);
+    }
+
+    private static boolean isEnglishClosingPunctuation(char c) {
+        return c == '"' || c == '\'' || c == ')' || c == ']' || c == '}'
+                || c == '\u201D' || c == '\u2019';
+    }
+
+    private static boolean isEnglishAbbreviationBeforeDot(CharSequence text, int dotIndex) {
+        if (dotIndex <= 0 || !Character.isLetter(text.charAt(dotIndex - 1))) {
+            return false;
+        }
+        if (dotIndex >= 2 && text.charAt(dotIndex - 2) == '.') {
+            return true;
+        }
+
+        int start = dotIndex - 1;
+        while (start > 0 && Character.isLetter(text.charAt(start - 1))) {
+            start--;
+        }
+        String word = text.subSequence(start, dotIndex).toString();
+        return "Mr".equals(word) || "Mrs".equals(word) || "Ms".equals(word)
+                || "Dr".equals(word) || "Prof".equals(word) || "Jr".equals(word)
+                || "Sr".equals(word) || "St".equals(word) || "etc".equals(word)
+                || "vs".equals(word) || "Ltd".equals(word) || "Inc".equals(word)
+                || "Co".equals(word) || "Mt".equals(word) || "Ft".equals(word);
     }
 
     private boolean isValidLetter(int code) {
@@ -1885,6 +2122,8 @@ public class LIMEService extends InputMethodService
             Log.i(TAG, "OnKey(): primaryCode:" + primaryCode
                     + " hasShiftPress:" + hasShiftPress);
 
+        hideLimeToast();
+
         // Modified by Art
         // This is to fixed the CapsLock issue on Physical keyboard
         if (mCapsLock) {
@@ -1901,7 +2140,7 @@ public class LIMEService extends InputMethodService
 
         }
 
-        if (mEmojiKeyboardShown && mEmojiSearchFocused && handleEmojiSearchKey(primaryCode)) {
+        if (mEmojiKeyboardShown && (mEmojiSearchFocused || mEmojiSearchMode) && handleEmojiSearchKey(primaryCode)) {
             return;
         }
 
@@ -1968,6 +2207,8 @@ public class LIMEService extends InputMethodService
             // Jeremy '11,5,31 Rewrite softkeybaord enter/space and english separator processing.
         } else if (primaryCode == KEYCODE_SWITCH_TO_IM_MODE && mInputView != null) { //eng -> chi
             switchKeyboard(primaryCode);
+        } else if (handleEndkeyCommit(primaryCode)) {
+            // End-key commit is opt-in per IM table metadata and consumes the trigger key.
         } else if ( //Jeremy '12,7,1 bug fixed on enter not functioning in english mode
                 ((primaryCode == MY_KEYCODE_SPACE && !mEnglishOnly && !activeIM.equals(LIME.IM_PHONETIC))
                         || (primaryCode == MY_KEYCODE_SPACE && !mEnglishOnly &&
@@ -2003,16 +2244,259 @@ public class LIMEService extends InputMethodService
         }
     }
 
+    static boolean isEndkeyCommitKey(int primaryCode, String endkey, boolean englishOnly,
+                                     int composingLength, boolean candidatesShown) {
+        return !englishOnly
+                && endkey != null
+                && endkey.indexOf((char) primaryCode) >= 0;
+    }
+
+    private boolean handleEndkeyCommit(int primaryCode) {
+        String endkey = "";
+        String imkeys = "";
+        if (SearchSrv != null && activeIM != null) {
+            endkey = SearchSrv.getImConfig(activeIM, LIME.IM_LIME_ENDKEY);
+            imkeys = SearchSrv.getImConfig(activeIM, IMKEYS_CONFIG);
+        }
+        if (!isEndkeyCommitKey(primaryCode, endkey, mEnglishOnly, mComposing.length(), hasCandidatesShown)) {
+            return false;
+        }
+
+        if (isKeyInImkeys(primaryCode, imkeys)) {
+            return commitComposingWithAppendedEndkey(primaryCode);
+        }
+
+        if (mComposing.length() > 0 && !commitCurrentEndkeyComposing()) {
+            return false;
+        }
+
+        return commitFreshEndkeyOrRaw(primaryCode);
+    }
+
+    private boolean commitCurrentEndkeyComposing() {
+        if (hasCurrentEndkeySelectedCandidate() && pickHighlightedCandidate()) {
+            if (mComposing.length() > 0) {
+                clearComposing(false);
+            }
+            hideCandidateView();
+            return true;
+        }
+
+        if (resolveEndkeySelectedCandidate() != null) {
+            commitTyped(getCurrentInputConnection());
+            if (mComposing.length() > 0) {
+                clearComposing(false);
+            }
+            hideCandidateView();
+            return true;
+        }
+
+        if (mComposing.length() == 0) {
+            hideCandidateView();
+        }
+        return false;
+    }
+
+    private boolean commitComposingWithAppendedEndkey(int primaryCode) {
+        String code = String.valueOf((char) primaryCode);
+        mComposing.append(code);
+        InputConnection ic = getCurrentInputConnection();
+        if (ic != null && mPredictionOn) {
+            ic.setComposingText(mComposing, 1);
+        }
+        return commitResolvedEndkeyComposing();
+    }
+
+    private boolean commitFreshEndkeyOrRaw(int primaryCode) {
+        String code = String.valueOf((char) primaryCode);
+        mComposing.append(code);
+        InputConnection ic = getCurrentInputConnection();
+        if (ic != null && mPredictionOn) {
+            ic.setComposingText(mComposing, 1);
+        }
+        if (commitResolvedEndkeyComposing()) {
+            return true;
+        }
+        clearComposing(false);
+        if (ic != null) {
+            ic.commitText(code, 1);
+        }
+        finishComposing();
+        return true;
+    }
+
+    private boolean commitResolvedEndkeyComposing() {
+        if (resolveEndkeySelectedCandidate() == null) {
+            return false;
+        }
+        commitTyped(getCurrentInputConnection());
+        if (mComposing.length() > 0) {
+            clearComposing(false);
+        }
+        hideCandidateView();
+        return true;
+    }
+
+    private Mapping resolveEndkeySelectedCandidate() {
+        if (hasCurrentEndkeySelectedCandidate()) {
+            return selectedCandidate;
+        }
+        if (SearchSrv == null || mComposing.length() == 0) {
+            return null;
+        }
+        if (queryThread != null && queryThread.isAlive()) {
+            queryThread.interrupt();
+        }
+        try {
+            List<Mapping> candidates = SearchSrv.getMappingByCode(mComposing.toString(),
+                    !hasPhysicalKeyPressed, false);
+            if (candidates == null || candidates.isEmpty()) {
+                return null;
+            }
+            mCandidateList = new LinkedList<>(candidates);
+            selectedCandidate = endkeyCommitCandidateForSuggestions(mCandidateList);
+            hasMappingList = selectedCandidate != null;
+            hasCandidatesShown = selectedCandidate != null;
+            return selectedCandidate;
+        } catch (RemoteException e) {
+            Log.e(TAG, "Error resolving end-key candidate", e);
+            return null;
+        }
+    }
+
+    private static boolean isKeyInImkeys(int primaryCode, String imkeys) {
+        if (imkeys == null || imkeys.isEmpty()) {
+            return false;
+        }
+        String key = String.valueOf((char) primaryCode);
+        return imkeys.contains(key) || imkeys.contains(key.toLowerCase(Locale.US));
+    }
+
+    private boolean hasCurrentEndkeySelectedCandidate() {
+        return selectedCandidate != null
+                && !selectedCandidate.isComposingCodeRecord()
+                && selectedCandidate.getCode() != null
+                && mComposing.toString().equals(selectedCandidate.getCode());
+    }
+
+    static Mapping endkeyCommitCandidateForSuggestions(List<Mapping> suggestions) {
+        int selectedIndex = endkeyCommitCandidateIndex(suggestions);
+        if (selectedIndex < 0) {
+            return null;
+        }
+        return suggestions.get(selectedIndex);
+    }
+
+    private static int endkeyCommitCandidateIndex(List<Mapping> suggestions) {
+        if (suggestions == null || suggestions.isEmpty()) {
+            return -1;
+        }
+        for (int i = 0; i < suggestions.size(); i++) {
+            if (isEndkeyCommitCandidate(suggestions.get(i))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isEndkeyCommitCandidate(Mapping candidate) {
+        return candidate != null
+                && !candidate.isComposingCodeRecord()
+                && (candidate.isExactMatchToCodeRecord()
+                || candidate.isPartialMatchToCodeRecord()
+                || candidate.isChinesePunctuationSymbolRecord());
+    }
+
+    // General highlight rule (not punctuation-specific):
+    // - If the first real candidate after the composing-code echo is an exact match to the
+    //   typed code, highlight that candidate (index 1).
+    // - Otherwise highlight the composing-code echo (index 0).
+    // "Exact match" means the candidate's code equals the composing-code echo's code (the
+    // full code the user typed). This deliberately does NOT inspect the record type, so any
+    // exact-code candidate -- a DB exact match or an auto-inserted comma/period whose code
+    // equals the typed ',' / '.' -- is highlighted the same way. Partial-match records stay
+    // highlighted as before.
+    public static int defaultHighlightedCandidateIndex(List<Mapping> suggestions,
+                                                       boolean physicalKeyPressed) {
+        if (suggestions == null || suggestions.isEmpty()) {
+            return -1;
+        }
+        Mapping first = suggestions.get(0);
+        if (suggestions.size() > 1
+                && (suggestions.get(1).isExactMatchToCodeRecord()
+                || suggestions.get(1).isPartialMatchToCodeRecord()
+                || isExactMatchToComposing(suggestions.get(1), first))) {
+            return 1;
+        }
+        if (first.isComposingCodeRecord() || first.isRuntimeBuiltPhraseRecord()) {
+            return 0;
+        }
+        return -1;
+    }
+
+    // True when candidate is an exact match to the composing-code echo: the echo is a
+    // composing-code record, candidate is not, both carry a non-empty code, and the codes
+    // are equal (the full code the user typed). Generalizes "exact match" beyond
+    // exactMatchToCode records so an auto-inserted full-width comma/period whose code equals
+    // the typed ',' / '.' is highlighted the same way -- without any punctuation-specific
+    // special case.
+    private static boolean isExactMatchToComposing(Mapping candidate, Mapping composing) {
+        if (candidate == null || composing == null) {
+            return false;
+        }
+        String composingCode = composing.getCode();
+        String candidateCode = candidate.getCode();
+        return composing.isComposingCodeRecord()
+                && !candidate.isComposingCodeRecord()
+                && candidateCode != null && !candidateCode.isEmpty()
+                && candidateCode.equals(composingCode);
+    }
+
+    private static Mapping defaultServiceSelectedCandidate(List<Mapping> suggestions,
+                                                           boolean physicalKeyPressed) {
+        if (suggestions == null || suggestions.isEmpty()) {
+            return null;
+        }
+        if (suggestions.size() > 1
+                && (!physicalKeyPressed
+                || suggestions.get(1).isExactMatchToCodeRecord()
+                || suggestions.get(1).isPartialMatchToCodeRecord())) {
+            return suggestions.get(1);
+        }
+        return suggestions.get(0);
+    }
+
+    public static LinkedList<Mapping> buildEnglishPredictionCandidates(String word,
+                                                                       List<Mapping> suggestions) {
+        LinkedList<Mapping> result = new LinkedList<>();
+        if (word == null || word.isEmpty()) {
+            return result;
+        }
+
+        Mapping self = new Mapping();
+        self.setWord(word);
+        self.setComposingCodeRecord();
+        result.add(self);
+
+        if (suggestions != null) {
+            result.addAll(suggestions);
+        }
+        return result;
+    }
+
     private void showEmojiKeyboard() {
+        mEmojiSourceWasEnglish = mEnglishOnly;
         mEmojiKeyboardShown = true;
+        mEmojiCategoryIndex = 0;
         mEmojiSearchFocused = false;
         mEmojiSearchQuery.setLength(0);
         if (mEmojiSearchField != null) {
             mEmojiSearchField.setText("");
         }
+        updateEmojiAbcButtonLabel();
         clearComposing(true);
-        hideCandidateView();
         mInputCandidateStripVisibilityBeforeEmoji = getInputCandidateStripVisibility();
+        hideCandidateView();
         setInputCandidateStripVisibility(View.GONE);
         if (mEmojiKeyboardView != null) {
             mEmojiKeyboardView.setVisibility(View.VISIBLE);
@@ -2024,11 +2508,14 @@ public class LIMEService extends InputMethodService
     private void hideEmojiKeyboard() {
         mEmojiKeyboardShown = false;
         mEmojiSearchFocused = false;
+        mEmojiSearchMode = false;
+        clearEmojiSearchCandidates();
         if (mEmojiKeyboardView != null) {
             mEmojiKeyboardView.setVisibility(View.GONE);
         }
         if (mInputView != null) {
             mInputView.setVisibility(View.VISIBLE);
+            restoreEmojiSourceKeyboard();
             mInputView.invalidateAllKeys();
         }
         setInputCandidateStripVisibility(mInputCandidateStripVisibilityBeforeEmoji);
@@ -2041,6 +2528,7 @@ public class LIMEService extends InputMethodService
         mEmojiSearchFocused = false;
         mEmojiSearchMode = false;
         mEmojiSearchQuery.setLength(0);
+        clearEmojiSearchCandidates();
         if (mEmojiKeyboardView != null) {
             mEmojiKeyboardView.setVisibility(View.GONE);
         }
@@ -2059,10 +2547,22 @@ public class LIMEService extends InputMethodService
         FrameLayout container = (FrameLayout) mEmojiKeyboardView;
         container.removeAllViews();
         container.setBackgroundColor(Color.TRANSPARENT);
+        mEmojiRoot = null;
+        mEmojiScroll = null;
+        mEmojiPages = null;
+        mEmojiBottomBar = null;
+        mEmojiCategoryBar = null;
+        mEmojiSearchField = null;
+        mEmojiAbcButton = null;
+        mEmojiContentRendered = false;
 
         mEmojiRoot = new LinearLayout(mThemeContext);
         mEmojiRoot.setOrientation(LinearLayout.VERTICAL);
-        mEmojiRoot.setPadding(dp(12), dp(8), dp(12), dp(8));
+        mEmojiRoot.setPadding(
+                dp(EMOJI_PANEL_HORIZONTAL_PADDING_DP),
+                dp(EMOJI_PANEL_VERTICAL_PADDING_DP),
+                dp(EMOJI_PANEL_HORIZONTAL_PADDING_DP),
+                dp(EMOJI_PANEL_VERTICAL_PADDING_DP));
         mEmojiRoot.setMinimumHeight(dp(280));
         container.addView(mEmojiRoot, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -2070,12 +2570,11 @@ public class LIMEService extends InputMethodService
 
         mEmojiSearchField = new TextView(mThemeContext);
         mEmojiSearchField.setTextSize(17);
+        applyEmojiSearchFieldStyle();
         updateEmojiSearchText();
-        mEmojiSearchField.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_search, 0, 0, 0);
         mEmojiSearchField.setCompoundDrawablePadding(dp(8));
         mEmojiSearchField.setPadding(dp(14), 0, dp(14), 0);
         mEmojiSearchField.setGravity(Gravity.CENTER_VERTICAL);
-        mEmojiSearchField.setBackground(makeRoundRect(0xF2FFFFFF, dp(26)));
         mEmojiSearchField.setOnClickListener(v -> enterEmojiSearchMode());
         mEmojiSearchField.setOnTouchListener((v, event) -> {
             if (event.getAction() == MotionEvent.ACTION_UP) {
@@ -2084,7 +2583,7 @@ public class LIMEService extends InputMethodService
             return true;
         });
         mEmojiRoot.addView(mEmojiSearchField, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(EMOJI_SEARCH_FIELD_HEIGHT_DP)));
 
         mEmojiScroll = new HorizontalScrollView(mThemeContext);
         mEmojiScroll.setFillViewport(false);
@@ -2098,10 +2597,7 @@ public class LIMEService extends InputMethodService
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             mEmojiScroll.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
                 if (!mEmojiSearchMode) {
-                    int pageWidth = getEmojiPageWidth();
-                    if (pageWidth > 0) {
-                        updateEmojiCategoryHighlight(Math.round((float) scrollX / (float) pageWidth));
-                    }
+                    updateEmojiCategoryHighlight(categoryIndexForEmojiScroll(scrollX));
                 }
             });
         }
@@ -2111,54 +2607,111 @@ public class LIMEService extends InputMethodService
         gridParams.topMargin = dp(8);
         mEmojiRoot.addView(mEmojiScroll, gridParams);
 
+        float emojiKeyboardSizeScale = getEmojiKeyboardSizeScale();
+        int emojiCategoryBottomBarHeight = dp(scaleDp(EMOJI_CATEGORY_BOTTOM_BAR_HEIGHT_DP, emojiKeyboardSizeScale));
+        int emojiCategoryTabHeight = dp(scaleDp(EMOJI_CATEGORY_TAB_HEIGHT_DP, emojiKeyboardSizeScale));
+
         mEmojiBottomBar = new LinearLayout(mThemeContext);
         mEmojiBottomBar.setGravity(Gravity.CENTER_VERTICAL);
         mEmojiBottomBar.setOrientation(LinearLayout.HORIZONTAL);
         mEmojiRoot.addView(mEmojiBottomBar, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
+                LinearLayout.LayoutParams.MATCH_PARENT, emojiCategoryBottomBarHeight));
 
-        TextView abc = createEmojiControl("ABC", 17);
+        int emojiSideControlWidth = dp(emojiSideControlWidthDp(emojiKeyboardSizeScale));
+        int emojiModeControlGlyphSize = emojiModeControlGlyphSize(emojiKeyboardSizeScale);
+        int emojiBackspaceGlyphSize = emojiBackspaceGlyphSize(emojiKeyboardSizeScale);
+
+        TextView abc = createEmojiControl("ABC", emojiModeControlGlyphSize);
+        mEmojiAbcButton = abc;
         abc.setOnClickListener(v -> hideEmojiKeyboard());
-        mEmojiBottomBar.addView(abc, new LinearLayout.LayoutParams(dp(48), dp(46)));
+        mEmojiBottomBar.addView(abc, new LinearLayout.LayoutParams(
+                emojiSideControlWidth, emojiCategoryTabHeight));
+
+        HorizontalScrollView emojiCategoryScroll = new HorizontalScrollView(mThemeContext);
+        emojiCategoryScroll.setFillViewport(false);
+        emojiCategoryScroll.setHorizontalScrollBarEnabled(false);
+        emojiCategoryScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
 
         mEmojiCategoryBar = new LinearLayout(mThemeContext);
         mEmojiCategoryBar.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams categoryParams = new LinearLayout.LayoutParams(0, dp(54));
+        mEmojiCategoryBar.setOrientation(LinearLayout.HORIZONTAL);
+        emojiCategoryScroll.addView(mEmojiCategoryBar, new HorizontalScrollView.LayoutParams(
+                HorizontalScrollView.LayoutParams.WRAP_CONTENT,
+                emojiCategoryBottomBarHeight));
+        LinearLayout.LayoutParams categoryParams = new LinearLayout.LayoutParams(0, emojiCategoryBottomBarHeight);
         categoryParams.weight = 1;
-        mEmojiBottomBar.addView(mEmojiCategoryBar, categoryParams);
+        mEmojiBottomBar.addView(emojiCategoryScroll, categoryParams);
 
-        TextView backspace = createEmojiControl("⌫", 24);
+        TextView backspace = createEmojiControl("⌫", emojiBackspaceGlyphSize);
         backspace.setOnClickListener(v -> handleEmojiBackspace());
-        mEmojiBottomBar.addView(backspace, new LinearLayout.LayoutParams(dp(48), dp(46)));
+        mEmojiBottomBar.addView(backspace, new LinearLayout.LayoutParams(
+                emojiSideControlWidth, emojiCategoryTabHeight));
 
-        renderEmojiContent("");
         mEmojiKeyboardView.setVisibility(mEmojiKeyboardShown ? View.VISIBLE : View.GONE);
+    }
+
+    private void updateEmojiAbcButtonLabel() {
+        if (mEmojiAbcButton != null) {
+            mEmojiAbcButton.setText(mEmojiSourceWasEnglish ? "ABC" : getString(R.string.emoji_abc_ime_label));
+        }
+    }
+
+    private void restoreEmojiSourceKeyboard() {
+        if (mEmojiSourceWasEnglish) {
+            if (!mEnglishOnly && mInputView != null) {
+                switchKeyboard(KEYCODE_SWITCH_TO_ENGLISH_MODE);
+            }
+        } else if (mEnglishOnly && mInputView != null) {
+            switchKeyboard(KEYCODE_SWITCH_TO_IM_MODE);
+        }
     }
 
     private void renderEmojiContent(String query) {
         if (mEmojiPages == null || mEmojiCategoryBar == null) return;
+        mEmojiContentRendered = true;
 
         String normalizedQuery = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         mEmojiSearchMode = mEmojiSearchFocused || normalizedQuery.length() > 0;
+        setInputCandidateStripVisibility(
+                emojiSearchInputCandidateStripVisibility(mEmojiKeyboardShown, mEmojiSearchMode));
         mEmojiPages.removeAllViews();
+        int searchPanelHeight = emojiSearchPanelHeight();
 
         if (mEmojiKeyboardView != null) {
             ViewGroup.LayoutParams emojiParams = mEmojiKeyboardView.getLayoutParams();
             if (emojiParams != null) {
-                emojiParams.height = mEmojiSearchMode ? dp(EMOJI_SEARCH_PANEL_HEIGHT_DP) : ViewGroup.LayoutParams.WRAP_CONTENT;
+                emojiParams.height = mEmojiSearchMode ? searchPanelHeight : ViewGroup.LayoutParams.WRAP_CONTENT;
                 mEmojiKeyboardView.setLayoutParams(emojiParams);
             }
         }
         if (mEmojiRoot != null) {
-            mEmojiRoot.setMinimumHeight(mEmojiSearchFocused ? dp(EMOJI_SEARCH_PANEL_HEIGHT_DP) : dp(280));
+            int horizontalPadding = mEmojiSearchMode ? 0 : dp(EMOJI_PANEL_HORIZONTAL_PADDING_DP);
+            int verticalPaddingBottom = mEmojiSearchMode ? 0 : dp(EMOJI_PANEL_VERTICAL_PADDING_DP);
+            mEmojiRoot.setPadding(
+                    horizontalPadding,
+                    dp(EMOJI_PANEL_VERTICAL_PADDING_DP),
+                    horizontalPadding,
+                    verticalPaddingBottom);
+            mEmojiRoot.setMinimumHeight(mEmojiSearchMode ? searchPanelHeight : dp(280));
+        }
+        if (mEmojiSearchField != null) {
+            LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(EMOJI_SEARCH_FIELD_HEIGHT_DP));
+            if (mEmojiSearchMode) {
+                int horizontalMargin = dp(EMOJI_PANEL_HORIZONTAL_PADDING_DP);
+                searchParams.setMargins(horizontalMargin, 0, horizontalMargin, 0);
+            }
+            mEmojiSearchField.setLayoutParams(searchParams);
         }
         if (mEmojiScroll != null) {
             LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    mEmojiSearchMode ? dp(EMOJI_SEARCH_SCROLL_HEIGHT_DP) : 0);
+                    0);
             scrollParams.weight = mEmojiSearchMode ? 0 : 1;
-            scrollParams.topMargin = dp(8);
+            scrollParams.topMargin = mEmojiSearchMode ? 0 : dp(8);
             mEmojiScroll.setLayoutParams(scrollParams);
+            mEmojiScroll.setVisibility(mEmojiSearchMode ? View.GONE : View.VISIBLE);
         }
         if (mEmojiBottomBar != null) {
             mEmojiBottomBar.setVisibility(mEmojiSearchFocused ? View.GONE : View.VISIBLE);
@@ -2167,52 +2720,123 @@ public class LIMEService extends InputMethodService
 
         if (mEmojiSearchMode) {
             List<String> matches = findEmojiSearchResults(normalizedQuery);
-            addEmojiPage(matches.toArray(new String[0]), getEmojiPageWidth());
+            List<Mapping> emojiCandidates = emojiSearchCandidateMappings(matches);
+            showEmojiSearchCandidatesInInputStrip(emojiCandidates);
             updateEmojiCategoryHighlight(-1);
-            if (mEmojiScroll != null) {
-                mEmojiScroll.post(() -> mEmojiScroll.scrollTo(0, 0));
-            }
         } else {
+            clearEmojiSearchCandidates();
             int pageWidth = getEmojiPageWidth();
             List<List<String>> pages = getEmojiPanelPages();
-            for (List<String> page : pages) {
-                addEmojiPage(page.toArray(new String[0]), pageWidth);
+            mEmojiCategoryStartOffsets = new int[getEmojiCategoryCount()];
+            int nextOffset = 0;
+            for (int i = 0; i < pages.size(); i++) {
+                if (i < mEmojiCategoryStartOffsets.length) {
+                    mEmojiCategoryStartOffsets[i] = nextOffset;
+                }
+                nextOffset += addEmojiSection(pages.get(i).toArray(new String[0]), pageWidth, i);
             }
             updateEmojiCategoryHighlight(-1);
             if (mEmojiScroll != null) {
-                final int pageIndex = getEmojiCategoryStartPage(mEmojiCategoryIndex);
-                mEmojiScroll.post(() -> mEmojiScroll.scrollTo(pageIndex * getEmojiPageWidth(), 0));
+                final int offset = getEmojiCategoryStartOffset(mEmojiCategoryIndex);
+                mEmojiScroll.post(() -> mEmojiScroll.scrollTo(offset, 0));
             }
         }
+    }
+
+    View getEmojiKeyboardViewForTesting() {
+        return mEmojiKeyboardView;
+    }
+
+    boolean isEmojiContentRenderedForTesting() {
+        return mEmojiContentRendered;
+    }
+
+    int getEmojiPageViewCountForTesting() {
+        return mEmojiPages == null ? 0 : mEmojiPages.getChildCount();
+    }
+
+    int getEmojiCategoryTabCountForTesting() {
+        return mEmojiCategoryBar == null ? 0 : mEmojiCategoryBar.getChildCount();
     }
 
     private void enterEmojiSearchMode() {
         mEmojiSearchFocused = true;
         mEmojiSearchQuery.setLength(0);
+        setEmojiSearchKeyboard(emojiSearchInitialEnglishOnly(mEmojiSourceWasEnglish));
         updateEmojiSearchText();
-        forceEnglishKeyboardForEmojiSearch();
         enforceEmojiKeyboardVisibility();
         refreshCandidateInputContainer();
-        renderEmojiContent("");
     }
 
-    private void exitEmojiSearchToPanel() {
+    private void exitEmojiSearchToKeyboard() {
         mEmojiSearchFocused = false;
+        mEmojiSearchMode = false;
         mEmojiSearchQuery.setLength(0);
-        updateEmojiSearchText();
-        if (mInputView != null) {
-            mInputView.setVisibility(View.GONE);
-            mInputView.invalidateAllKeys();
+        if (mEmojiSearchField != null) {
+            mEmojiSearchField.setText("");
         }
-        renderEmojiContent("");
-        refreshCandidateInputContainer();
+        hideEmojiKeyboard();
     }
 
-    private void forceEnglishKeyboardForEmojiSearch() {
-        mEnglishOnly = true;
+    private void showEmojiSearchCandidatesInInputStrip(List<Mapping> emojiCandidates) {
+        LinkedList<Mapping> candidates = new LinkedList<>();
+        if (emojiCandidates != null) {
+            candidates.addAll(emojiCandidates);
+        }
+        mCandidateList = candidates;
+        selectedCandidate = null;
+        hasCandidatesShown = !candidates.isEmpty();
+        hasMappingList = !candidates.isEmpty();
+        setInputCandidateStripVisibility(View.VISIBLE);
+        if (mCandidateInInputView != null) {
+            mCandidateInInputView.setVisibility(View.VISIBLE);
+        }
+        if (mCandidateViewInInputView != null) {
+            mCandidateViewInInputView.setVisibility(View.VISIBLE);
+        }
+        if (mCandidateView != null) {
+            mCandidateView.setSuggestions(candidates, false);
+        }
+        showCandidateView();
+        if (mCandidateInInputView != null) {
+            mCandidateInInputView.requestLayout();
+            mCandidateInInputView.updateCandidateViewWidthConstraint();
+            mCandidateInInputView.post(() -> {
+                if (!mEmojiKeyboardShown || !mEmojiSearchMode) return;
+                setInputCandidateStripVisibility(View.VISIBLE);
+                mCandidateInInputView.setVisibility(View.VISIBLE);
+                if (mCandidateViewInInputView != null) {
+                    mCandidateViewInInputView.setVisibility(View.VISIBLE);
+                }
+                mCandidateInInputView.requestLayout();
+                mCandidateInInputView.updateCandidateViewWidthConstraint();
+            });
+        }
+    }
+
+    private void clearEmojiSearchCandidates() {
+        if (mCandidateView != null) {
+            mCandidateView.hideCandidatePopup();
+            mCandidateView.setSuggestions(null, false);
+        }
+        if (mCandidateList != null) {
+            mCandidateList.clear();
+        }
+        selectedCandidate = null;
+        hasCandidatesShown = false;
+        hasMappingList = false;
+        if (mCandidateInInputView != null) {
+            mCandidateInInputView.requestLayout();
+            mCandidateInInputView.updateCandidateViewWidthConstraint();
+        }
+    }
+
+    private void setEmojiSearchKeyboard(boolean englishOnly) {
+        mEnglishOnly = englishOnly;
         if (mKeyboardSwitcher != null) {
-            mKeyboardSwitcher.setKeyboardMode(activeIM, LIMEKeyboardSwitcher.MODE_TEXT,
-                    mImeOptions, false, false, false);
+            mKeyboardSwitcher.setKeyboardMode(activeIM,
+                    englishOnly ? LIMEKeyboardSwitcher.MODE_TEXT : LIMEKeyboardSwitcher.MODE_IM,
+                    emojiSearchImeOptions(mImeOptions), !englishOnly, false, false);
         }
         if (mInputView != null) {
             mInputView.invalidateAllKeys();
@@ -2224,27 +2848,34 @@ public class LIMEService extends InputMethodService
             handleEmojiBackspace();
             return true;
         }
-        if (primaryCode == LIME.KEYCODE_EMOJI_PANEL) {
-            exitEmojiSearchToPanel();
+        if (shouldExitEmojiSearchToKeyboard(primaryCode)) {
+            exitEmojiSearchToKeyboard();
             return true;
         }
-        if (primaryCode == LIME.KEYCODE_EMOJI_ABC || primaryCode == KEYCODE_SWITCH_TO_IM_MODE) {
-            hideEmojiKeyboard();
+        if (isEmojiSearchKeyboardModeKey(primaryCode)) {
+            setEmojiSearchKeyboard(resolveEmojiSearchEnglishOnlyForModeKey(primaryCode, mEnglishOnly));
             return true;
         }
-        if (primaryCode == LIMEBaseKeyboard.KEYCODE_DONE || primaryCode == MY_KEYCODE_ENTER) {
-            mEmojiSearchFocused = false;
-            if (mInputView != null) {
-                mInputView.setVisibility(View.GONE);
-            }
-            renderEmojiContent(mEmojiSearchQuery.toString());
-            return true;
-        }
-        if (primaryCode >= 32 && primaryCode < 127) {
+        if (shouldEmojiSearchConsumePrintableKey(primaryCode, mEnglishOnly)) {
             mEmojiSearchQuery.append((char) Character.toLowerCase(primaryCode));
             updateEmojiSearchText();
             return true;
         }
+        return mEnglishOnly;
+    }
+
+    private boolean appendPickedCandidateToEmojiSearch(Mapping candidate) {
+        if (candidate == null || candidate.getWord() == null || candidate.getWord().isEmpty()) {
+            return false;
+        }
+        if (!shouldAppendPickedCandidateToEmojiSearch(mEmojiKeyboardShown, mEmojiSearchMode,
+                candidate.isEmojiRecord(), candidate.isComposingCodeRecord())) {
+            return false;
+        }
+        mEmojiSearchQuery.append(candidate.getWord());
+        selectedCandidate = null;
+        clearComposing(false);
+        updateEmojiSearchText();
         return true;
     }
 
@@ -2259,48 +2890,81 @@ public class LIMEService extends InputMethodService
 
     private void updateEmojiSearchText() {
         if (mEmojiSearchField != null) {
+            EmojiPanelColors colors = currentEmojiPanelColors();
             if (mEmojiSearchQuery.length() == 0 && !mEmojiSearchFocused) {
                 mEmojiSearchField.setText(getString(R.string.emoji_search_hint));
-                mEmojiSearchField.setTextColor(0xFF8A8A8A);
+                mEmojiSearchField.setTextColor(colors.searchHint);
             } else {
                 mEmojiSearchField.setText(mEmojiSearchQuery.toString());
-                mEmojiSearchField.setTextColor(ContextCompat.getColor(this, android.R.color.black));
+                mEmojiSearchField.setTextColor(colors.searchText);
             }
         }
         renderEmojiContent(mEmojiSearchQuery.toString());
     }
 
-    private void addEmojiPage(String[] emojis, int pageWidth) {
+    private void applyEmojiSearchFieldStyle() {
+        if (mEmojiSearchField == null) return;
+        EmojiPanelColors colors = currentEmojiPanelColors();
+        Drawable searchIcon = ContextCompat.getDrawable(this, android.R.drawable.ic_menu_search);
+        if (searchIcon != null) {
+            searchIcon = DrawableCompat.wrap(searchIcon.mutate());
+            DrawableCompat.setTint(searchIcon, colors.searchIcon);
+        }
+        mEmojiSearchField.setCompoundDrawablesWithIntrinsicBounds(searchIcon, null, null, null);
+        mEmojiSearchField.setBackground(makeRoundRect(colors.searchBackground, dp(26)));
+    }
+
+    private int addEmojiSection(String[] emojis, int pageWidth, int categoryIndex) {
         GridLayout page = new GridLayout(mThemeContext);
-        page.setColumnCount(mEmojiSearchMode ? Math.max(1, emojis.length) : 8);
+        float emojiKeyboardSizeScale = getEmojiKeyboardSizeScale();
+        int keySize = Math.max(dp(scaleDp(42, emojiKeyboardSizeScale)), pageWidth / EMOJI_GRID_COLUMNS);
+        int emojiGlyphSize = emojiPanelGlyphSize(emojiKeyboardSizeScale);
+        int emojiCellHeight = dp(scaleDp(50, emojiKeyboardSizeScale));
+        int realCount = emojis == null ? 0 : emojis.length;
+        int columns = Math.max(1, (int) Math.ceil((double) realCount / (double) EMOJI_GRID_ROWS));
+        if (categoryIndex == 0) {
+            columns = Math.max(EMOJI_GRID_COLUMNS, columns);
+        }
+        int visibleCellCount = Math.max(realCount, columns * EMOJI_GRID_ROWS);
+        page.setColumnCount(columns);
+        page.setRowCount(EMOJI_GRID_ROWS);
         page.setPadding(0, 0, 0, 0);
-        int keySize = Math.max(dp(42), pageWidth / 8);
-        for (String emoji : emojis) {
-            TextView key = createEmojiControl(emoji, 28);
-            key.setOnClickListener(v -> commitEmoji(((TextView) v).getText().toString()));
-            GridLayout.LayoutParams keyParams = new GridLayout.LayoutParams();
+        for (int i = 0; i < visibleCellCount; i++) {
+            boolean isRealEmoji = i < realCount;
+            TextView key = createEmojiControl(isRealEmoji ? emojis[i] : "•", emojiGlyphSize);
+            if (isRealEmoji) {
+                key.setOnClickListener(v -> commitEmoji(((TextView) v).getText().toString()));
+            } else {
+                key.setTextColor(Color.TRANSPARENT);
+                key.setAlpha(0.01f);
+                key.setOnClickListener(null);
+            }
+            int column = i / EMOJI_GRID_ROWS;
+            int row = i % EMOJI_GRID_ROWS;
+            GridLayout.LayoutParams keyParams = new GridLayout.LayoutParams(
+                    GridLayout.spec(row),
+                    GridLayout.spec(column));
             keyParams.width = keySize;
-            keyParams.height = dp(mEmojiSearchMode ? EMOJI_SEARCH_KEY_HEIGHT_DP : 50);
+            keyParams.height = emojiCellHeight;
             keyParams.setMargins(0, dp(1), 0, dp(1));
             page.addView(key, keyParams);
         }
-        int contentWidth = mEmojiSearchMode ? Math.max(pageWidth, keySize * emojis.length) : pageWidth;
+        int contentWidth = categoryIndex == 0 ? Math.max(pageWidth, keySize * columns) : keySize * columns;
         mEmojiPages.addView(page, new LinearLayout.LayoutParams(contentWidth, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return contentWidth;
     }
 
     private void updateEmojiCategoryHighlight(int categoryIndex) {
         if (mEmojiCategoryBar == null) return;
         if (categoryIndex >= 0) {
-            if (!mEmojiPageCategoryIndexes.isEmpty()) {
-                int pageIndex = Math.max(0, Math.min(categoryIndex, mEmojiPageCategoryIndexes.size() - 1));
-                mEmojiCategoryIndex = mEmojiPageCategoryIndexes.get(pageIndex);
-            } else {
-                mEmojiCategoryIndex = Math.max(0, Math.min(categoryIndex, getEmojiCategoryCount() - 1));
-            }
+            mEmojiCategoryIndex = Math.max(0, Math.min(categoryIndex, getEmojiCategoryCount() - 1));
         }
 
         if (mEmojiCategoryBar.getChildCount() != getEmojiCategoryCount()) {
             mEmojiCategoryBar.removeAllViews();
+            float emojiKeyboardSizeScale = getEmojiKeyboardSizeScale();
+            int tabWidth = dp(emojiCategoryTabWidthDp(emojiKeyboardSizeScale));
+            int tabHeight = dp(scaleDp(EMOJI_CATEGORY_TAB_HEIGHT_DP, emojiKeyboardSizeScale));
             for (int i = 0; i < getEmojiCategoryCount(); i++) {
                 final int index = i;
                 View tab = createEmojiCategoryIcon(index);
@@ -2309,27 +2973,67 @@ public class LIMEService extends InputMethodService
                         mEmojiSearchField.setText("");
                     }
                     mEmojiSearchMode = false;
+                    mEmojiCategoryIndex = index;
                     renderEmojiContent("");
                     if (mEmojiScroll != null) {
                         mEmojiScroll.post(() -> mEmojiScroll.smoothScrollTo(
-                                getEmojiCategoryStartPage(index) * getEmojiPageWidth(), 0));
+                                getEmojiCategoryStartOffset(index), 0));
                     }
-                    mEmojiCategoryIndex = index;
                     updateEmojiCategoryHighlight(-1);
                 });
-                mEmojiCategoryBar.addView(tab, new LinearLayout.LayoutParams(0, dp(40), 1));
+                mEmojiCategoryBar.addView(tab, new LinearLayout.LayoutParams(tabWidth, tabHeight));
             }
         }
         for (int i = 0; i < mEmojiCategoryBar.getChildCount(); i++) {
             View tab = mEmojiCategoryBar.getChildAt(i);
             tab.setBackground(makeRoundRect(
-                    !mEmojiSearchMode && i == mEmojiCategoryIndex ? 0x22000000 : Color.TRANSPARENT, dp(18)));
+                    !mEmojiSearchMode && i == mEmojiCategoryIndex
+                            ? currentEmojiPanelColors().categoryHighlight
+                            : Color.TRANSPARENT, dp(18)));
             tab.invalidate();
         }
     }
 
     private int getEmojiCategoryCount() {
         return FALLBACK_EMOJI_CATEGORIES.length;
+    }
+
+    static int emojiCategoryTabWidthDp(float keyboardSizeScale) {
+        return scaleDp(EMOJI_CATEGORY_TAB_WIDTH_DP, keyboardSizeScale);
+    }
+
+    static int emojiPanelGlyphSize(float keyboardSizeScale) {
+        float clampedScale = Math.max(0.8f, Math.min(1.2f, keyboardSizeScale));
+        float glyphScale = 1.0f + ((clampedScale - 1.0f) * 0.5f);
+        return Math.round(EMOJI_PANEL_GLYPH_SIZE * glyphScale);
+    }
+
+    static int emojiCategoryGlyphSizeDp(float keyboardSizeScale) {
+        return emojiPanelGlyphSize(keyboardSizeScale);
+    }
+
+    static int emojiSideControlWidthDp(float keyboardSizeScale) {
+        return emojiCategoryTabWidthDp(keyboardSizeScale);
+    }
+
+    static int emojiModeControlGlyphSize(float keyboardSizeScale) {
+        return Math.round(emojiCategoryGlyphSizeDp(keyboardSizeScale) * 0.8f);
+    }
+
+    static int emojiBackspaceGlyphSize(float keyboardSizeScale) {
+        return emojiCategoryGlyphSizeDp(keyboardSizeScale);
+    }
+
+    private float getEmojiKeyboardSizeScale() {
+        float scale = 1.0f;
+        if (mLIMEPref != null) {
+            scale = mLIMEPref.getKeyboardSize();
+        }
+        return Math.max(0.8f, Math.min(1.2f, scale));
+    }
+
+    private static int scaleDp(int dpValue, float keyboardSizeScale) {
+        return Math.round(dpValue * Math.max(0.8f, Math.min(1.2f, keyboardSizeScale)));
     }
 
     private int getEmojiCategoryStartPage(int categoryIndex) {
@@ -2340,8 +3044,33 @@ public class LIMEService extends InputMethodService
         return mEmojiCategoryPageStarts[safeIndex];
     }
 
+    private int getEmojiCategoryStartOffset(int categoryIndex) {
+        if (mEmojiCategoryStartOffsets == null || mEmojiCategoryStartOffsets.length == 0) {
+            return getEmojiCategoryStartPage(categoryIndex) * getEmojiPageWidth();
+        }
+        int safeIndex = Math.max(0, Math.min(categoryIndex, mEmojiCategoryStartOffsets.length - 1));
+        return mEmojiCategoryStartOffsets[safeIndex];
+    }
+
+    private int categoryIndexForEmojiScroll(int scrollX) {
+        if (mEmojiCategoryStartOffsets == null || mEmojiCategoryStartOffsets.length == 0) {
+            int pageWidth = getEmojiPageWidth();
+            return pageWidth > 0 ? Math.round((float) scrollX / (float) pageWidth) : 0;
+        }
+        int active = 0;
+        for (int i = 0; i < mEmojiCategoryStartOffsets.length; i++) {
+            if (mEmojiCategoryStartOffsets[i] <= scrollX + 1) {
+                active = i;
+            } else {
+                break;
+            }
+        }
+        return active;
+    }
+
     private View createEmojiCategoryIcon(int categoryIndex) {
-        EmojiCategoryIconButton view = new EmojiCategoryIconButton(mThemeContext, categoryIndex);
+        EmojiCategoryIconButton view = new EmojiCategoryIconButton(
+                mThemeContext, categoryIndex, dp(emojiCategoryGlyphSizeDp(getEmojiKeyboardSizeScale())));
         view.setClickable(true);
         return view;
     }
@@ -2389,6 +3118,25 @@ public class LIMEService extends InputMethodService
         return matches;
     }
 
+    private List<Mapping> emojiSearchCandidateMappings(List<String> emojis) {
+        List<Mapping> candidates = new LinkedList<>();
+        if (emojis == null) return candidates;
+        for (String emoji : emojis) {
+            if (emoji == null || emoji.isEmpty()) continue;
+            Mapping mapping = new Mapping();
+            mapping.setCode("");
+            mapping.setWord(emoji);
+            mapping.setEmojiRecord();
+            candidates.add(mapping);
+        }
+        return candidates;
+    }
+
+    private int emojiSearchPanelHeight() {
+        return dp(EMOJI_PANEL_VERTICAL_PADDING_DP)
+                + dp(EMOJI_SEARCH_FIELD_HEIGHT_DP);
+    }
+
     private List<List<String>> getEmojiPanelPages() {
         if (mEmojiCategoryPages == null) {
             List<List<String>> categories = loadEmojiCategories();
@@ -2416,6 +3164,8 @@ public class LIMEService extends InputMethodService
             List<String> fallback = emojiArrayToList(FALLBACK_EMOJI_CATEGORIES[i]);
             if (i >= categories.size()) {
                 categories.add(fallback);
+            } else if (i == 0) {
+                categories.set(i, mergeEmojiRecentSeedQueue(categories.get(i), fallback, EMOJI_PAGE_CAPACITY));
             } else if (categories.get(i) == null || categories.get(i).isEmpty()) {
                 categories.set(i, fallback);
             }
@@ -2424,6 +3174,31 @@ public class LIMEService extends InputMethodService
             categories.remove(categories.size() - 1);
         }
         return categories;
+    }
+
+    private List<String> mergeEmojiRecentSeedQueue(List<String> recent, List<String> fallback, int limit) {
+        int safeLimit = Math.max(1, limit);
+        List<String> merged = new ArrayList<>();
+        if (recent != null) {
+            for (String emoji : recent) {
+                addEmojiSeedIfRoom(merged, emoji, safeLimit);
+            }
+        }
+        if (fallback != null) {
+            for (String emoji : fallback) {
+                addEmojiSeedIfRoom(merged, emoji, safeLimit);
+            }
+        }
+        return merged;
+    }
+
+    private void addEmojiSeedIfRoom(List<String> merged, String emoji, int limit) {
+        if (merged == null || emoji == null || emoji.isEmpty() || merged.contains(emoji)) {
+            return;
+        }
+        if (merged.size() < Math.max(1, limit)) {
+            merged.add(emoji);
+        }
     }
 
     private List<List<String>> paginateEmojiCategories(List<List<String>> categories) {
@@ -2437,21 +3212,8 @@ public class LIMEService extends InputMethodService
             if (items == null || items.isEmpty()) {
                 items = emojiArrayToList(FALLBACK_EMOJI_CATEGORIES[categoryIndex]);
             }
-            int capacity = EMOJI_PAGE_CAPACITY;
-            if (categoryIndex == 0) {
-                pages.add(new ArrayList<>(items));
-                mEmojiPageCategoryIndexes.add(categoryIndex);
-                continue;
-            }
-            for (int start = 0; start < items.size(); start += capacity) {
-                int end = Math.min(items.size(), start + capacity);
-                pages.add(new ArrayList<>(items.subList(start, end)));
-                mEmojiPageCategoryIndexes.add(categoryIndex);
-            }
-            if (items.isEmpty()) {
-                pages.add(new ArrayList<>());
-                mEmojiPageCategoryIndexes.add(categoryIndex);
-            }
+            pages.add(new ArrayList<>(items));
+            mEmojiPageCategoryIndexes.add(categoryIndex);
         }
         return pages;
     }
@@ -2513,7 +3275,7 @@ public class LIMEService extends InputMethodService
         TextView view = new TextView(mThemeContext);
         view.setText(text);
         view.setTextSize(textSize);
-        view.setTextColor(ContextCompat.getColor(this, android.R.color.black));
+        view.setTextColor(currentEmojiPanelColors().iconText);
         view.setGravity(Gravity.CENTER);
         view.setIncludeFontPadding(false);
         view.setClickable(true);
@@ -2522,12 +3284,14 @@ public class LIMEService extends InputMethodService
 
     private class EmojiCategoryIconButton extends View {
         private final int categoryIndex;
+        private final int iconSizePx;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
-        EmojiCategoryIconButton(Context context, int categoryIndex) {
+        EmojiCategoryIconButton(Context context, int categoryIndex, int iconSizePx) {
             super(context);
             this.categoryIndex = categoryIndex;
-            paint.setColor(ContextCompat.getColor(LIMEService.this, android.R.color.black));
+            this.iconSizePx = iconSizePx;
+            paint.setColor(currentEmojiPanelColors().iconText);
             paint.setStrokeCap(Paint.Cap.ROUND);
             paint.setStrokeJoin(Paint.Join.ROUND);
             setWillNotDraw(false);
@@ -2537,7 +3301,7 @@ public class LIMEService extends InputMethodService
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            float size = Math.min(getWidth(), getHeight()) * 0.56f;
+            float size = Math.min(iconSizePx, Math.min(getWidth(), getHeight()));
             float cx = getWidth() / 2f;
             float cy = getHeight() / 2f;
             paint.setStrokeWidth(Math.max(2.2f, dp(2)));
@@ -2705,23 +3469,31 @@ public class LIMEService extends InputMethodService
     }
 
     private int getInputCandidateStripVisibility() {
-        if (mCandidateInInputView != null && mCandidateInInputView.getChildCount() > 0) {
-            return mCandidateInInputView.getChildAt(0).getVisibility();
+        View strip = inputCandidateStrip();
+        if (strip != null) {
+            return strip.getVisibility();
         }
         return View.VISIBLE;
     }
 
     private void setInputCandidateStripVisibility(int visibility) {
-        if (mCandidateInInputView != null && mCandidateInInputView.getChildCount() > 0) {
-            mCandidateInInputView.getChildAt(0).setVisibility(visibility);
+        View strip = inputCandidateStrip();
+        if (strip != null) {
+            strip.setVisibility(visibility);
         }
+    }
+
+    private View inputCandidateStrip() {
+        if (mCandidateInInputView == null) return null;
+        return mCandidateInInputView.findViewById(R.id.input_candidate_strip);
     }
 
     private void enforceEmojiKeyboardVisibility() {
         if (!mEmojiKeyboardShown || mInputView == null) return;
-        setInputCandidateStripVisibility(View.GONE);
+        setInputCandidateStripVisibility(
+                emojiSearchInputCandidateStripVisibility(mEmojiKeyboardShown, mEmojiSearchMode));
         if (mEmojiSearchFocused) {
-            forceEnglishKeyboardForEmojiSearch();
+            setEmojiSearchKeyboard(mEnglishOnly);
             mInputView.setVisibility(View.VISIBLE);
         } else {
             mInputView.setVisibility(View.GONE);
@@ -2730,7 +3502,8 @@ public class LIMEService extends InputMethodService
         if (mInputView.getHandler() != null) {
             mInputView.post(() -> {
                 if (!mEmojiKeyboardShown) return;
-                setInputCandidateStripVisibility(View.GONE);
+                setInputCandidateStripVisibility(
+                        emojiSearchInputCandidateStripVisibility(mEmojiKeyboardShown, mEmojiSearchMode));
                 mInputView.setVisibility(mEmojiSearchFocused ? View.VISIBLE : View.GONE);
                 mInputView.invalidateAllKeys();
             });
@@ -2748,14 +3521,14 @@ public class LIMEService extends InputMethodService
 
 
     private AlertDialog mOptionsDialog;
-    // Contextual menu positions
-
-    private static final int POS_SETTINGS = 0;
-    private static final int POS_HANCONVERT = 1;  //Jeremy '11,9,17
-    private static final int POS_KEYBOARD = 2;
-    private static final int POS_METHOD = 3;
-    private static final int POS_SPLIT_KEYBOARD = 4;
-    private static final int POS_VOICEINPUT = 5;
+    // Contextual menu actions
+    private static final int ACTION_SETTINGS = 0;
+    private static final int ACTION_REVERSE_LOOKUP = 1;
+    private static final int ACTION_HANCONVERT = 2;  //Jeremy '11,9,17
+    private static final int ACTION_KEYBOARD = 3;
+    private static final int ACTION_METHOD = 4;
+    private static final int ACTION_SPLIT_KEYBOARD = 5;
+    private static final int ACTION_VOICEINPUT = 6;
 
 
     /**
@@ -2783,6 +3556,9 @@ public class LIMEService extends InputMethodService
         builder.setTitle(getResources().getString(R.string.ime_name));
 
         CharSequence itemSettings = getString(R.string.lime_setting_preference);
+        List<LIMEPreferenceManager.ReverseLookupOption> reverseLookupOptions = getActiveReverseLookupOptions();
+        CharSequence itemReverseLookup = getString(R.string.keyboard_menu_reverse_lookup,
+                getReverseLookupLabel(mLIMEPref.getReverseLookupTable(activeIM), reverseLookupOptions));
         CharSequence hanConvert = getString(R.string.han_convert_option_list);
 
         CharSequence itemSwitchIM = getString(R.string.keyboard_list);
@@ -2799,65 +3575,73 @@ public class LIMEService extends InputMethodService
             itemSplitKeyboard = getString(R.string.merge_keyboard);
 
 
-        CharSequence[] options;
         CharSequence itemVoiceInput = getString(R.string.voice_input);
-
-
-        final boolean hasSplitOption;
+        List<CharSequence> options = new ArrayList<>();
+        List<Integer> actions = new ArrayList<>();
 
         //Jeremy '12,5,27 do not show split/merge keyboard option if in landscape mode and show arrow keys is on
-        if (isLandScape && mShowArrowKeys > 0) {
-            hasSplitOption = false;
-            options = new CharSequence[]
-                    {itemSettings, hanConvert, itemSwitchIM, itemSwitchSytemIM, itemVoiceInput};
-        } else {
-            hasSplitOption = true;
-            options = new CharSequence[]
-                    {itemSettings, hanConvert, itemSwitchIM, itemSwitchSytemIM, itemSplitKeyboard, itemVoiceInput};
+        final boolean hasSplitOption = !(isLandScape && mShowArrowKeys > 0);
 
+        options.add(itemSettings);
+        actions.add(ACTION_SETTINGS);
+        options.add(itemReverseLookup);
+        actions.add(ACTION_REVERSE_LOOKUP);
+        options.add(hanConvert);
+        actions.add(ACTION_HANCONVERT);
+        options.add(itemSwitchIM);
+        actions.add(ACTION_KEYBOARD);
+        options.add(itemSwitchSytemIM);
+        actions.add(ACTION_METHOD);
+        if (hasSplitOption) {
+            options.add(itemSplitKeyboard);
+            actions.add(ACTION_SPLIT_KEYBOARD);
         }
+        options.add(itemVoiceInput);
+        actions.add(ACTION_VOICEINPUT);
 
 
-        builder.setItems(options, (di, position) -> {
+        builder.setItems(options.toArray(new CharSequence[0]), (di, position) -> {
             di.dismiss();
-            switch (position) {
+            switch (actions.get(position)) {
 
-                case POS_SETTINGS:
-                    launchSettings();
+                case ACTION_SETTINGS:
+                    launchPreference();
                     break;
-                case POS_HANCONVERT:  //Jeremy '11,9,17
+                case ACTION_REVERSE_LOOKUP:
+                    showReverseLookupPicker();
+                    break;
+                case ACTION_HANCONVERT:  //Jeremy '11,9,17
                     showHanConvertPicker();
                     break;
-                case POS_KEYBOARD:
+                case ACTION_KEYBOARD:
                     showIMPicker();
                     break;
-                case POS_METHOD:
+                case ACTION_METHOD:
                     ((InputMethodManager) Objects.requireNonNull(getSystemService(INPUT_METHOD_SERVICE))).showInputMethodPicker();
                     break;
-                case POS_SPLIT_KEYBOARD: //Jeremy '12,5,27 new option to split keyboard; '12,6,9 add orientation consideration on split keyboard
-                    if (hasSplitOption) {
-                        if (mSplitKeyboard == LIMEKeyboard.SPLIT_KEYBOARD_NEVER) {
-                            if (isLandScape)
-                                mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_LANDSCAPD_ONLY);
-                            else
-                                mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_ALWAYS);
-                        } else if (mSplitKeyboard == LIMEKeyboard.SPLIT_KEYBOARD_ALWAYS) {
-                            if (isLandScape)
-                                mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_NEVER);
-                            else
-                                mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_LANDSCAPD_ONLY);
-                        } else {// LIMEKeyboard.SPLIT_KEYBOARD_LANDSCAPD_ONLY
-                            if (isLandScape)
-                                mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_NEVER);
-                            else
-                                mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_ALWAYS);
-                        }
-
-                        handleClose();
-                        mKeyboardSwitcher.resetKeyboards(true);
-                        break;
+                case ACTION_SPLIT_KEYBOARD: //Jeremy '12,5,27 new option to split keyboard; '12,6,9 add orientation consideration on split keyboard
+                    if (mSplitKeyboard == LIMEKeyboard.SPLIT_KEYBOARD_NEVER) {
+                        if (isLandScape)
+                            mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_LANDSCAPD_ONLY);
+                        else
+                            mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_ALWAYS);
+                    } else if (mSplitKeyboard == LIMEKeyboard.SPLIT_KEYBOARD_ALWAYS) {
+                        if (isLandScape)
+                            mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_NEVER);
+                        else
+                            mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_LANDSCAPD_ONLY);
+                    } else {// LIMEKeyboard.SPLIT_KEYBOARD_LANDSCAPD_ONLY
+                        if (isLandScape)
+                            mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_NEVER);
+                        else
+                            mLIMEPref.setSplitKeyboard(LIMEKeyboard.SPLIT_KEYBOARD_ALWAYS);
                     }
-                case POS_VOICEINPUT:
+
+                    invalidateStartupConfigSnapshot();
+                    handleClose();
+                    mKeyboardSwitcher.resetKeyboards(true);
+                    break;
+                case ACTION_VOICEINPUT:
                     startVoiceInput();
                     break;
 
@@ -2875,7 +3659,65 @@ public class LIMEService extends InputMethodService
         mOptionsDialog.show();
     }
 
-    private void launchSettings() {
+    private List<LIMEPreferenceManager.ReverseLookupOption> getActiveReverseLookupOptions() {
+        buildActivatedIMList();
+        return LIMEPreferenceManager.buildReverseLookupOptions(
+                activatedIMList,
+                activatedIMFullNameList,
+                getString(R.string.reverse_lookup_none));
+    }
+
+    private String getReverseLookupLabel(String value, List<LIMEPreferenceManager.ReverseLookupOption> options) {
+        String noneLabel = getString(R.string.reverse_lookup_none);
+        String[] labels = LIMEPreferenceManager.reverseLookupLabels(options, noneLabel);
+        String[] values = LIMEPreferenceManager.reverseLookupValues(options, noneLabel);
+        for (int i = 0; i < values.length && i < labels.length; i++) {
+            if (values[i].equals(value)) {
+                return labels[i];
+            }
+        }
+        return labels.length > 0 ? labels[0] : "none";
+    }
+
+    private void showReverseLookupPicker() {
+        List<LIMEPreferenceManager.ReverseLookupOption> options = getActiveReverseLookupOptions();
+        String noneLabel = getString(R.string.reverse_lookup_none);
+        String[] labels = LIMEPreferenceManager.reverseLookupLabels(options, noneLabel);
+        String[] values = LIMEPreferenceManager.reverseLookupValues(options, noneLabel);
+        String current = mLIMEPref.getReverseLookupTable(activeIM);
+        int selected = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(current)) {
+                selected = i;
+                break;
+            }
+        }
+
+        AlertDialog.Builder builder = createDialogBuilder();
+        builder.setCancelable(true);
+        builder.setIcon(R.drawable.logo);
+        builder.setNegativeButton(android.R.string.cancel, null);
+        builder.setTitle(getString(R.string.im_reverse_lookup_screen_title));
+        builder.setSingleChoiceItems(labels, selected, (di, which) -> {
+            di.dismiss();
+            if (which >= 0 && which < values.length) {
+                mLIMEPref.setReverseLookupTable(activeIM, values[which]);
+                showLimeToast(getString(R.string.keyboard_menu_reverse_lookup, labels[which]));
+            }
+        });
+
+        AlertDialog dialog = builder.create();
+        Window window = dialog.getWindow();
+        assert window != null;
+        WindowManager.LayoutParams lp = window.getAttributes();
+        lp.token = mInputView.getWindowToken();
+        lp.type = WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG;
+        window.setAttributes(lp);
+        window.addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+        dialog.show();
+    }
+
+    private void launchPreference() {
         handleClose();
         Intent intent = new Intent();
         /*if(android.os.Build.VERSION.SDK_INT < 11)  //Jeremy '12,4,30 Add for deprecated preferenceActivity after API 11 (HC)
@@ -2908,6 +3750,7 @@ public class LIMEService extends InputMethodService
             }
         }
         mLIMEPref.setActiveIM(activeIM);
+        invalidateStartupConfigSnapshot();
         //Jeremy '12,4,21 force clear when switch to next keyboard
         clearComposing(false);
         // cancel candidate view if it's shown
@@ -2916,25 +3759,10 @@ public class LIMEService extends InputMethodService
         //initialKeyboard();
         initialIMKeyboard();
 
-        // Only show toast if Looper is available (not in test environment)
-        try {
-            if (Looper.myLooper() != null) {
-                Toast.makeText(this, activeIMName, Toast.LENGTH_SHORT).show();
-            }
-        } catch (RuntimeException e) {
-            // Ignore toast errors in test environment
-            Log.w(TAG, "Cannot show toast: " + e.getMessage());
-        }
+        showLimeToast(activeIMName);
 
-        try {
-            if (mKeyboardSwitcher != null) {
-                mKeyboardSwitcher.setKeyboardConfigList(SearchSrv.getKeyboardConfigList());
-                mKeyboardSwitcher.setImConfigKeyboardList(SearchSrv.getAllImKeyboardConfigList());
-                //mKeyboardSwitcher.clearKeyboards();
-            }
-        } catch (RemoteException e) {
-            Log.e(TAG, "Error setting IM list during initialization", e);
-        }
+        refreshStartupConfigSnapshotIfNeeded(false);
+        applyStartupConfigSnapshotToKeyboardSwitcher();
 
         // Update keyboard xml information
         if (mKeyboardSwitcher != null) {
@@ -2948,6 +3776,35 @@ public class LIMEService extends InputMethodService
         String[] fullNames = LIME.IM_FULL_NAMES;
         String[] shortNames = LIME.IM_SHORT_NAMES;
         String[] IMs = LIME.IM_CODES;
+        if (SearchSrv != null) {
+            List<ImConfig> imConfigList = SearchSrv.getImConfigList(null, LIME.IM_FULL_NAME);
+            activatedIMFullNameList.clear();
+            activatedIMList.clear();
+            activatedIMShortNameList.clear();
+
+            StringBuilder activeState = new StringBuilder();
+            for (ImConfig im : imConfigList) {
+                if (im == null || im.getCode() == null) continue;
+                if ("emoji".equals(im.getCode())) continue;
+                if (im.isDisable()) continue;
+
+                int index = indexOfIMCode(IMs, im.getCode());
+                if (index < 0) continue;
+                if (activeState.length() > 0) activeState.append(";");
+                activeState.append(index);
+                activatedIMFullNameList.add(im.getDesc());
+                activatedIMShortNameList.add(shortNames[index]);
+                activatedIMList.add(IMs[index]);
+            }
+
+            String liveState = activeState.toString();
+            if (!liveState.equals(mIMActivatedState)) {
+                mIMActivatedState = liveState;
+                mLIMEPref.setIMActivatedState(liveState);
+            }
+            ensureActiveIMInActivatedList();
+            return;
+        }
 
         String pIMActiveState = mLIMEPref.getIMActivatedState();
 
@@ -2985,8 +3842,21 @@ public class LIMEService extends InputMethodService
                 }
             }
         }
+        ensureActiveIMInActivatedList();
+
+    }
+
+    private int indexOfIMCode(String[] imCodes, String code) {
+        for (int i = 0; i < imCodes.length; i++) {
+            if (imCodes[i].equals(code)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void ensureActiveIMInActivatedList() {
         if (DEBUG) Log.i(TAG, "current active IM:" + activeIM);
-        // check if the selected keyboard is in active keyboard list.
         boolean matched = false;
         for (int i = 0; i < activatedIMList.size(); i++) {
             if (activeIM.equals(activatedIMList.get(i))) {
@@ -2996,11 +3866,22 @@ public class LIMEService extends InputMethodService
                 break;
             }
         }
-        if (!matched && SearchSrv != null) {
+        if (!matched && SearchSrv != null && !activatedIMList.isEmpty()) {
             // if the selected keyboard is not in the active keyboard list.
             // set the keyboard to the first active keyboard
             try {
-                activeIM = activatedIMList.get(0);
+                String corrected = activatedIMList.get(0);
+                if (!corrected.equals(activeIM)) {
+                    activeIM = corrected;
+                    // Persist the correction so the next onStartInput() (which reloads
+                    // activeIM from preferences) does not revert to a stale/default IM
+                    // that has no loaded keyboard config and falls back to English.
+                    // This is what makes the first installed IM activate on a fresh
+                    // install instead of showing the English keyboard.
+                    if (mLIMEPref != null) {
+                        mLIMEPref.setActiveIM(activeIM);
+                    }
+                }
             } catch (IndexOutOfBoundsException e) {
                 Log.e(TAG, "IndexOutOfBoundsException getting active IM", e);
             }
@@ -3057,6 +3938,9 @@ public class LIMEService extends InputMethodService
         if (DEBUG)
             Log.i(TAG, "showIMPicker()");
         buildActivatedIMList();
+        if (activatedIMFullNameList.isEmpty()) {
+            return;
+        }
 
         AlertDialog.Builder builder;
 
@@ -3103,8 +3987,10 @@ public class LIMEService extends InputMethodService
         if (DEBUG) Log.i(TAG, "handleIMSelection() position = " + position);
 
         activeIM = activatedIMList.get(position);
+        CharSequence activeIMName = activatedIMFullNameList.get(position);
 
         mLIMEPref.setActiveIM(activeIM);
+        invalidateStartupConfigSnapshot();
         //spe.putString("keyboard_list", keyboardSelection);
         //spe.commit();
 
@@ -3115,18 +4001,13 @@ public class LIMEService extends InputMethodService
         mEnglishOnly = false;//Jeremy '12,5,24 force to switch to Chinese mode if it's choosing in english mode.
         initialIMKeyboard();
 
-        try {
-            if (mKeyboardSwitcher != null) {
-                mKeyboardSwitcher.setKeyboardConfigList(SearchSrv.getKeyboardConfigList());
-                mKeyboardSwitcher.setImConfigKeyboardList(SearchSrv.getAllImKeyboardConfigList());
-                //mKeyboardSwitcher.clearKeyboards();
-
-                // Update soft keybaord information
-                currentSoftKeyboard = mKeyboardSwitcher.getImConfigKeyboard(activeIM);
-            }
-        } catch (RemoteException e) {
-            Log.e(TAG, "Error getting keyboard for active IM", e);
+        refreshStartupConfigSnapshotIfNeeded(false);
+        applyStartupConfigSnapshotToKeyboardSwitcher();
+        if (mKeyboardSwitcher != null) {
+            currentSoftKeyboard = mKeyboardSwitcher.getImConfigKeyboard(activeIM);
         }
+
+        showLimeToast(activeIMName);
 
     }
 
@@ -3154,6 +4035,81 @@ public class LIMEService extends InputMethodService
 
     private void updateCandidates() {
         this.updateCandidates(false);
+    }
+
+    public boolean isComposingOrSearchingCandidates() {
+        return (mComposing != null && mComposing.length() > 0)
+                || (queryThread != null && queryThread.isAlive())
+                || mEmojiSearchMode;
+    }
+
+    static int adjustedEmojiInsertionPosition(List<Mapping> list, int requestedPosition) {
+        if (list == null || list.isEmpty()) {
+            return 0;
+        }
+
+        int position = Math.max(0, Math.min(requestedPosition, list.size()));
+        for (int candidateIndex = position; candidateIndex < list.size(); candidateIndex++) {
+            Mapping candidate = list.get(candidateIndex);
+            if (candidate != null && isChinesePeriodOrComma(candidate)) {
+                position = candidateIndex + 1;
+                break;
+            }
+        }
+        return position;
+    }
+
+    static boolean isEmojiSearchDoneKey(int primaryCode) {
+        return primaryCode == LIMEBaseKeyboard.KEYCODE_DONE || primaryCode == MY_KEYCODE_ENTER;
+    }
+
+    static boolean shouldExitEmojiSearchToKeyboard(int primaryCode) {
+        return isEmojiSearchDoneKey(primaryCode) || primaryCode == LIME.KEYCODE_EMOJI_PANEL;
+    }
+
+    static boolean emojiSearchInitialEnglishOnly(boolean sourceWasEnglish) {
+        return sourceWasEnglish;
+    }
+
+    static boolean isEmojiSearchKeyboardModeKey(int primaryCode) {
+        return primaryCode == KEYCODE_SWITCH_TO_ENGLISH_MODE
+                || primaryCode == KEYCODE_SWITCH_TO_IM_MODE
+                || primaryCode == LIME.KEYCODE_EMOJI_ABC;
+    }
+
+    static boolean resolveEmojiSearchEnglishOnlyForModeKey(int primaryCode, boolean currentEnglishOnly) {
+        if (primaryCode == KEYCODE_SWITCH_TO_ENGLISH_MODE) {
+            return true;
+        }
+        if (primaryCode == KEYCODE_SWITCH_TO_IM_MODE || primaryCode == LIME.KEYCODE_EMOJI_ABC) {
+            return false;
+        }
+        return currentEnglishOnly;
+    }
+
+    static boolean shouldEmojiSearchConsumePrintableKey(int primaryCode, boolean englishOnly) {
+        return englishOnly && primaryCode >= 32 && primaryCode < 127;
+    }
+
+    static boolean shouldAppendPickedCandidateToEmojiSearch(boolean emojiKeyboardShown,
+                                                            boolean searchMode,
+                                                            boolean emojiRecord,
+                                                            boolean composingCodeRecord) {
+        return emojiKeyboardShown && searchMode && !emojiRecord && !composingCodeRecord;
+    }
+
+    static int emojiSearchImeOptions(int imeOptions) {
+        return (imeOptions & ~EditorInfo.IME_MASK_ACTION) | EditorInfo.IME_ACTION_DONE;
+    }
+
+    static int emojiSearchInputCandidateStripVisibility(boolean emojiKeyboardShown, boolean searchMode) {
+        return emojiKeyboardShown && searchMode ? View.VISIBLE : View.GONE;
+    }
+
+    private static boolean isChinesePeriodOrComma(Mapping candidate) {
+        return candidate.isChinesePunctuationSymbolRecord()
+                || "，".equals(candidate.getWord())
+                || "。".equals(candidate.getWord());
     }
 
 
@@ -3264,7 +4220,8 @@ public class LIMEService extends InputMethodService
 
                         // Emoji Control
                         // Check the Emoji parameter setting and load icons into the suggestions list
-                        if (mLIMEPref.getEmojiMode()) {
+                        int insertPosition = mLIMEPref.getEmojiDisplayPosition();
+                        if (insertPosition > 0) {
                             HashMap<String, String> emojiCheck = new HashMap<>();
                             List<Mapping> emojiList = new LinkedList<>();
 
@@ -3272,7 +4229,6 @@ public class LIMEService extends InputMethodService
 
                                 List<Mapping> item1 = null, item2, item3;
 
-                                int insertPosition = mLIMEPref.getEmojiDisplayPosition();
                                 if (list.size() <= insertPosition) {
                                     insertPosition = list.size();
                                 }
@@ -3322,6 +4278,7 @@ public class LIMEService extends InputMethodService
                                 }
 
                                 if (!emojiList.isEmpty()) {
+                                    insertPosition = adjustedEmojiInsertionPosition(list, insertPosition);
                                     list.addAll(insertPosition, emojiList);
                                 }
                             }
@@ -3422,10 +4379,6 @@ public class LIMEService extends InputMethodService
                         if (queryThread != null && queryThread.isAlive()) queryThread.interrupt();
                         queryThread = new Thread() {
                             public void run() {
-                                final Mapping self = new Mapping();
-                                self.setWord(tempEnglishWord.toString());
-                                self.setComposingCodeRecord();
-
                                 List<Mapping> suggestions = null;
                                 try {
                                     suggestions = SearchSrv.getEnglishSuggestions(tempEnglishWord.toString());
@@ -3439,10 +4392,9 @@ public class LIMEService extends InputMethodService
                                     return;   // terminate thread here, since it is interrupted and more recent getMappingByCode will update the suggestions.
                                 }
 
-                                if ((suggestions != null ? suggestions.size() : 0) > 0) {
-                                    list.add(self);
-                                    list.addAll(suggestions);
+                                list.addAll(buildEnglishPredictionCandidates(tempEnglishWord.toString(), suggestions));
 
+                                if (!list.isEmpty()) {
                                     // Setup sel key display if
                                     String selkey = "1234567890";
                                     if (disable_physical_selection && finalHasPhysicalKeyPressed) {
@@ -3458,14 +4410,14 @@ public class LIMEService extends InputMethodService
 
                                     // Emoji Control
                                     // Check the Emoji parameter setting and load icons into the suggestions list
-                                    if (mLIMEPref.getEmojiMode()) {
+                                    int insertPosition = mLIMEPref.getEmojiDisplayPosition();
+                                    if (insertPosition > 0) {
                                         HashMap<String, String> emojiCheck = new HashMap<>();
                                         List<Mapping> emojiList = new LinkedList<>();
 
                                         if (!list.isEmpty()) {
 
                                             List<Mapping> item1;
-                                            int insertPosition = mLIMEPref.getEmojiDisplayPosition();
                                             if (list.size() <= insertPosition) {
                                                 insertPosition = list.size();
                                             }
@@ -3481,6 +4433,7 @@ public class LIMEService extends InputMethodService
                                             }
 
                                             if (!emojiList.isEmpty()) {
+                                                insertPosition = adjustedEmojiInsertionPosition(list, insertPosition);
                                                 list.addAll(insertPosition, emojiList);
                                             }
                                         }
@@ -3489,7 +4442,7 @@ public class LIMEService extends InputMethodService
 
                                     //Log.i("EMOJIbefore:", tempEnglishList.size() + "");
                                     tempEnglishList.addAll(list);
-                                    setSuggestions(list, finalHasPhysicalKeyPressed, selkey);
+                                    setEnglishPredictionSuggestions(list, finalHasPhysicalKeyPressed, selkey);
 
                                     //Log.i("EMOJIafter:", tempEnglishList.size() + "");
 
@@ -3674,6 +4627,27 @@ public class LIMEService extends InputMethodService
 
     }
 
+    private void showEmptyCandidateToolbar() {
+        if (DEBUG) Log.i(TAG, "showEmptyCandidateToolbar()");
+
+        if (mComposing != null && mComposing.length() > 0)
+            mComposing.setLength(0);
+
+        selectedCandidate = null;
+
+        if (mCandidateList != null)
+            mCandidateList.clear();
+
+        if (mCandidateViewInInputView == null)
+            return;
+
+        setInputCandidateStripVisibility(View.VISIBLE);
+        mCandidateViewInInputView.setSuggestions(null, false);
+        mCandidateViewHandler.showCandidateView();
+        mCandidateInInputView.requestLayout();
+        mCandidateInInputView.updateCandidateViewWidthConstraint();
+    }
+
     private void forceHideCandidateView() {
         if (DEBUG) Log.i(TAG, "forceHideCandidateView()");
 
@@ -3737,6 +4711,7 @@ public class LIMEService extends InputMethodService
     public synchronized void setSuggestions(List<Mapping> suggestions, boolean showNumber, String diplaySelkey) {
 
         if (suggestions != null && !suggestions.isEmpty()) {
+            setInputCandidateStripVisibility(View.VISIBLE);
 
             if (DEBUG)
                 Log.i(TAG, "setSuggestion():suggestions.size=" + suggestions.size()
@@ -3752,13 +4727,7 @@ public class LIMEService extends InputMethodService
                 mCandidateList = (LinkedList<Mapping>) suggestions;
                 try {
 
-                    if (suggestions.size() > 1 && ( !hasPhysicalKeyPressed || suggestions.get(1).isExactMatchToCodeRecord() || suggestions.get(1).isPartialMatchToCodeRecord())) {
-                        selectedCandidate = suggestions.get(1);
-                        // this is for no exact match condition with code.  //do not set default suggestion for other record type like chinese punctuation symbols1 or related phrases. Jeremy '15,6,4
-                    } else if (!suggestions.isEmpty()) {
-                        selectedCandidate = suggestions.get(0);
-
-                    }
+                    selectedCandidate = defaultServiceSelectedCandidate(suggestions, hasPhysicalKeyPressed);
                 } catch (Exception e) {
                     Log.e(TAG, "Error in suggestion processing", e);
                 }
@@ -3782,6 +4751,34 @@ public class LIMEService extends InputMethodService
 
     }
 
+    private synchronized void setEnglishPredictionSuggestions(List<Mapping> suggestions,
+                                                              boolean showNumber,
+                                                              String diplaySelkey) {
+
+        if (suggestions != null && !suggestions.isEmpty()) {
+            setInputCandidateStripVisibility(View.VISIBLE);
+            hasCandidatesShown = true;
+            hasMappingList = true;
+            selectedCandidate = null;
+
+            if (mCandidateView != null) {
+                mCandidateList = (LinkedList<Mapping>) suggestions;
+                mCandidateView.setSuggestionsWithoutHighlight(suggestions, showNumber, diplaySelkey);
+                if (DEBUG)
+                    Log.i(TAG, "setEnglishPredictionSuggestions(): mCandidateList.size: "
+                            + mCandidateList.size() + ", tempEnglishWord = " + tempEnglishWord);
+            }
+            if (mCandidateInInputView != null) {
+                mCandidateInInputView.updateCandidateViewWidthConstraint();
+            }
+        } else {
+            if (DEBUG) Log.i(TAG, "setEnglishPredictionSuggestions() with list=null");
+            hasMappingList = false;
+            clearSuggestions();
+        }
+
+    }
+
     /**
      * Public method to update CandidateView width constraint.
      * Called by CandidateView when the expanded popup is closed.
@@ -3790,6 +4787,71 @@ public class LIMEService extends InputMethodService
         if (mCandidateInInputView != null) {
             mCandidateInInputView.updateCandidateViewWidthConstraint();
         }
+    }
+
+    public void dismissCandidateComposing() {
+        if (mEmojiKeyboardShown && mEmojiSearchMode) {
+            exitEmojiSearchToKeyboard();
+            return;
+        }
+        if (mCandidateView != null) {
+            mCandidateView.hideCandidatePopup();
+        }
+        clearComposing(true);
+        InputConnection ic = getCurrentInputConnection();
+        if (ic != null) ic.finishComposingText();
+    }
+
+    public void showLimeToast(CharSequence text) {
+        if (text == null || text.length() == 0) return;
+        try {
+            if (Looper.myLooper() != null) {
+                CandidateView toastTarget = mCandidateView;
+                if (mCandidateViewInInputView != null && mCandidateViewInInputView.getWindowToken() != null) {
+                    toastTarget = mCandidateViewInInputView;
+                }
+                if (toastTarget != null) {
+                    toastTarget.showLimeToast(text);
+                }
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Cannot show lime_toast: " + e.getMessage());
+        }
+    }
+
+    private void showPersistentLimeToast(CharSequence text) {
+        if (text == null || text.length() == 0) return;
+        try {
+            if (Looper.myLooper() != null) {
+                CandidateView toastTarget = mCandidateView;
+                if (mCandidateViewInInputView != null && mCandidateViewInInputView.getWindowToken() != null) {
+                    toastTarget = mCandidateViewInInputView;
+                }
+                if (toastTarget != null) {
+                    toastTarget.showLimeToastUntilNextKey(text);
+                }
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Cannot show persistent lime_toast: " + e.getMessage());
+        }
+    }
+
+    private void hideLimeToast() {
+        try {
+            if (mCandidateView != null) {
+                mCandidateView.hideLimeToast();
+            }
+            if (mCandidateViewInInputView != null && mCandidateViewInInputView != mCandidateView) {
+                mCandidateViewInInputView.hideLimeToast();
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Cannot hide lime_toast: " + e.getMessage());
+        }
+    }
+
+    public void showReverseLookup(CharSequence text) {
+        if (text == null || text.length() == 0) return;
+        showPersistentLimeToast(text);
     }
 
 
@@ -3810,7 +4872,16 @@ public class LIMEService extends InputMethodService
                 && (hasCandidatesShown)// repalce isCandaiteShwon() with hasCandidatesShwn by Jeremy '12,5,6
                 //&& mLIMEPref.getAutoChineseSymbol()
                 && !hasChineseSymbolCandidatesShown) {
-            clearComposing(false);  //Jeremy '12,4,21 composing length 0, no need to force commit again.
+            // #78 Bug 2 backport (iOS parity, see docs/CANDI_FUNCTION_KEYS.md):
+            // related-phrase suggestions are browse-only — Backspace must dismiss the
+            // stale bar AND delete the previous character in one tap, rather than only
+            // clearing candidates (which under autoChineseSymbol then surfaces the
+            // Chinese-punctuation list and requires 2–3 taps to actually delete).
+            // Pre-clearing hasCandidatesShown prevents clearSuggestions() inside
+            // clearComposing(false) from sliding into updateChineseSymbol().
+            hasCandidatesShown = false;
+            clearComposing(false);
+            keyDownUp(KeyEvent.KEYCODE_DEL, false);
         } else if (!mEnglishOnly
                 //&& mCandidateView !=null && isCandidateShown()
                 && hasCandidatesShown //Replace isCandidateShown() with hasCandidatesShown by Jeremy '12,5,6
@@ -3844,7 +4915,10 @@ public class LIMEService extends InputMethodService
 
         if (DEBUG)
             Log.i(TAG, "setCandidateViewShown():" + shown);
-        super.setCandidatesViewShown(shown);
+        // LIME renders candidates inside the input view. Do not show Android's
+        // separate candidates window, or URL/email empty-toolbar fields can get
+        // a blank band above the keyboard.
+        super.setCandidatesViewShown(false);
 
         if (DEBUG) {
             if (mCandidateViewInInputView != null) {
@@ -3861,29 +4935,77 @@ public class LIMEService extends InputMethodService
             return;
         }
 
+        boolean doubleTap = isShiftDoubleTap();
         if (mKeyboardSwitcher.isAlphabetMode()) {
-            // Alphabet keyboard
-            checkToggleCapsLock();
-            mInputView.setShifted(mCapsLock || !mInputView.isShifted());
-            mHasShift = mCapsLock || !mInputView.isShifted();
-            if (mHasShift) {
-                mKeyboardSwitcher.toggleShift();
-            }
+            ShiftTapState nextState = nextShiftTapState(mInputView.isShifted(), mCapsLock, doubleTap);
+            applyAlphabetShiftState(nextState);
         } else {
-            if (mCapsLock) {
-                toggleCapsLock();
-                mHasShift = false;
-            } else if (mHasShift) {
-                toggleCapsLock();
-                mHasShift = true;
-            } else {
-                mKeyboardSwitcher.toggleShift();
-                mHasShift = mKeyboardSwitcher.isShifted();
-
-            }
+            ShiftTapState nextState = nextShiftTapState(mHasShift, mCapsLock, doubleTap);
+            applyImShiftState(nextState);
         }
     }
 
+    private boolean isShiftDoubleTap() {
+        long now = SystemClock.uptimeMillis();
+        boolean doubleTap = mLastShiftTime > 0
+                && now - mLastShiftTime <= ViewConfiguration.getDoubleTapTimeout();
+        mLastShiftTime = now;
+        return doubleTap;
+    }
+
+    static ShiftTapState nextShiftTapState(boolean shifted, boolean capsLock, boolean doubleTap) {
+        if (capsLock) {
+            return new ShiftTapState(false, false);
+        }
+        if (doubleTap) {
+            return new ShiftTapState(true, true);
+        }
+        return new ShiftTapState(!shifted, false);
+    }
+
+    static final class ShiftTapState {
+        final boolean shifted;
+        final boolean capsLock;
+
+        ShiftTapState(boolean shifted, boolean capsLock) {
+            this.shifted = shifted;
+            this.capsLock = capsLock;
+        }
+    }
+
+    private void applyAlphabetShiftState(ShiftTapState state) {
+        setCapsLockState(state.capsLock);
+        mInputView.setShifted(state.shifted);
+        mHasShift = state.shifted;
+        if (state.shifted && !mKeyboardSwitcher.isShifted()) {
+            mKeyboardSwitcher.toggleShift();
+        } else if (!state.shifted && mKeyboardSwitcher.isShifted()) {
+            mKeyboardSwitcher.toggleShift();
+        }
+    }
+
+    private void applyImShiftState(ShiftTapState state) {
+        setCapsLockState(state.capsLock);
+        if (state.shifted && !mKeyboardSwitcher.isShifted()) {
+            mKeyboardSwitcher.toggleShift();
+        } else if (!state.shifted && mKeyboardSwitcher.isShifted()) {
+            mKeyboardSwitcher.toggleShift();
+        }
+        mHasShift = state.shifted;
+    }
+
+    private void setCapsLockState(boolean capsLock) {
+        if (mCapsLock == capsLock) {
+            if (mInputView != null && mInputView.getKeyboard() instanceof LIMEKeyboard) {
+                ((LIMEKeyboard) mInputView.getKeyboard()).setShiftLocked(capsLock);
+            }
+            return;
+        }
+        mCapsLock = capsLock;
+        if (mInputView != null && mInputView.getKeyboard() instanceof LIMEKeyboard) {
+            ((LIMEKeyboard) mInputView.getKeyboard()).setShiftLocked(mCapsLock);
+        }
+    }
 
     /**
      * Integrated all soft keyboards switching in this function.
@@ -3896,18 +5018,29 @@ public class LIMEService extends InputMethodService
             hideEmojiKeyboard();
         }
 
-        // Auto commit the text when user switch the keyboard from chi -> eng
+        // Cancel active composition when switching Chi -> Eng; other switches keep
+        // the legacy auto-commit behavior.
         try {
-            if (mComposing != null && mComposing.length() > 0) {
+            if (primaryCode == KEYCODE_SWITCH_TO_ENGLISH_MODE) {
+                if (mComposing != null && mComposing.length() > 0) {
+                    clearComposing(true);
+                    InputConnection ic = getCurrentInputConnection();
+                    if (ic != null) ic.finishComposingText();
+                } else {
+                    clearComposing(false);
+                }
+            } else if (mComposing != null && mComposing.length() > 0) {
                 getCurrentInputConnection().commitText(mComposing, 1);
                 finishComposing();
+                clearComposing(false);
+            } else {
+                clearComposing(false);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error in composing finish", e);
             // ignore all possible error
         }
 
-        clearComposing(false);
         hideCandidateView();
 
 
@@ -3927,7 +5060,7 @@ public class LIMEService extends InputMethodService
             mKeyboardSwitcher.toggleChinese();
             // mFixedCandidateViewOn is always true
             if (!mPredictionOn) {
-                forceHideCandidateView();
+                showEmptyCandidateToolbar();
             } else {
                 mCandidateViewInInputView.setSuggestions(null, false);  // reset the candidate view if it's force hided before
             }
@@ -3965,15 +5098,6 @@ public class LIMEService extends InputMethodService
 
         if (DEBUG)
             Log.i(TAG, "switchChiEng(): mEnglishOnly updated as " + mEnglishOnly);
-
-
-        if (mEnglishOnly) {
-            Toast.makeText(this, R.string.typing_mode_english,
-                    Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(this, R.string.typing_mode_mixed,
-                    Toast.LENGTH_SHORT).show();
-        }
         clearSuggestions(); //Jeremy '11,9,5
     }
 
@@ -3988,6 +5112,8 @@ public class LIMEService extends InputMethodService
             mKeyboardThemeIndex = mLIMEPref.getKeyboardTheme();
             mForceRecreate = true;
             mThemeContext = null;
+            clearAppliedFollowSystemAccentState();
+            clearAppliedNavigationBarThemeState();
             if (mKeyboardSwitcher != null) mKeyboardSwitcher.resetKeyboards(true);
         }
 
@@ -4014,10 +5140,12 @@ public class LIMEService extends InputMethodService
             mCandidateInInputView.setService(this);
             mEmojiKeyboardView = mCandidateInInputView.findViewById(R.id.emoji_keyboard);
             setupEmojiKeyboardView();
+            advanceInputViewGeneration();
 
         }
         if (mCandidateView != mCandidateViewInInputView)
             mCandidateView = mCandidateViewInInputView;
+        applyFollowSystemAccentColors();
 
 
         // Check if mKeyboardSwitcher == null
@@ -4025,18 +5153,12 @@ public class LIMEService extends InputMethodService
             mKeyboardSwitcher = new LIMEKeyboardSwitcher(this, mThemeContext);
         }
         mKeyboardSwitcher.setInputView(mInputView);
-        buildActivatedIMList();
+        refreshStartupConfigSnapshotIfNeeded();
         mKeyboardSwitcher.setActivatedIMList(activatedIMList, activatedIMShortNameList);
 
-        if (mKeyboardSwitcher.getKeyboardSize() == 0 && SearchSrv != null) {
-            try {
-                mKeyboardSwitcher.setKeyboardConfigList(SearchSrv.getKeyboardConfigList());
-                mKeyboardSwitcher.setImConfigKeyboardList(SearchSrv.getAllImKeyboardConfigList());
-            } catch (RemoteException e) {
-                Log.e(TAG, "Error setting keyboard/IM list", e);
-            }
+        if (mKeyboardSwitcher.getKeyboardSize() == 0) {
+            applyStartupConfigSnapshotToKeyboardSwitcher();
         }
-
 
     }
 
@@ -4322,6 +5444,26 @@ public class LIMEService extends InputMethodService
                 }
             }
 
+            InputConnection ic = getCurrentInputConnection();
+
+            // ENGLISH_KB.md #0 / §2a: read+clear the pick-auto-space flag up front so
+            // every path below clears it; only the punctuation-swap path acts on it.
+            final boolean wasPickedAutoSpace = mPickedAutoSpace;
+            mPickedAutoSpace = false;
+
+            if (primaryCode == MY_KEYCODE_SPACE && mAutoCap && ic != null
+                    && shouldInsertPeriodForEnglishDoubleSpace(ic.getTextBeforeCursor(64, 0))) {
+                resetTempEnglishWord();
+                if (mLIMEPref.getEnglishPrediction() && mPredictionOn) {
+                    this.updateEnglishPrediction();
+                }
+                ic.deleteSurroundingText(1, 0);
+                ic.commitText(". ", 1);
+                if (!(!hasPhysicalKeyPressed && hasDistinctMultitouch))
+                    updateShiftKeyState(getCurrentInputEditorInfo());
+                return;
+            }
+
             if (mLIMEPref.getEnglishPrediction() && mPredictionOn && !mKeyboardSwitcher.isSymbols()
                     && (!hasPhysicalKeyPressed || mLIMEPref.getEnglishPredictionOnPhysicalKeyboard())
             ) {
@@ -4335,12 +5477,66 @@ public class LIMEService extends InputMethodService
 
             }
 
-            getCurrentInputConnection().commitText(
-                    String.valueOf((char) primaryCode), 1);
+            if (ic != null) {
+                // ENGLISH_KB.md #0 / §2a: if the previous action auto-appended a space
+                // after a suggestion pick, swap it with the typed punctuation per the
+                // LatinIME character classes. Falls through to a normal commit otherwise.
+                if (!commitEnglishPunctuationWithSwap(ic, (char) primaryCode, wasPickedAutoSpace)) {
+                    ic.commitText(String.valueOf((char) primaryCode), 1);
+                }
+            }
         }
 
         if (!(!hasPhysicalKeyPressed && hasDistinctMultitouch))
             updateShiftKeyState(getCurrentInputEditorInfo());
+    }
+
+    /**
+     * ENGLISH_KB.md #0 / §2a — replicate LatinIME's pick-space punctuation swap.
+     *
+     * <p>When an English suggestion pick auto-appended a trailing space ({@code word }),
+     * typing punctuation should produce {@code word, } rather than {@code word ,}.
+     * Returns {@code true} if this method fully handled committing the character (caller
+     * must skip its own commit); {@code false} to let the caller commit normally.
+     *
+     * <p>Character classes mirror AOSP {@code donottranslate-config-spacing-and-punctuations.xml}:
+     * <ul>
+     *   <li>followed-by-space ({@code . , ; : ! ? ) ] }}): delete the space, commit {@code punct + " "}.</li>
+     *   <li>preceded-by-space ({@code ( [ {{}}): keep the space, commit the bracket.</li>
+     *   <li>strip ({@code - / @ _ '}): delete the space, commit the punctuation bare.</li>
+     * </ul>
+     */
+    private boolean commitEnglishPunctuationWithSwap(InputConnection ic, char c,
+                                                     boolean wasPickedAutoSpace) {
+        if (!wasPickedAutoSpace) return false;
+
+        final boolean followed = ENG_SWAP_FOLLOWED_BY_SPACE.indexOf(c) >= 0;
+        final boolean preceded = ENG_SWAP_PRECEDED_BY_SPACE.indexOf(c) >= 0;
+        final boolean strip    = ENG_SWAP_STRIP.indexOf(c) >= 0;
+        if (!followed && !preceded && !strip) return false; // not a swap char (letters, &, etc.)
+
+        // Preceded-by-space brackets keep the existing space; nothing special to do.
+        if (preceded) return false;
+
+        // followed-by-space / strip both need to remove the auto-space first — but only
+        // if it is actually still there (cursor-move safety).
+        final CharSequence before = ic.getTextBeforeCursor(1, 0);
+        if (before == null || before.length() != 1 || before.charAt(0) != ' ') {
+            return false; // no trailing space (e.g. user moved cursor) — commit normally
+        }
+
+        ic.beginBatchEdit();
+        try {
+            ic.deleteSurroundingText(1, 0);
+            if (followed) {
+                ic.commitText(c + " ", 1); // word,  (space moves after the punctuation)
+            } else {
+                ic.commitText(String.valueOf(c), 1); // word-  (no space)
+            }
+        } finally {
+            ic.endBatchEdit();
+        }
+        return true;
     }
 
     private void handleClose() {
@@ -4429,6 +5625,15 @@ public class LIMEService extends InputMethodService
             //selectedIndex = index;
         }
 
+        if (mEmojiKeyboardShown && mEmojiSearchMode
+                && selectedCandidate != null && selectedCandidate.isEmojiRecord()) {
+            commitEmoji(selectedCandidate.getWord());
+            return;
+        }
+        if (appendPickedCandidateToEmojiSearch(selectedCandidate)) {
+            return;
+        }
+
         InputConnection ic = getCurrentInputConnection();
 
         if (mCompletionOn && mCompletions != null && index >= 0
@@ -4458,11 +5663,17 @@ public class LIMEService extends InputMethodService
                     mEmojiCategoryPages = null;
                 }
             } else {
+                String pickedWord = this.tempEnglishList.get(index).getWord();
                 if (ic != null) ic.commitText(
-                        this.tempEnglishList.get(index).getWord()
-                                .substring(tempEnglishWord.length())
-                                + " ", 1);
+                        pickedWord.substring(tempEnglishWord.length()) + " ", 1);
+                // ENG_AUTO_COMPLETION.md "Learning": increment the picked word's score so
+                // frequently chosen words rank higher (mirrors the emoji recordEmojiUsage hook).
+                if (SearchSrv != null) SearchSrv.recordEnglishUsage(pickedWord);
             }
+
+            // ENGLISH_KB.md #0 / §2a: both pick paths appended a trailing space.
+            // Arm the punctuation swap so the next "," produces "word," not "word ,".
+            mPickedAutoSpace = true;
 
             resetTempEnglishWord();
 
@@ -4485,6 +5696,21 @@ public class LIMEService extends InputMethodService
 
     public void swipeLeft() {
         handleBackspace();
+    }
+
+    @Override
+    public void moveCaretBy(int steps) {
+        if (steps == 0 || mComposing == null || mComposing.length() > 0) {
+            return;
+        }
+
+        final int keyCode = steps < 0
+                ? KeyEvent.KEYCODE_DPAD_LEFT
+                : KeyEvent.KEYCODE_DPAD_RIGHT;
+        final int count = Math.abs(steps);
+        for (int i = 0; i < count; i++) {
+            keyDownUp(keyCode, false);
+        }
     }
 
     public void swipeDown() {
@@ -4690,6 +5916,10 @@ public class LIMEService extends InputMethodService
 
         // Stop monitoring IME changes when service is destroyed
         stopMonitoringIMEChanges();
+        if (mDictationController != null) {
+            mDictationController.destroy();
+            mDictationController = null;
+        }
 
         //jeremy 12,4,21 need to check again---
         //clearComposing(true); see no need to do this '12,4,21
@@ -4738,102 +5968,198 @@ public class LIMEService extends InputMethodService
         if (DEBUG)
             Log.i(TAG, "onFinishInputView()");
         super.onFinishInputView(finishingInput);
+        cancelInlineDictationIfActive();
         resetEmojiKeyboardState();
         hideCandidateView(); //Jeremy '12,5,7 hideCandiate when inputview is closed but not yet leave the original field (onfinishinput() will not called).
     }
 
     /**
      *  start voice input
-     *  Launches voice recognition directly using RecognizerIntent
-     *  Voice recognition inserts text directly into the input field without switching IMEs
+     *  Prefer switching to a voice IME. RecognizerIntent is only the fallback.
      */
     public void startVoiceInput() {
         if (DEBUG)
             Log.i(TAG, "startVoiceInput(): API level: " + android.os.Build.VERSION.SDK_INT);
 
-        // Check if voice recognition is available
         Intent voiceIntent = getVoiceIntent();
-
-        // Optional: Set prompt text (if available in strings.xml)
-        // voiceIntent.putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.voice_input_prompt));
-
-        // Try to switch to voice IME first (preferred method)
         String voiceID = LIMEUtilities.isVoiceSearchServiceExist(getBaseContext());
+        boolean recognizerAvailable = true;
+        if (!isRecognizerFallbackAvailable(voiceIntent)) {
+            Log.w(TAG, "startVoiceInput(): recognizer fallback was not visible during preflight; will still try helper activity if delegated VoiceIME is unavailable");
+        }
+        VoiceInputRoute route = LIMEVoiceInputRouter.chooseRoute(
+                isInlineDictationFeatureEnabled(),
+                VoiceInputMode.AUTO,
+                getInlineDictationPermissionState(),
+                isInlineDictationAvailable(),
+                voiceID != null,
+                recognizerAvailable);
+        Log.i(TAG, "startVoiceInput(): voiceID=" + voiceID
+                + ", activeIM=" + activeIM
+                + ", route=" + route
+                + ", fallbackLanguage=" + voiceIntent.getStringExtra(RecognizerIntent.EXTRA_LANGUAGE));
 
+        switch (route) {
+            case INLINE_DICTATION:
+                startInlineDictationOrFallback(voiceIntent, voiceID);
+                return;
+            case VOICE_IME:
+                startDelegatedVoiceInput(voiceIntent, voiceID);
+                return;
+            case RECOGNIZER_INTENT:
+                startRecognizerFallback(voiceIntent);
+                return;
+            case UNAVAILABLE:
+            default:
+                showLimeToast("Voice recognition not available on this device");
+        }
+    }
+
+    private boolean isInlineDictationFeatureEnabled() {
+        try {
+            return getResources().getBoolean(R.bool.inline_dictation_feature_enabled);
+        } catch (Exception e) {
+            Log.w(TAG, "isInlineDictationFeatureEnabled(): resource unavailable: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean isInlineDictationAvailable() {
+        return mDictationController != null && mDictationController.isRecognitionAvailable();
+    }
+
+    private VoicePermissionState getInlineDictationPermissionState() {
+        if (VoicePermissionHelper.hasRecordAudioPermission(this)) {
+            return VoicePermissionState.GRANTED;
+        }
+        return VoicePermissionHelper.wasRecordAudioPermissionPrompted(this)
+                ? VoicePermissionState.DENIED_DO_NOT_ASK_AGAIN
+                : VoicePermissionState.NOT_REQUESTED;
+    }
+
+    private void startInlineDictationOrFallback(Intent voiceIntent, String voiceID) {
+        if (mDictationController != null && mDictationController.isRecognitionAvailable()) {
+            mIsVoiceInputActive = true;
+            mDictationController.start(getVoiceRecognitionLanguageTag());
+            return;
+        }
+        if (DEBUG)
+            Log.i(TAG, "startInlineDictationOrFallback(): inline controller unavailable, using delegated fallback");
+        startDelegatedVoiceInputOrRecognizerFallback(voiceIntent, voiceID);
+    }
+
+    private void startDelegatedVoiceInputOrRecognizerFallback(Intent voiceIntent, String voiceID) {
         if (voiceID != null) {
-            if (DEBUG)
-                Log.i(TAG, "startVoiceInput(): Found voice IME: " + voiceID);
-
-            // Get LIME IME ID for switching back
-            if (mLIMEId == null) {
-                mLIMEId = LIMEUtilities.getLIMEID(getBaseContext());
-            }
-
-            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (imm != null) {
-                // Start monitoring IME changes to switch back when voice input ends
-                startMonitoringIMEChanges();
-
-                // Try to switch to voice IME using InputMethodService.switchInputMethod()
-                // This is the recommended method for IMEs and works on all API levels (21-36)
-                // setInputMethod() is deprecated on API 28+ and doesn't work on API 36
-                try {
-                    this.switchInputMethod(voiceID);
-                    if (DEBUG)
-                        Log.i(TAG, "startVoiceInput(): Called switchInputMethod(" + voiceID + ")");
-
-                    // Verify the switch worked by checking IME after a short delay
-                    // If it didn't work, fall back to RecognizerIntent immediately
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                        String currentIME = Settings.Secure.getString(
-                                getContentResolver(),
-                                Settings.Secure.DEFAULT_INPUT_METHOD
-                        );
-                        if (DEBUG)
-                            Log.i(TAG, "startVoiceInput(): Current IME after switch: " + currentIME + " (expected: " + voiceID + ")");
-
-                        if (voiceID.equals(currentIME)) {
-                            mIsVoiceInputActive = true;
-                            if (DEBUG)
-                                Log.i(TAG, "startVoiceInput(): Successfully switched to voice IME");
-                        } else {
-                            if (DEBUG)
-                                Log.w(TAG, "startVoiceInput(): switchInputMethod() didn't work (still on " + currentIME + "), falling back to RecognizerIntent");
-                            stopMonitoringIMEChanges();
-                            // Fall back to RecognizerIntent
-                            launchRecognizerIntent(voiceIntent);
-                        }
-                    }, 200); // Delay to check if switch worked - short enough for quick fallback
-
-                    //return; // Assume success, will fall back if verification fails
-                } catch (SecurityException e) {
-                    if (DEBUG)
-                        Log.e(TAG, "startVoiceInput(): SecurityException switching to voice IME: " + e.getMessage(), e);
-                    stopMonitoringIMEChanges();
-                    // Fall through to try RecognizerIntent
-                } catch (Exception e) {
-                    if (DEBUG)
-                        Log.e(TAG, "startVoiceInput(): Exception switching to voice IME: " + e.getMessage(), e);
-                    stopMonitoringIMEChanges();
-                    // Fall through to try RecognizerIntent
-                }
-            } else {
-                if (DEBUG)
-                    Log.e(TAG, "startVoiceInput(): InputMethodManager is null");
-            }
+            startDelegatedVoiceInput(voiceIntent, voiceID);
         } else {
-            //  Voice IME not found (voiceID is null), using RecognizerIntent");
-            if (DEBUG)
-                Log.i(TAG, "startVoiceInput(): About to call launchRecognizerIntent() - voiceID was null");
-            // Fallback: Use RecognizerIntent directly if voice IME switching fails or is not available
-            // This path is taken when voiceID is null (e.g., on API 35)
+            startRecognizerFallback(voiceIntent);
+        }
+    }
+
+    private void startDelegatedVoiceInput(Intent voiceIntent, String voiceID) {
+        if (voiceID == null) {
+            startRecognizerFallback(voiceIntent);
+            return;
+        }
+        if (isGoogleSpeechServicesVoiceIme(voiceID)) {
+            Log.w(TAG, "startDelegatedVoiceInput(): Google Speech Services VoiceIME cannot be direct-switched safely; using RecognizerIntent");
+            startRecognizerFallback(voiceIntent);
+            return;
+        }
+        if (DEBUG)
+            Log.i(TAG, "startDelegatedVoiceInput(): Found voice IME: " + voiceID);
+
+        // Get LIME IME ID for switching back
+        if (mLIMEId == null) {
+            mLIMEId = LIMEUtilities.getLIMEID(getBaseContext());
+        }
+
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            startMonitoringIMEChanges();
             try {
-                launchRecognizerIntent(voiceIntent);
+                mIsVoiceInputActive = true;
+                this.switchInputMethod(voiceID);
                 if (DEBUG)
-                    Log.i(TAG, "startVoiceInput(): launchRecognizerIntent() returned successfully");
+                    Log.i(TAG, "startDelegatedVoiceInput(): Called switchInputMethod(" + voiceID + ")");
+
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    String currentIME = getCurrentDefaultInputMethod();
+                    if (DEBUG)
+                        Log.i(TAG, "startDelegatedVoiceInput(): Current IME after switch: " + currentIME + " (expected: " + voiceID + ")");
+
+                    if (voiceID.equals(currentIME)) {
+                        if (DEBUG)
+                            Log.i(TAG, "startDelegatedVoiceInput(): Successfully switched to voice IME");
+                        scheduleModernVoiceImeRecovery(voiceID, voiceIntent);
+                    } else {
+                        if (DEBUG)
+                            Log.w(TAG, "startDelegatedVoiceInput(): switchInputMethod() didn't work (still on " + currentIME + "), falling back to RecognizerIntent");
+                        stopMonitoringIMEChanges();
+                        mIsVoiceInputActive = false;
+                        startRecognizerFallback(voiceIntent);
+                    }
+                }, 200);
+
+                return;
+            } catch (SecurityException e) {
+                if (DEBUG)
+                    Log.e(TAG, "startDelegatedVoiceInput(): SecurityException switching to voice IME: " + e.getMessage(), e);
+                stopMonitoringIMEChanges();
+                mIsVoiceInputActive = false;
             } catch (Exception e) {
-                Log.e(TAG, "Error launching recognizer intent", e);
+                if (DEBUG)
+                    Log.e(TAG, "startDelegatedVoiceInput(): Exception switching to voice IME: " + e.getMessage(), e);
+                stopMonitoringIMEChanges();
+                mIsVoiceInputActive = false;
             }
+        } else if (DEBUG) {
+            Log.e(TAG, "startDelegatedVoiceInput(): InputMethodManager is null");
+        }
+        startRecognizerFallback(voiceIntent);
+    }
+
+    private void scheduleModernVoiceImeRecovery(String voiceID, Intent voiceIntent) {
+        if (!isGoogleSpeechServicesVoiceIme(voiceID)) {
+            return;
+        }
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            if (!mIsVoiceInputActive) {
+                return;
+            }
+            String currentIME = getCurrentDefaultInputMethod();
+            if (voiceID.equals(currentIME)) {
+                Log.w(TAG, "scheduleModernVoiceImeRecovery(): Google Speech Services VoiceIME did not auto-start; switching back to LIME and using RecognizerIntent");
+                switchBackToLIME();
+                new Handler(Looper.getMainLooper()).postDelayed(
+                        () -> startRecognizerFallback(voiceIntent), 300);
+            }
+        }, 1500);
+    }
+
+    private boolean isGoogleSpeechServicesVoiceIme(String voiceID) {
+        return "com.google.android.tts/com.google.android.apps.speech.tts.googletts.settings.asr.voiceime.VoiceInputMethodService"
+                .equals(voiceID);
+    }
+
+    private void startRecognizerFallback(Intent voiceIntent) {
+        try {
+            launchRecognizerIntent(voiceIntent);
+            if (DEBUG)
+                Log.i(TAG, "startRecognizerFallback(): launchRecognizerIntent() returned successfully");
+        } catch (Exception e) {
+            Log.e(TAG, "Error launching recognizer intent", e);
+        }
+    }
+
+    private boolean isRecognizerFallbackAvailable(Intent voiceIntent) {
+        try {
+            Intent intent = voiceIntent != null ? voiceIntent : getVoiceIntent();
+            return getPackageManager() != null &&
+                    !getPackageManager().queryIntentActivities(intent, 0).isEmpty();
+        } catch (Exception e) {
+            Log.w(TAG, "isRecognizerFallbackAvailable(): unable to query recognizer: " + e.getMessage());
+            return true;
         }
     }
 
@@ -4841,31 +6167,9 @@ public class LIMEService extends InputMethodService
         Intent voiceIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         voiceIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
 
-        // Defensive: fallback to "en" if locale/resources unavailable (for test envs)
-        String languageTag = "en";
-        try {
-            Locale systemLocale = null;
-            try {
-                systemLocale = ConfigurationCompat.getLocales(getResources().getConfiguration()).get(0);
-            } catch (Exception e) {
-                // getResources() or getConfiguration() may throw in test env
-            }
-            if (systemLocale != null) {
-                try {
-                    languageTag = systemLocale.toLanguageTag();
-                } catch (NoSuchMethodError e) {
-                    languageTag = systemLocale.getLanguage();
-                    String country = systemLocale.getCountry();
-                    if (!country.isEmpty()) {
-                        languageTag += "-" + country;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // fallback to default "en"
-        }
+        String languageTag = getVoiceRecognitionLanguageTag();
         voiceIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag);
-        Log.i(TAG, "getVoiceIntent() - Using system locale for voice input: " + languageTag);
+        Log.i(TAG, "getVoiceIntent() - Using voice recognition language: " + languageTag);
 
         // Add prompt text
         voiceIntent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak now");
@@ -4873,6 +6177,34 @@ public class LIMEService extends InputMethodService
         // Ensure we get results back
         voiceIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
         return voiceIntent;
+    }
+
+    private String getVoiceRecognitionLanguageTag() {
+        Locale systemLocale = null;
+        try {
+            systemLocale = ConfigurationCompat.getLocales(getResources().getConfiguration()).get(0);
+        } catch (Exception e) {
+            // getResources() or getConfiguration() may throw in test env
+        }
+        return resolveVoiceRecognitionLanguageTag(systemLocale);
+    }
+
+    static String resolveVoiceRecognitionLanguageTag(Locale locale) {
+        if (locale == null) {
+            return "zh-TW";
+        }
+        String language = locale.getLanguage();
+        String country = locale.getCountry();
+        if (!"zh".equalsIgnoreCase(language)) {
+            return "zh-TW";
+        }
+        if ("TW".equalsIgnoreCase(country)) {
+            return "zh-TW";
+        }
+        if ("HK".equalsIgnoreCase(country) || "MO".equalsIgnoreCase(country)) {
+            return "zh-HK";
+        }
+        return "zh-TW";
     }
 
     /**
@@ -4883,19 +6215,7 @@ public class LIMEService extends InputMethodService
             Log.e(TAG, "launchRecognizerIntent(): voiceIntent is NULL! Creating default intent");
             voiceIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
             voiceIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            Locale systemLocale = ConfigurationCompat.getLocales(getResources().getConfiguration()).get(0);
-            String languageTag;
-            try {
-                assert systemLocale != null;
-                languageTag = systemLocale.toLanguageTag();
-            } catch (NoSuchMethodError e) {
-                languageTag = systemLocale.getLanguage();
-                systemLocale.getCountry();
-                if (!systemLocale.getCountry().isEmpty()) {
-                    languageTag += "-" + systemLocale.getCountry();
-                }
-            }
-            voiceIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag);
+            voiceIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, getVoiceRecognitionLanguageTag());
             //voiceIntent.putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak now");
             voiceIntent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
         }
@@ -4903,16 +6223,6 @@ public class LIMEService extends InputMethodService
         String language = voiceIntent.getStringExtra(RecognizerIntent.EXTRA_LANGUAGE);
         Log.i(TAG, "launchRecognizerIntent(): Intent language: " + language + ", Intent action: " + voiceIntent.getAction() +
                 ", API level: " + android.os.Build.VERSION.SDK_INT);
-
-        // Check if voice recognition activity is available
-        java.util.List<android.content.pm.ResolveInfo> activities = getPackageManager().queryIntentActivities(voiceIntent, 0);
-
-        if (activities.isEmpty()) {
-            Toast.makeText(getApplicationContext(), "Voice recognition not available on this device", Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        //android.content.ComponentName componentName = voiceIntent.resolveActivity(getPackageManager());
 
         // Use helper Activity to launch RecognizerIntent for all API levels
         // InputMethodService cannot receive onActivityResult, so we need VoiceInputActivity
@@ -4930,13 +6240,25 @@ public class LIMEService extends InputMethodService
 
         } catch (android.content.ActivityNotFoundException e) {
             Log.e(TAG, "launchRecognizerIntent(): VoiceInputActivity not found: " + e.getMessage(), e);
-            Toast.makeText(getApplicationContext(), "Voice input activity not found", Toast.LENGTH_SHORT).show();
+            showLimeToast("Voice input activity not found");
         } catch (SecurityException e) {
             Log.e(TAG, "launchRecognizerIntent(): SecurityException launching VoiceInputActivity: " + e.getMessage(), e);
-            Toast.makeText(getApplicationContext(), "Cannot launch voice input (security restriction)", Toast.LENGTH_SHORT).show();
+            showLimeToast("Cannot launch voice input (security restriction)");
         } catch (Exception e) {
             Log.e(TAG, "launchRecognizerIntent(): Failed to launch VoiceInputActivity: " + e.getMessage(), e);
-            Toast.makeText(getApplicationContext(), "Voice input unavailable: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            showLimeToast("Voice input unavailable: " + e.getMessage());
+        }
+    }
+
+    private String getCurrentDefaultInputMethod() {
+        try {
+            return Settings.Secure.getString(
+                    getContentResolver(),
+                    Settings.Secure.DEFAULT_INPUT_METHOD
+            );
+        } catch (Exception e) {
+            Log.w(TAG, "getCurrentDefaultInputMethod(): Unable to read default IME: " + e.getMessage());
+            return null;
         }
     }
 
@@ -5043,6 +6365,8 @@ public class LIMEService extends InputMethodService
     private void switchBackToLIME() {
         if (mLIMEId == null) {
             mLIMEId = LIMEUtilities.getLIMEID(getBaseContext());
+        }
+        if (mLIMEId == null) {
             if (DEBUG)
                 Log.e(TAG, "switchBackToLIME(): LIME ID is null");
             stopMonitoringIMEChanges();
@@ -5079,13 +6403,14 @@ public class LIMEService extends InputMethodService
      */
     private void commitVoiceTextWithRetry(String text, int attempt) {
         InputConnection ic = getCurrentInputConnection();
+        String textToCommit = prepareVoiceTextForCommit(text);
         if (ic != null) {
             try {
-                ic.commitText(text, 1);
+                ic.commitText(textToCommit, 1);
                 Log.i(TAG, "commitVoiceTextWithRetry(): Committed voice text on attempt " + attempt);
             } catch (Exception e) {
                 Log.e(TAG, "commitVoiceTextWithRetry(): Failed to commit: " + e.getMessage());
-                mPendingVoiceText = text;
+                mPendingVoiceText = textToCommit;
             }
         } else if (attempt < 3) {
             Log.w(TAG, "commitVoiceTextWithRetry(): IC null, retry " + (attempt + 1) + " in 200ms");
@@ -5094,9 +6419,91 @@ public class LIMEService extends InputMethodService
             return; // Don't clear mIsVoiceInputActive yet
         } else {
             Log.w(TAG, "commitVoiceTextWithRetry(): IC still null after 3 retries, storing as pending");
-            mPendingVoiceText = text;
+            mPendingVoiceText = textToCommit;
         }
         mIsVoiceInputActive = false;
+    }
+
+    private String prepareVoiceTextForCommit(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        try {
+            if (mLIMEPref != null && mLIMEPref.getHanCovertOption() != 0 && SearchSrv != null) {
+                String converted = SearchSrv.hanConvert(text);
+                Log.i(TAG, "prepareVoiceTextForCommit(): Applied Han conversion to voice result");
+                return converted;
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "prepareVoiceTextForCommit(): Han conversion skipped: " + e.getMessage());
+        }
+        return text;
+    }
+
+    @Override
+    public void onDictationStateChanged(DictationState state) {
+        if (DEBUG) {
+            Log.i(TAG, "onDictationStateChanged(): " + state);
+        }
+        showDictationStatus(state, null);
+    }
+
+    @Override
+    public void onDictationPartialText(String text) {
+        if (DEBUG) {
+            Log.i(TAG, "onDictationPartialText(): " + text);
+        }
+        showDictationStatus(DictationState.PARTIAL, text);
+    }
+
+    @Override
+    public void onDictationFinalText(String text) {
+        clearDictationStatus();
+        if (text != null && !text.isEmpty()) {
+            commitVoiceTextWithRetry(text, 0);
+        } else {
+            mIsVoiceInputActive = false;
+        }
+    }
+
+    @Override
+    public void onDictationError(int errorCode, boolean shouldFallback) {
+        Log.w(TAG, "onDictationError(): errorCode=" + errorCode + ", shouldFallback=" + shouldFallback);
+        showDictationStatus(DictationState.ERROR, null);
+        mIsVoiceInputActive = false;
+        if (!shouldFallback) {
+            return;
+        }
+        Intent voiceIntent = getVoiceIntent();
+        String voiceID = LIMEUtilities.isVoiceSearchServiceExist(getBaseContext());
+        startDelegatedVoiceInputOrRecognizerFallback(voiceIntent, voiceID);
+    }
+
+    @Override
+    public void onDictationCancelled() {
+        clearDictationStatus();
+        mIsVoiceInputActive = false;
+    }
+
+    private void cancelInlineDictationIfActive() {
+        if (mDictationController != null && mDictationController.isActive()) {
+            mDictationController.cancel();
+        }
+    }
+
+    private void showDictationStatus(DictationState state, String text) {
+        if (mCandidateView != null) {
+            mCandidateView.showDictationStatus(state, text);
+            showCandidateView();
+            refreshCandidateInputContainer();
+        }
+    }
+
+    private void clearDictationStatus() {
+        if (mCandidateView != null) {
+            mCandidateView.clearDictationStatus();
+            refreshCandidateInputContainer();
+        }
     }
 
     /**
@@ -5214,6 +6621,196 @@ public class LIMEService extends InputMethodService
         return false;
     }
 
+    static final class EmojiPanelColors {
+        final int searchBackground;
+        final int searchHint;
+        final int searchText;
+        final int searchIcon;
+        final int iconText;
+        final int categoryHighlight;
+
+        EmojiPanelColors(int searchBackground, int searchHint, int searchText,
+                         int searchIcon, int iconText, int categoryHighlight) {
+            this.searchBackground = searchBackground;
+            this.searchHint = searchHint;
+            this.searchText = searchText;
+            this.searchIcon = searchIcon;
+            this.iconText = iconText;
+            this.categoryHighlight = categoryHighlight;
+        }
+    }
+
+    static EmojiPanelColors emojiPanelColorsForTheme(int themeIndex, boolean systemDark) {
+        return emojiPanelColorsForTheme(themeIndex, systemDark, 0);
+    }
+
+    static EmojiPanelColors emojiPanelColorsForTheme(int themeIndex, boolean systemDark, int systemAccent) {
+        int resolvedTheme = themeIndex == 6 ? (systemDark ? 1 : 0) : themeIndex;
+        int accentOverlay = isUsableAccentColor(systemAccent) ? withAlpha(systemAccent, 0x33) : 0;
+        switch (resolvedTheme) {
+            case 1:
+                return new EmojiPanelColors(
+                        0xFF212121,
+                        0xFF8E9AA0,
+                        0xFFCFD8DC,
+                        0xFFCFD8DC,
+                        0xFFCFD8DC,
+                        themeIndex == 6 && accentOverlay != 0 ? accentOverlay : 0x33FFFFFF);
+            case 2:
+                return new EmojiPanelColors(
+                        0xFFFEF3F7,
+                        0xFFC74A72,
+                        0xFF000000,
+                        0xFFF49AC1,
+                        0xFF000000,
+                        0x33C74A72);
+            case 3:
+                return new EmojiPanelColors(
+                        0xFFD8E7F3,
+                        0xFF4E6677,
+                        0xFF314453,
+                        0xFF9BC5E4,
+                        0xFF314453,
+                        0x334167B0);
+            case 4:
+                return new EmojiPanelColors(
+                        0xFFEFEDFF,
+                        0xFF45196F,
+                        0xFF45196F,
+                        0xFFB28ABF,
+                        0xFF45196F,
+                        0x3345196F);
+            case 5:
+                return new EmojiPanelColors(
+                        0xFFF2F5D5,
+                        0xFF009444,
+                        0xFF003A17,
+                        0xFF39B54A,
+                        0xFF003A17,
+                        0x33006838);
+            case 0:
+            default:
+                return new EmojiPanelColors(
+                        0xF2FFFFFF,
+                        0xFF8A8A8A,
+                        0xFF000000,
+                        0xFF000000,
+                        0xFF000000,
+                        themeIndex == 6 && accentOverlay != 0 ? accentOverlay : 0x22000000);
+        }
+    }
+
+    private EmojiPanelColors currentEmojiPanelColors() {
+        int fallbackAccent = isEffectiveDarkTheme() ? 0x33FFFFFF : 0x22000000;
+        int accent = isFollowSystemTheme() ? resolveSystemAccentColor(fallbackAccent) : 0;
+        return emojiPanelColorsForTheme(mKeyboardThemeIndex, isEffectiveDarkTheme(), accent);
+    }
+
+    private boolean isFollowSystemTheme() {
+        return mKeyboardThemeIndex == 6;
+    }
+
+    private void applyFollowSystemAccentColors() {
+        if (!isFollowSystemTheme()) return;
+
+        int accent = resolveSystemAccentColor(0);
+        if (!isUsableAccentColor(accent)) return;
+
+        applyFollowSystemAccentColors(accent, isEffectiveDarkTheme());
+    }
+
+    private void applyFollowSystemAccentColors(int accent, boolean darkTheme) {
+        if (!isUsableAccentColor(accent) || isAppliedFollowSystemAccentCurrent(accent, darkTheme)) return;
+
+        if (mInputView != null) {
+            mInputView.applyFollowSystemAccentColor(accent, darkTheme);
+        }
+        if (mCandidateViewInInputView != null) {
+            mCandidateViewInInputView.applyFollowSystemAccentColor(accent, darkTheme);
+        }
+        if (mCandidateView != null && mCandidateView != mCandidateViewInInputView) {
+            mCandidateView.applyFollowSystemAccentColor(accent, darkTheme);
+        }
+        mAppliedFollowSystemAccent = accent;
+        mAppliedFollowSystemDarkTheme = darkTheme;
+        mAppliedFollowSystemInputView = mInputView;
+        mAppliedFollowSystemCandidateView = mCandidateView;
+        mAppliedFollowSystemEmbeddedCandidateView = mCandidateViewInInputView;
+    }
+
+    private boolean isAppliedFollowSystemAccentCurrent(int accent, boolean darkTheme) {
+        return mAppliedFollowSystemAccent == accent
+                && mAppliedFollowSystemDarkTheme == darkTheme
+                && mAppliedFollowSystemInputView == mInputView
+                && mAppliedFollowSystemCandidateView == mCandidateView
+                && mAppliedFollowSystemEmbeddedCandidateView == mCandidateViewInInputView;
+    }
+
+    private void clearAppliedFollowSystemAccentState() {
+        mAppliedFollowSystemAccent = 0;
+        mAppliedFollowSystemInputView = null;
+        mAppliedFollowSystemCandidateView = null;
+        mAppliedFollowSystemEmbeddedCandidateView = null;
+    }
+
+    void applyFollowSystemAccentColorsForTesting(int accent, boolean darkTheme) {
+        applyFollowSystemAccentColors(accent, darkTheme);
+    }
+
+    private int resolveSystemAccentColor(int fallbackColor) {
+        int systemSeed = SystemAccentColor.resolveSeedColor(this, 0);
+        if (isUsableAccentColor(systemSeed)) {
+            return systemSeed;
+        }
+
+        Context dynamicColorContext = DynamicColors.wrapContextIfAvailable(
+                this,
+                SystemAccentColor.dynamicColorOptions(this));
+        int resolved = resolveThemeColor(dynamicColorContext, com.google.android.material.R.attr.colorPrimary, 0);
+        if (!isUsableAccentColor(resolved)) {
+            resolved = resolveThemeColor(dynamicColorContext, com.google.android.material.R.attr.colorSecondary, 0);
+        }
+        if (!isUsableAccentColor(resolved)) {
+            resolved = resolveThemeColor(dynamicColorContext, android.R.attr.colorAccent, 0);
+        }
+        if (!isUsableAccentColor(resolved)) {
+            resolved = resolveThemeColor(com.google.android.material.R.attr.colorPrimary, 0);
+        }
+        if (!isUsableAccentColor(resolved)) {
+            resolved = resolveThemeColor(com.google.android.material.R.attr.colorSecondary, 0);
+        }
+        if (!isUsableAccentColor(resolved)) {
+            resolved = resolveThemeColor(android.R.attr.colorAccent, 0);
+        }
+        return isUsableAccentColor(resolved) ? resolved : fallbackColor;
+    }
+
+    private int resolveThemeColor(int attr, int fallbackColor) {
+        return resolveThemeColor(this, attr, fallbackColor);
+    }
+
+    private int resolveThemeColor(Context context, int attr, int fallbackColor) {
+        TypedValue value = new TypedValue();
+        if (context.getTheme().resolveAttribute(attr, value, true)) {
+            if (value.resourceId != 0) {
+                return ContextCompat.getColor(context, value.resourceId);
+            }
+            if (value.type >= TypedValue.TYPE_FIRST_COLOR_INT
+                    && value.type <= TypedValue.TYPE_LAST_COLOR_INT) {
+                return value.data;
+            }
+        }
+        return fallbackColor;
+    }
+
+    private static boolean isUsableAccentColor(int color) {
+        return Color.alpha(color) != 0;
+    }
+
+    private static int withAlpha(int color, int alpha) {
+        return (color & 0x00FFFFFF) | ((alpha & 0xFF) << 24);
+    }
+
     private int getKeyboardTheme() {
         int idx = mKeyboardThemeIndex;
         if (idx == 6) idx = isEffectiveDarkTheme() ? 1 : 0;
@@ -5238,6 +6835,12 @@ public class LIMEService extends InputMethodService
         window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
 
         int bgColor = getKeyboardBackgroundColorForCurrentTheme();
+        boolean lightBackground = isColorLight(bgColor);
+
+        if (isAppliedNavigationBarThemeCurrent(window, bgColor, lightBackground)) {
+            return;
+        }
+
         window.setNavigationBarColor(bgColor);
 
         // The IME container applies bottomInset padding to clear the gesture bar
@@ -5248,16 +6851,35 @@ public class LIMEService extends InputMethodService
             mCandidateInInputView.setBackgroundColor(bgColor);
         }
 
-        boolean lightBackground = isColorLight(bgColor);
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             WindowInsetsControllerCompat controller =
                     WindowCompat.getInsetsController(window, window.getDecorView());
             // setAppearanceLightNavigationBars(true) => DARK icons on LIGHT bar
             controller.setAppearanceLightNavigationBars(lightBackground);
         }
+        mNavigationBarThemeApplied = true;
+        mAppliedNavigationBarWindow = window;
+        mAppliedNavigationBarCandidateView = mCandidateInInputView;
+        mAppliedNavigationBarColor = bgColor;
+        mAppliedNavigationBarLightBackground = lightBackground;
         // API 21-22 cannot toggle nav-bar icon brightness; the colored bar alone
         // still gives the user the matching look.
+    }
+
+    private boolean isAppliedNavigationBarThemeCurrent(android.view.Window window,
+                                                       int bgColor,
+                                                       boolean lightBackground) {
+        return mNavigationBarThemeApplied
+                && mAppliedNavigationBarWindow == window
+                && mAppliedNavigationBarCandidateView == mCandidateInInputView
+                && mAppliedNavigationBarColor == bgColor
+                && mAppliedNavigationBarLightBackground == lightBackground;
+    }
+
+    private void clearAppliedNavigationBarThemeState() {
+        mNavigationBarThemeApplied = false;
+        mAppliedNavigationBarWindow = null;
+        mAppliedNavigationBarCandidateView = null;
     }
 
     private int getKeyboardBackgroundColorForCurrentTheme() {

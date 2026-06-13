@@ -4,19 +4,24 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.text.InputType;
+import android.util.TypedValue;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.widget.NestedScrollView;
 import androidx.fragment.app.Fragment;
 import androidx.preference.PreferenceManager;
 
@@ -27,6 +32,7 @@ import com.google.android.material.switchmaterial.SwitchMaterial;
 import net.toload.main.hd.R;
 import net.toload.main.hd.data.ImConfig;
 import net.toload.main.hd.data.Keyboard;
+import net.toload.main.hd.global.LIME;
 import net.toload.main.hd.ui.LIMESettings;
 import net.toload.main.hd.ui.controller.ManageImController;
 
@@ -53,7 +59,9 @@ public class ImDetailFragment extends Fragment {
     private TextView tvImName;
     private TextView tvImRecords;
     private TextView txtImVersion;
+    private TextView txtImEndkey;
     private TextView tvKeyboardValue;
+    private TextView tvHeading;
 
     public static ImDetailFragment newInstance(ImConfig im) {
         ImDetailFragment f = new ImDetailFragment();
@@ -86,6 +94,10 @@ public class ImDetailFragment extends Fragment {
         }
 
         View rootView = inflater.inflate(R.layout.fragment_im_detail, container, false);
+        NestedScrollView scrollView = rootView.findViewById(R.id.im_detail_scroll);
+        if (scrollView != null) {
+            ScrollableTabHelper.applyToNestedScrollView(activity, scrollView);
+        }
 
         // Toolbar with back navigation (title is rendered by tv_im_detail_heading below)
         MaterialToolbar toolbar = rootView.findViewById(R.id.im_detail_toolbar);
@@ -93,7 +105,7 @@ public class ImDetailFragment extends Fragment {
         toolbar.setFocusable(true);
         toolbar.setTitle("");
 
-        TextView tvHeading = rootView.findViewById(R.id.tv_im_detail_heading);
+        tvHeading = rootView.findViewById(R.id.tv_im_detail_heading);
         if (tvHeading != null) {
             tvHeading.setText(imDesc != null ? imDesc : "");
         }
@@ -119,11 +131,16 @@ public class ImDetailFragment extends Fragment {
         tvImName = rootView.findViewById(R.id.tv_im_name);
         tvImRecords = rootView.findViewById(R.id.tv_im_records);
         txtImVersion = rootView.findViewById(R.id.txtImVersion);
+        txtImEndkey = rootView.findViewById(R.id.txtImEndkey);
         tvKeyboardValue = rootView.findViewById(R.id.tv_keyboard_value);
 
         if (imDesc != null) {
             tvImName.setText(imDesc);
         }
+
+        LinearLayout rowName = rootView.findViewById(R.id.row_name);
+        LinearLayout rowVersion = rootView.findViewById(R.id.row_version);
+        LinearLayout rowEndkey = rootView.findViewById(R.id.row_endkey);
 
         // Keyboard row click -> show picker
         LinearLayout rowKeyboard = rootView.findViewById(R.id.row_keyboard);
@@ -150,16 +167,41 @@ public class ImDetailFragment extends Fragment {
         if (isRelated) {
             View sectionKeyboard = rootView.findViewById(R.id.section_keyboard);
             View sectionOptions = rootView.findViewById(R.id.section_options);
-            View rowVersion = rootView.findViewById(R.id.row_version);
             View dividerVersion = rootView.findViewById(R.id.divider_version);
+            View dividerEndkey = rootView.findViewById(R.id.divider_endkey);
+            View editNameIcon = rootView.findViewById(R.id.iv_edit_name);
             TextView tvSectionTableLabel = rootView.findViewById(R.id.tv_section_table_label);
             TextView tvManageTableLabel = rootView.findViewById(R.id.tv_manage_table_label);
             if (sectionKeyboard != null) sectionKeyboard.setVisibility(View.GONE);
             if (sectionOptions != null) sectionOptions.setVisibility(View.GONE);
             if (rowVersion != null) rowVersion.setVisibility(View.GONE);
+            if (rowEndkey != null) rowEndkey.setVisibility(View.GONE);
             if (dividerVersion != null) dividerVersion.setVisibility(View.GONE);
+            if (dividerEndkey != null) dividerEndkey.setVisibility(View.GONE);
+            if (editNameIcon != null) editNameIcon.setVisibility(View.GONE);
             if (tvSectionTableLabel != null) tvSectionTableLabel.setText(R.string.im_detail_section_related);
             if (tvManageTableLabel != null) tvManageTableLabel.setText(R.string.im_detail_manage_related);
+        }
+
+        if (!isRelated) {
+            if (rowName != null) {
+                rowName.setClickable(true);
+                rowName.setFocusable(true);
+                applySelectableBackground(rowName);
+                rowName.setOnClickListener(v -> showMetadataFieldEditor("name"));
+            }
+            if (rowVersion != null) {
+                rowVersion.setClickable(true);
+                rowVersion.setFocusable(true);
+                applySelectableBackground(rowVersion);
+                rowVersion.setOnClickListener(v -> showMetadataFieldEditor("version"));
+            }
+            if (rowEndkey != null) {
+                rowEndkey.setClickable(true);
+                rowEndkey.setFocusable(true);
+                applySelectableBackground(rowEndkey);
+                rowEndkey.setOnClickListener(v -> showMetadataFieldEditor(LIME.IM_LIME_ENDKEY));
+            }
         }
 
         // 備份選項 switch - bound to SharedPreferences (skipped for related since options card is hidden)
@@ -253,12 +295,46 @@ public class ImDetailFragment extends Fragment {
         MaterialButton btnRemove = rootView.findViewById(R.id.btn_remove_im);
         btnRemove.setOnClickListener(v -> showRemoveConfirmDialog());
 
-        // Load version from SharedPreferences
+        // Load version from IM metadata, retaining legacy SharedPreferences fallback.
         if (tableCode != null) {
-            android.content.SharedPreferences versionSp = androidx.preference.PreferenceManager.getDefaultSharedPreferences(requireContext());
-            String version = versionSp.getString(tableCode + "mapping_version", "-");
+            String version = "";
+            String endkey = "";
+            try {
+                if (manageImController != null && manageImController.getSearchServer() != null) {
+                    net.toload.main.hd.SearchServer searchServer = manageImController.getSearchServer();
+                    version = searchServer.getImConfig(tableCode, "version");
+                    endkey = searchServer.getImConfig(tableCode, LIME.IM_LIME_ENDKEY);
+                }
+            } catch (Exception ignored) {
+                version = "";
+                endkey = "";
+            }
+            if (version == null || version.isEmpty()) {
+                android.content.SharedPreferences versionSp = androidx.preference.PreferenceManager.getDefaultSharedPreferences(requireContext());
+                version = versionSp.getString(tableCode + "mapping_version", "");
+            }
+            if (version == null || version.isEmpty()) {
+                try {
+                    if (manageImController != null && manageImController.getSearchServer() != null) {
+                        version = manageImController.getSearchServer().getImConfig(tableCode, "source");
+                    }
+                } catch (Exception ignored) {
+                    version = "";
+                }
+            }
+            if (version == null || version.isEmpty()) {
+                try {
+                    if (manageImController != null && manageImController.getSearchServer() != null) {
+                        version = manageImController.getSearchServer().getImConfig(tableCode, "name");
+                    }
+                } catch (Exception ignored) {
+                    version = "";
+                }
+            }
             if (version == null || version.isEmpty()) version = "-";
             if (txtImVersion != null) txtImVersion.setText(version);
+            if (endkey == null || endkey.isEmpty()) endkey = "-";
+            if (txtImEndkey != null) txtImEndkey.setText(endkey);
         }
 
         // Share button (plain ImageButton overlaying toolbar — direct click handler)
@@ -354,6 +430,99 @@ public class ImDetailFragment extends Fragment {
                 .show();
     }
 
+    private void applySelectableBackground(View view) {
+        if (view == null || activity == null) return;
+        TypedValue outValue = new TypedValue();
+        activity.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, outValue, true);
+        view.setBackgroundResource(outValue.resourceId);
+    }
+
+    private void showMetadataFieldEditor(String field) {
+        if (activity == null || tableCode == null || "related".equals(tableCode)) return;
+        final boolean editingName = "name".equals(field);
+        final boolean editingVersion = "version".equals(field);
+        final boolean editingEndkey = LIME.IM_LIME_ENDKEY.equals(field);
+        if (!editingName && !editingVersion && !editingEndkey) return;
+
+        LinearLayout form = new LinearLayout(activity);
+        form.setOrientation(LinearLayout.VERTICAL);
+        int padding = (int) (24 * getResources().getDisplayMetrics().density);
+        form.setPadding(padding, 8, padding, 0);
+
+        EditText valueInput = new EditText(activity);
+        valueInput.setSingleLine(true);
+        valueInput.setHint(editingName
+                ? R.string.im_detail_label_name
+                : (editingVersion ? R.string.im_detail_label_version : R.string.im_detail_label_endkey));
+        valueInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        CharSequence currentText;
+        if (editingName) {
+            currentText = tvImName != null ? tvImName.getText() : "";
+        } else if (editingVersion) {
+            currentText = txtImVersion != null ? txtImVersion.getText() : "";
+        } else {
+            currentText = txtImEndkey != null ? txtImEndkey.getText() : "";
+        }
+        String currentValue = currentText == null ? "" : currentText.toString();
+        valueInput.setText(!editingName && "-".equals(currentValue) ? "" : currentValue);
+        form.addView(valueInput, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+                .setTitle(editingName
+                        ? R.string.im_detail_edit_name_title
+                        : (editingVersion ? R.string.im_detail_edit_version_title : R.string.im_detail_edit_endkey_title))
+                .setView(form)
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .setPositiveButton(R.string.manage_im_save, null)
+                .create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String editedValue = valueInput.getText() == null ? "" : valueInput.getText().toString().trim();
+            if (editingName && editedValue.isEmpty()) {
+                valueInput.setError(getString(R.string.im_detail_edit_metadata_empty_name));
+                return;
+            }
+
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+            final ManageImController ctrl = manageImController;
+            final Activity act = activity;
+            final String table = tableCode;
+            new Thread(() -> {
+                boolean saved = ctrl != null && ctrl.updateIMMetadataField(table, field, editedValue);
+                if (act == null) return;
+                act.runOnUiThread(() -> {
+                    if (!isAdded() || activity == null) return;
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(true);
+                    if (!saved) {
+                        Toast.makeText(activity, R.string.im_detail_edit_metadata_failed, Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (editingName) {
+                        imDesc = editedValue;
+                        if (tvImName != null) tvImName.setText(editedValue);
+                        if (tvHeading != null) tvHeading.setText(editedValue);
+                    } else if (editingVersion && txtImVersion != null) {
+                        txtImVersion.setText(editedValue.isEmpty() ? "-" : editedValue);
+                    } else if (editingEndkey && txtImEndkey != null) {
+                        txtImEndkey.setText(editedValue.isEmpty() ? "-" : editedValue);
+                    }
+                    refreshListPane();
+                    dialog.dismiss();
+                });
+            }).start();
+        }));
+        dialog.show();
+    }
+
+    private void refreshListPane() {
+        Fragment parent = getParentFragment();
+        if (parent == null) return;
+        Fragment listFragment = parent.getChildFragmentManager().findFragmentById(R.id.im_list_pane);
+        if (listFragment instanceof ImListFragment) {
+            ((ImListFragment) listFragment).refreshList();
+        }
+    }
+
     private void loadRecordCount() {
         final ManageImController ctrl = manageImController;
         final Activity act = activity;
@@ -397,25 +566,32 @@ public class ImDetailFragment extends Fragment {
 
         new Thread(() -> {
             final List<Keyboard> keyboards = ctrl.getKeyboardList();
+            final Keyboard current = ctrl.getCurrentKeyboard(tableCode);
             if (act == null) return;
             act.runOnUiThread(() -> {
                 if (!isAdded() || activity == null) return;
                 if (keyboards == null || keyboards.isEmpty()) return;
 
                 String[] names = new String[keyboards.size()];
+                int checkedIndex = -1;
                 for (int i = 0; i < keyboards.size(); i++) {
-                    names[i] = keyboards.get(i).getDesc();
+                    Keyboard keyboard = keyboards.get(i);
+                    names[i] = keyboard.getDesc();
+                    if (current != null && keyboard.getCode().equals(current.getCode())) {
+                        checkedIndex = i;
+                    }
                 }
 
                 final String tbl = tableCode;
                 new AlertDialog.Builder(activity)
                         .setTitle(R.string.im_detail_keyboard_picker_title)
-                        .setItems(names, (dialog, which) -> {
+                        .setSingleChoiceItems(names, checkedIndex, (dialog, which) -> {
                             Keyboard selected = keyboards.get(which);
                             if (tvKeyboardValue != null) {
                                 tvKeyboardValue.setText(selected.getDesc());
                             }
                             new Thread(() -> ctrl.setIMKeyboard(tbl, selected)).start();
+                            dialog.dismiss();
                         })
                         .setNegativeButton(android.R.string.cancel, null)
                         .show();
@@ -484,5 +660,6 @@ public class ImDetailFragment extends Fragment {
         tvImRecords = null;
         txtImVersion = null;
         tvKeyboardValue = null;
+        tvHeading = null;
     }
 }

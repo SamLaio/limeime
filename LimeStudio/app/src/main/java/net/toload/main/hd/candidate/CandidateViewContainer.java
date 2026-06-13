@@ -1,11 +1,10 @@
 
-
 /*
  *
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -36,12 +35,15 @@ import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import net.toload.main.hd.LIMEService;
 import net.toload.main.hd.R;
 
 public class CandidateViewContainer extends LinearLayout implements OnTouchListener {
 
+    private ImageButton mButtonDismiss;
     private ImageButton mButtonExpand;
     private View mButtonExpandLayout;
+    private View mActionRow;
     private CandidateView mCandidateView;
 
 
@@ -54,8 +56,15 @@ public class CandidateViewContainer extends LinearLayout implements OnTouchListe
     @SuppressLint("ClickableViewAccessibility")
     public void initViews() {
         if (mCandidateView == null) {
+            mButtonDismiss = findViewById(R.id.candidate_dismiss);
             mButtonExpandLayout = findViewById(R.id.candidate_right_parent);
             mButtonExpand = findViewById(R.id.candidate_right);
+            if (mButtonDismiss != null && mButtonDismiss.getParent() instanceof View) {
+                mActionRow = (View) mButtonDismiss.getParent();
+            }
+            if (mButtonDismiss != null) {
+                mButtonDismiss.setOnTouchListener(this);
+            }
             if (mButtonExpand != null) {
                 mButtonExpand.setOnTouchListener(this);
             }
@@ -63,7 +72,25 @@ public class CandidateViewContainer extends LinearLayout implements OnTouchListe
             TextView mEmbeddedTextView = findViewById(R.id.embeddedComposing);
 
             mCandidateView.setEmbeddedComposingView(mEmbeddedTextView);
+            if (getContext() instanceof LIMEService) {
+                mCandidateView.setService((LIMEService) getContext());
+            }
             mCandidateView.setBackgroundColor(mCandidateView.mColorBackground);
+            if (mActionRow != null) {
+                mActionRow.setBackgroundColor(CandidateInInputViewContainer.actionRowBackgroundColor(mCandidateView.mColorBackground));
+            }
+            if (mButtonExpandLayout != null) {
+                mButtonExpandLayout.setBackgroundColor(CandidateInInputViewContainer.actionRowBackgroundColor(mCandidateView.mColorBackground));
+            }
+            if (mButtonDismiss != null) {
+                mButtonDismiss.setPadding(0, 0, 0, 0);
+                mButtonDismiss.setScaleType(ImageButton.ScaleType.CENTER);
+                mButtonDismiss.setMinimumWidth(0);
+                mButtonDismiss.setMinimumHeight(0);
+                mButtonDismiss.setImageDrawable(mCandidateView.makeDismissButtonGlyph());
+                mButtonDismiss.setBackgroundColor(CandidateInInputViewContainer.dismissButtonBackgroundColor());
+                mButtonDismiss.post(() -> mCandidateView.storePopupDismissButtonWidth(mButtonDismiss));
+            }
             mButtonExpand.setBackgroundColor(mCandidateView.mColorBackground);
             mButtonExpand.setImageDrawable(mCandidateView.mDrawableExpandDownButton);
         }
@@ -82,13 +109,18 @@ public class CandidateViewContainer extends LinearLayout implements OnTouchListe
             if (mButtonExpandLayout != null) {
                 mButtonExpandLayout.setVisibility(rightVisible ? VISIBLE : GONE);
             }
+            if (mButtonDismiss != null) {
+                mButtonDismiss.setVisibility(mCandidateView.isEmpty() ? GONE : VISIBLE);
+            }
         }
         super.requestLayout();
     }
 
     public boolean onTouch(View v, MotionEvent event) {
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
-            if (v == mButtonExpand) {
+            if (v == mButtonDismiss) {
+                mCandidateView.dismissComposingFromCandidate();
+            } else if (v == mButtonExpand) {
             	
             	mCandidateView.showCandidatePopup();
             	

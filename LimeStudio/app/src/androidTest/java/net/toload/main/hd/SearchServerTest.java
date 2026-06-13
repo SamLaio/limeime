@@ -75,6 +75,7 @@ public class SearchServerTest {
     @Before
     public void setUp() {
         appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        setStatic("dbadapter", new LimeDB(appContext));
         searchServer = new SearchServer(appContext);
         try {
             searchServer.initialCache();
@@ -157,6 +158,16 @@ public class SearchServerTest {
         java.lang.reflect.Field field = obj.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
         field.set(obj, value);
+    }
+
+    private Object setLearnPhraseForTest(boolean enabled) throws Exception {
+        Object originalPref = getInstanceField(searchServer, "mLIMEPref", Object.class);
+        LIMEPreferenceManager mockPref = mock(LIMEPreferenceManager.class);
+        when(mockPref.getLearnPhrase()).thenReturn(enabled);
+        when(mockPref.getParameterString(anyString(), anyString()))
+                .thenReturn(LIME.IM_PHONETIC_KEYBOARD_PHONETIC);
+        setInstanceField(searchServer, "mLIMEPref", mockPref);
+        return originalPref;
     }
 
     private void callMakeRunTimeSuggestion(String code, List<Mapping> list) {
@@ -527,7 +538,7 @@ public class SearchServerTest {
     public void test_3_1_1_2_getMappingByCode_null_dbadapter_returns_empty() throws Exception {
         Object original = getStatic("dbadapter", Object.class);
         setStatic("dbadapter", null);
-        List<Mapping> result = searchServer.getMappingByCode("a", true, false);
+        List<Mapping> result = callGetMappingByCodeFromCacheOrDB("a", false);
         assertNotNull(result);
         assertTrue(result.isEmpty());
         setStatic("dbadapter", original);
@@ -565,7 +576,7 @@ public class SearchServerTest {
     public void test_3_1_3_1_getMappingByCode_cache_miss_hits_db() throws Exception {
         ConcurrentHashMap<String, List<Mapping>> cache = getStatic("cache", ConcurrentHashMap.class);
         cache.clear();
-        List<Mapping> result = searchServer.getMappingByCode("a", true, false);
+        List<Mapping> result = callGetMappingByCodeFromCacheOrDB("a", false);
         assertNotNull(result);
         assertTrue(cache.containsKey(cacheKey("a")));
     }
@@ -585,7 +596,7 @@ public class SearchServerTest {
         // Use the actual cacheKey method to generate the correct key
         String key = cacheKey("a");
         cache.put(key, list);
-        List<Mapping> result = searchServer.getMappingByCode("a", true, false);
+        List<Mapping> result = callGetMappingByCodeFromCacheOrDB("a", false);
         assertNotNull(result);
         assertFalse(result.isEmpty());
         // Check if cached item is in result
@@ -972,6 +983,64 @@ public class SearchServerTest {
             }
         }
         assertTrue(found);
+    }
+
+    @Test(timeout = 5000)
+    public void test_3_1_10_7b_bestSuggestion_skips_duplicate_db_word() throws Exception {
+        Map<String, List<Mapping>> cache = getStatic("cache", Map.class);
+        cache.clear();
+        List<List<Pair<Mapping, String>>> suggestionLoL = getStatic("suggestionLoL", List.class);
+        Stack<Pair<Mapping, String>> bestSuggestionStack = getStatic("bestSuggestionStack", Stack.class);
+        suggestionLoL.clear();
+        bestSuggestionStack.clear();
+        setStatic("abandonPhraseSuggestion", false);
+
+        StubLimeDBRuntime stub = new StubLimeDBRuntime(appContext);
+        Mapping first = new Mapping();
+        first.setCode("a");
+        first.setWord("甲");
+        first.setBasescore(200);
+        first.setExactMatchToCodeRecord();
+        stub.responses.put("a", Collections.singletonList(first));
+
+        Mapping second = new Mapping();
+        second.setCode("b");
+        second.setWord("乙");
+        second.setBasescore(200);
+        second.setExactMatchToCodeRecord();
+        stub.responses.put("b", Collections.singletonList(second));
+
+        Mapping partial = new Mapping();
+        partial.setCode("abx");
+        partial.setWord("placeholder");
+        partial.setBasescore(1);
+        partial.setPartialMatchToCodeRecord();
+        stub.responses.put("ab", Collections.singletonList(partial));
+
+        LimeDB original = getStatic("dbadapter", LimeDB.class);
+        setStatic("dbadapter", stub);
+        try {
+            searchServer.getMappingByCode("a", true, false);
+            searchServer.getMappingByCode("ab", true, false);
+
+            cache.clear();
+            Mapping exact = new Mapping();
+            exact.setCode("ab");
+            exact.setWord("甲乙");
+            exact.setBasescore(0);
+            exact.setExactMatchToCodeRecord();
+            stub.responses.put("ab", Collections.singletonList(exact));
+
+            List<Mapping> result = searchServer.getMappingByCode("ab", true, false);
+
+            int count = 0;
+            for (Mapping mapping : result) {
+                if ("甲乙".equals(mapping.getWord())) count++;
+            }
+            assertEquals("runtime phrase must not duplicate an existing DB candidate with the same word", 1, count);
+        } finally {
+            setStatic("dbadapter", original);
+        }
     }
 
     /**
@@ -1515,22 +1584,64 @@ public class SearchServerTest {
         suggestionLoL.add(l);
 
         LimeDB original = getStatic("dbadapter", LimeDB.class);
+        Object originalPref = setLearnPhraseForTest(true);
         StubLimeDBRuntime stub = new StubLimeDBRuntime(appContext);
         CountDownLatch latch = new CountDownLatch(1);
         stub.latch = latch;
         setStatic("dbadapter", stub);
 
-        Mapping selected = new Mapping();
-        selected.setRuntimeBuiltPhraseRecord();
-        selected.setWord("prefix");
-        selected.setCode("p");
+        try {
+            Mapping selected = new Mapping();
+            selected.setRuntimeBuiltPhraseRecord();
+            selected.setWord("prefix");
+            selected.setCode("p");
 
-        int len = searchServer.getRealCodeLength(selected, "prefix");
-        assertEquals(1, len);
-        assertTrue(latch.await(1, TimeUnit.SECONDS));
-        assertFalse(stub.added.isEmpty());
+            int len = searchServer.getRealCodeLength(selected, "prefix");
+            assertEquals(1, len);
+            assertTrue(latch.await(1, TimeUnit.SECONDS));
+            assertFalse(stub.added.isEmpty());
+        } finally {
+            setStatic("dbadapter", original);
+            setInstanceField(searchServer, "mLIMEPref", originalPref);
+        }
+    }
 
-        setStatic("dbadapter", original);
+    @Test(timeout = 5000)
+    public void test_getRealCodeLength_runtime_phrase_learning_disabled_by_learn_phrase() throws Exception {
+        List<List<Pair<Mapping, String>>> suggestionLoL = getStatic("suggestionLoL", List.class);
+        Stack<Pair<Mapping, String>> bestSuggestionStack = getStatic("bestSuggestionStack", Stack.class);
+        suggestionLoL.clear();
+        bestSuggestionStack.clear();
+        Mapping seed = new Mapping();
+        seed.setWord("pre");
+        seed.setCode("p");
+        List<Pair<Mapping, String>> l = new LinkedList<>();
+        l.add(new Pair<>(seed, "p"));
+        suggestionLoL.add(l);
+
+        LimeDB original = getStatic("dbadapter", LimeDB.class);
+        Object originalPref = getInstanceField(searchServer, "mLIMEPref", Object.class);
+        StubLimeDBRuntime stub = new StubLimeDBRuntime(appContext);
+        LIMEPreferenceManager mockPref = mock(LIMEPreferenceManager.class);
+        when(mockPref.getLearnPhrase()).thenReturn(false);
+        when(mockPref.getParameterString(anyString(), anyString()))
+                .thenReturn(LIME.IM_PHONETIC_KEYBOARD_PHONETIC);
+        setStatic("dbadapter", stub);
+        setInstanceField(searchServer, "mLIMEPref", mockPref);
+
+        try {
+            Mapping selected = new Mapping();
+            selected.setRuntimeBuiltPhraseRecord();
+            selected.setWord("prefix");
+            selected.setCode("p");
+
+            assertEquals(1, searchServer.getRealCodeLength(selected, "prefix"));
+            Thread.sleep(200);
+            assertTrue("runtime phrase learning must not write when learn_phrase=false", stub.added.isEmpty());
+        } finally {
+            setStatic("dbadapter", original);
+            setInstanceField(searchServer, "mLIMEPref", originalPref);
+        }
     }
 
     @Test(timeout = 5000)
@@ -3474,6 +3585,21 @@ public class SearchServerTest {
     }
 
     @Test(timeout = 5000)
+    public void test_3_4_2_4a_countRecordsRelated_extB_leading_parent_splits_by_codepoint() throws Exception {
+        Object original = getStatic("dbadapter", Object.class);
+        StubLimeDBRecords stub = new StubLimeDBRecords(appContext);
+        stub.countResponse = 1;
+        setStatic("dbadapter", stub);
+        try {
+            int count = searchServer.countRecordsRelated("𩼣魚");
+            assertEquals(1, count);
+            assertArrayEquals(new String[]{"𩼣", "魚%"}, stub.lastWhereArgs);
+        } finally {
+            setStatic("dbadapter", original);
+        }
+    }
+
+    @Test(timeout = 5000)
     public void test_3_4_2_5_hasRelated_null_child() throws Exception {
         Object original = getStatic("dbadapter", Object.class);
         StubLimeDBRecords stub = new StubLimeDBRecords(appContext);
@@ -4548,6 +4674,9 @@ public class SearchServerTest {
             
             boolean arrayValid = searchServer.isValidTableName("array");
             assertTrue("array table should be valid", arrayValid);
+
+            boolean cj4Valid = searchServer.isValidTableName("cj4");
+            assertTrue("cj4 table should be valid", cj4Valid);
         } finally {
             setStatic("dbadapter", original);
         }
@@ -4881,15 +5010,17 @@ public class SearchServerTest {
         if (prefetchThread != null) {
             prefetchThread.join(2000);
         }
+        setStatic("isPhysicalKeyboardPressed", false);
 
         // Disable sorting
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(appContext);
         prefs.edit().putBoolean("sort_suggestions", false).apply();
 
         ConcurrentHashMap<String, List<Mapping>> cache = getStatic("cache", ConcurrentHashMap.class);
+        cache.clear();
         
         // Create and cache mappings
-        String code = "abc";
+        String code = "__searchserver_no_fixture_match__";
         String cacheKey = cacheKey(code);
         List<Mapping> mappingList = new ArrayList<>();
         
@@ -4922,33 +5053,33 @@ public class SearchServerTest {
 
         // After refactor: exact-match cache is evicted and re-warmed from DB.
         List<Mapping> cached = cache.get(cacheKey);
-        assertTrue(cached == null || cached.isEmpty());
+        assertNotSame("Stale in-memory cache list should be replaced after score update",
+                mappingList, cached);
+        if (cached != null) {
+            for (Mapping mapping : cached) {
+                assertNotEquals("詞1", mapping.getWord());
+                assertNotEquals("詞2", mapping.getWord());
+            }
+        }
 
         // Restore sorting preference
         prefs.edit().putBoolean("sort_suggestions", true).apply();
     }
 
     /**
-     * Test getCodeListStringFromWord() with valid result and notifications
-     * Covers the notification branches (result not null/empty)
+     * Test getCodeListStringFromWord() with valid result.
+     * Covers the reverse-lookup display branches (result not null/empty).
      */
     @Test(timeout = 5000)
     public void test_3_2_5_3_getCodeListStringFromWord_with_notification() throws Exception {
         Object original = getStatic("dbadapter", Object.class);
         try {
-            // Enable reverse lookup notification
-            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(appContext);
-            prefs.edit().putBoolean("reverse_lookup_notify", true).apply();
-            
             // Call method - should trigger notification logic if result is not empty
             // Note: actual notification depends on dbadapter implementation
             searchServer.getCodeListStringFromWord("測試");
             
             // Verify method completed without exception
             assertTrue("getCodeListStringFromWord should complete", true);
-            
-            // Restore preference
-            prefs.edit().putBoolean("reverse_lookup_notify", false).apply();
         } finally {
             setStatic("dbadapter", original);
         }
@@ -6550,6 +6681,7 @@ public class SearchServerTest {
      */
     @Test(timeout = 5000)
     public void test_3_7_4_1_addLDPhrase_initializes_arrays() throws Exception {
+        Object originalPref = setLearnPhraseForTest(true);
         setStatic("LDPhraseListArray", null);
         setStatic("LDPhraseList", null);
         try {
@@ -6564,6 +6696,7 @@ public class SearchServerTest {
             assertNotNull("LDPhraseListArray should be initialized", array);
             assertNotNull("LDPhraseList should be initialized", list);
         } finally {
+            setInstanceField(searchServer, "mLIMEPref", originalPref);
             setStatic("LDPhraseListArray", null);
             setStatic("LDPhraseList", null);
         }
@@ -6574,6 +6707,7 @@ public class SearchServerTest {
      */
     @Test(timeout = 5000)
     public void test_3_7_4_2_addLDPhrase_adds_mapping_to_list() throws Exception {
+        Object originalPref = setLearnPhraseForTest(true);
         setStatic("LDPhraseListArray", new ArrayList<List<Mapping>>());
         setStatic("LDPhraseList", new ArrayList<Mapping>());
         try {
@@ -6587,6 +6721,7 @@ public class SearchServerTest {
             assertEquals("Mapping should be added to list", 1, list.size());
             assertEquals("Added mapping should match", "apple", list.get(0).getWord());
         } finally {
+            setInstanceField(searchServer, "mLIMEPref", originalPref);
             setStatic("LDPhraseListArray", null);
             setStatic("LDPhraseList", null);
         }
@@ -6597,6 +6732,7 @@ public class SearchServerTest {
      */
     @Test(timeout = 5000)
     public void test_3_7_4_3_addLDPhrase_ending_false_continues() throws Exception {
+        Object originalPref = setLearnPhraseForTest(true);
         List<List<Mapping>> array = new ArrayList<>();
         List<Mapping> list = new ArrayList<>();
         setStatic("LDPhraseListArray", array);
@@ -6618,6 +6754,7 @@ public class SearchServerTest {
             assertEquals("Both mappings should be in current list", 2, currentList.size());
             assertEquals("Array should still be empty", 0, array.size());
         } finally {
+            setInstanceField(searchServer, "mLIMEPref", originalPref);
             setStatic("LDPhraseListArray", null);
             setStatic("LDPhraseList", null);
         }
@@ -6628,6 +6765,7 @@ public class SearchServerTest {
      */
     @Test(timeout = 5000)
     public void test_3_7_4_4_addLDPhrase_ending_true_saves_and_resets() throws Exception {
+        Object originalPref = setLearnPhraseForTest(true);
         List<List<Mapping>> array = new ArrayList<>();
         List<Mapping> list = new ArrayList<>();
         setStatic("LDPhraseListArray", array);
@@ -6652,6 +6790,40 @@ public class SearchServerTest {
             assertEquals("Saved phrase should have 2 mappings", 2, finalArray.get(0).size());
             assertTrue("Current list should be empty after reset", currentList.isEmpty());
         } finally {
+            setInstanceField(searchServer, "mLIMEPref", originalPref);
+            setStatic("LDPhraseListArray", null);
+            setStatic("LDPhraseList", null);
+        }
+    }
+
+    @Test(timeout = 5000)
+    public void test_addLDPhrase_noop_when_learn_phrase_disabled() throws Exception {
+        Object originalPref = getInstanceField(searchServer, "mLIMEPref", Object.class);
+        List<List<Mapping>> array = new ArrayList<>();
+        List<Mapping> list = new ArrayList<>();
+        LIMEPreferenceManager mockPref = mock(LIMEPreferenceManager.class);
+        when(mockPref.getLearnPhrase()).thenReturn(false);
+        setInstanceField(searchServer, "mLIMEPref", mockPref);
+        setStatic("LDPhraseListArray", array);
+        setStatic("LDPhraseList", list);
+
+        try {
+            Mapping m1 = new Mapping();
+            m1.setId("1");
+            m1.setCode("a");
+            m1.setWord("apple");
+            searchServer.addLDPhrase(m1, false);
+
+            Mapping m2 = new Mapping();
+            m2.setId("2");
+            m2.setCode("b");
+            m2.setWord("ball");
+            searchServer.addLDPhrase(m2, true);
+
+            assertTrue("current LD phrase list should remain empty", list.isEmpty());
+            assertTrue("pending LD phrase array should remain empty", array.isEmpty());
+        } finally {
+            setInstanceField(searchServer, "mLIMEPref", originalPref);
             setStatic("LDPhraseListArray", null);
             setStatic("LDPhraseList", null);
         }

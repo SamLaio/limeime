@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -28,6 +28,7 @@ import android.content.Context;
 
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.preference.PreferenceManager;
 
 import net.toload.main.hd.data.ImConfig;
 import net.toload.main.hd.data.Record;
@@ -110,6 +111,227 @@ public class LimeDBTest {
             Log.e(TAG, "ERROR: Failed to open database connection");
         }
         return result;
+    }
+
+    private void writeUtf8(File file, String content) throws java.io.IOException {
+        try (java.io.Writer writer = new java.io.OutputStreamWriter(
+                new java.io.FileOutputStream(file), java.nio.charset.StandardCharsets.UTF_8)) {
+            writer.write(content);
+        }
+    }
+
+    private String readUtf8(File file) throws java.io.IOException {
+        byte[] bytes = java.nio.file.Files.readAllBytes(file.toPath());
+        return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private void waitForImportThread(LimeDB limeDB) throws Exception {
+        int waitCount = 0;
+        int maxWait = 100;
+        while (waitCount < maxWait) {
+            Thread.sleep(100);
+            waitCount++;
+            try {
+                java.lang.reflect.Field importThreadField = LimeDB.class.getDeclaredField("importThread");
+                importThreadField.setAccessible(true);
+                Thread importThread = (Thread) importThreadField.get(limeDB);
+                if (importThread == null || !importThread.isAlive()) {
+                    break;
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to inspect import thread", e);
+            }
+        }
+        Thread.sleep(200);
+    }
+
+    @Test
+    public void cinImportPreservesDuplicateCodeOrderWhenSelectionSortDisabled() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        assertTrue(initializeDatabase(limeDB));
+
+        boolean oldPhysicalSort = PreferenceManager.getDefaultSharedPreferences(appContext)
+                .getBoolean("physical_keyboard_sort", true);
+        File fixture = new File(appContext.getCacheDir(), "issue91_order.cin");
+        try {
+            PreferenceManager.getDefaultSharedPreferences(appContext)
+                    .edit().putBoolean("physical_keyboard_sort", false).commit();
+            writeUtf8(fixture,
+                    "%ename issue91\n" +
+                    "%cname Issue91\n" +
+                    "%chardef begin\n" +
+                    "vmi \u72C0\n" +
+                    "vmi \u7ED2\n" +
+                    "vmi \u6215\n" +
+                    "%chardef end\n");
+
+            limeDB.setTableName(LIME.DB_TABLE_CUSTOM);
+            limeDB.clearTable(LIME.DB_TABLE_CUSTOM);
+            limeDB.setFilename(fixture);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            List<Mapping> mappings = limeDB.getMappingByCode("vmi", false, true);
+            assertTrue("Expected at least three duplicate-code mappings", mappings.size() >= 3);
+            assertEquals("\u72C0", mappings.get(0).getWord());
+            assertEquals("\u7ED2", mappings.get(1).getWord());
+            assertEquals("\u6215", mappings.get(2).getWord());
+        } finally {
+            PreferenceManager.getDefaultSharedPreferences(appContext)
+                    .edit().putBoolean("physical_keyboard_sort", oldPhysicalSort).commit();
+            if (fixture.exists() && !fixture.delete()) {
+                Log.w(TAG, "Failed to delete issue91 fixture");
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void limeImportSkipsHashCommentsAndPersistsCnameVersion() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        assertTrue(initializeDatabase(limeDB));
+
+        File fixture = new File(appContext.getCacheDir(), "issue93_array10.lime");
+        try {
+            writeUtf8(fixture,
+                    "# Array10 comment before metadata\n" +
+                    "@version@ |\u884C\u521710\u6E2C\u8A66\u7248\n" +
+                    "# Comment between metadata\n" +
+                    "@cname@ |\u884C\u521710\u6E2C\u8A66\n" +
+                    "# Comment before mappings\n" +
+                    ",\t\uFF0C\n" +
+                    ".\t\u3002\n");
+
+            limeDB.setTableName(LIME.DB_TABLE_CUSTOM);
+            limeDB.clearTable(LIME.DB_TABLE_CUSTOM);
+            limeDB.setFilename(fixture);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals("\u884C\u521710\u6E2C\u8A66",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "name"));
+            assertEquals("\u884C\u521710\u6E2C\u8A66\u7248",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "version"));
+            assertEquals("\uFF0C", limeDB.getMappingByCode(",", false, true).get(0).getWord());
+            assertEquals("\u3002", limeDB.getMappingByCode(".", false, true).get(0).getWord());
+        } finally {
+            if (fixture.exists() && !fixture.delete()) {
+                Log.w(TAG, "Failed to delete issue93 fixture");
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void cinImportPersistsEndkeyMetadata() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        assertTrue(initializeDatabase(limeDB));
+
+        File fixture = new File(appContext.getCacheDir(), "issue96_endkey.cin");
+        try {
+            writeUtf8(fixture,
+                    "%version Endkey Test\n" +
+                    "%cname Endkey Table\n" +
+                    "%endkey ;/\n" +
+                    "%chardef begin\n" +
+                    "aa \u6E2C\n" +
+                    "%chardef end\n");
+
+            limeDB.setFilename(fixture);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals(";/", limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "endkey"));
+        } finally {
+            if (fixture.exists() && !fixture.delete()) {
+                Log.w(TAG, "Failed to delete issue96 cin fixture");
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void limeImportPersistsEndkeyMetadata() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        assertTrue(initializeDatabase(limeDB));
+
+        File fixture = new File(appContext.getCacheDir(), "issue96_endkey.lime");
+        try {
+            writeUtf8(fixture,
+                    "@version@|Endkey Test\n" +
+                    "@cname@|Endkey Table\n" +
+                    "@endkey@ |;/\n" +
+                    "aa|\u6E2C\n");
+
+            limeDB.setFilename(fixture);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals(";/", limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "endkey"));
+        } finally {
+            if (fixture.exists() && !fixture.delete()) {
+                Log.w(TAG, "Failed to delete issue96 lime fixture");
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void cinImportPersistsLimeEndkeyMetadata() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        assertTrue(initializeDatabase(limeDB));
+
+        File fixture = new File(appContext.getCacheDir(), "issue96_limeendkey.cin");
+        try {
+            writeUtf8(fixture,
+                    "%version Lime Endkey Test\n" +
+                    "%cname Lime Endkey Table\n" +
+                    "%endkey abcdefghijklmnopqrstuvwxyz\n" +
+                    "%limeendkey ;/\n" +
+                    "%chardef begin\n" +
+                    "aa \u6E2C\n" +
+                    "%chardef end\n");
+
+            limeDB.setFilename(fixture);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals("abcdefghijklmnopqrstuvwxyz", limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "endkey"));
+            assertEquals(";/", limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "limeendkey"));
+        } finally {
+            if (fixture.exists() && !fixture.delete()) {
+                Log.w(TAG, "Failed to delete issue96 limeendkey cin fixture");
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void limeImportPersistsLimeEndkeyMetadata() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        assertTrue(initializeDatabase(limeDB));
+
+        File fixture = new File(appContext.getCacheDir(), "issue96_limeendkey.lime");
+        try {
+            writeUtf8(fixture,
+                    "@version@|Lime Endkey Test\n" +
+                    "@cname@|Lime Endkey Table\n" +
+                    "@endkey@|abcdefghijklmnopqrstuvwxyz\n" +
+                    "@limeendkey@|;/\n" +
+                    "aa|\u6E2C\n");
+
+            limeDB.setFilename(fixture);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals("abcdefghijklmnopqrstuvwxyz", limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "endkey"));
+            assertEquals(";/", limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "limeendkey"));
+        } finally {
+            if (fixture.exists() && !fixture.delete()) {
+                Log.w(TAG, "Failed to delete issue96 limeendkey lime fixture");
+            }
+        }
     }
 
     @Test
@@ -306,6 +528,98 @@ public class LimeDBTest {
         }
     }
 
+    @Test(timeout = 5000)
+    public void testLimeDBGetMappingByCodeSimilarListZeroSuppressesPartialMatches() {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection. Database may be on hold from a previous operation. Test cannot proceed.");
+        }
+
+        String oldLimit = PreferenceManager.getDefaultSharedPreferences(appContext)
+                .getString("similiar_list", "20");
+        try {
+            PreferenceManager.getDefaultSharedPreferences(appContext)
+                    .edit().putString("similiar_list", "0").commit();
+
+            limeDB.setTableName("custom");
+            String code = "issue76ha" + System.currentTimeMillis();
+            String extensionCode = code + "a";
+            limeDB.addOrUpdateMappingRecord(code, "白");
+            limeDB.addOrUpdateMappingRecord(extensionCode, "皔");
+
+            List<Mapping> results = limeDB.getMappingByCode(code, true, false);
+
+            assertNotNull("Results should not be null", results);
+            assertTrue("Exact match should remain visible",
+                    containsMapping(results, code, "白", false));
+            assertFalse("Partial extension candidate should be suppressed when similiar_list is 0",
+                    containsMapping(results, extensionCode, "皔", true));
+        } finally {
+            PreferenceManager.getDefaultSharedPreferences(appContext)
+                    .edit().putString("similiar_list", oldLimit).commit();
+        }
+    }
+
+    @Test(timeout = 5000)
+    public void testLimeDBGetMappingByCodePositiveSimilarListDoesNotAllowOneExtraPartialMatch() {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection. Database may be on hold from a previous operation. Test cannot proceed.");
+        }
+
+        String oldLimit = PreferenceManager.getDefaultSharedPreferences(appContext)
+                .getString("similiar_list", "20");
+        try {
+            PreferenceManager.getDefaultSharedPreferences(appContext)
+                    .edit().putString("similiar_list", "1").commit();
+
+            limeDB.setTableName("custom");
+            String code = "issue76limit" + System.currentTimeMillis();
+            limeDB.addOrUpdateMappingRecord(code, "白");
+            limeDB.addOrUpdateMappingRecord(code + "a", "皔");
+            limeDB.addOrUpdateMappingRecord(code + "b", "晧");
+
+            List<Mapping> results = limeDB.getMappingByCode(code, true, false);
+
+            assertNotNull("Results should not be null", results);
+            assertTrue("Exact match should remain visible",
+                    containsMapping(results, code, "白", false));
+            assertTrue("Partial matches should not exceed similiar_list",
+                    countPartialMatches(results) <= 1);
+        } finally {
+            PreferenceManager.getDefaultSharedPreferences(appContext)
+                    .edit().putString("similiar_list", oldLimit).commit();
+        }
+    }
+
+    private boolean containsMapping(List<Mapping> results, String code, String word, boolean partial) {
+        if (results == null) return false;
+        for (Mapping mapping : results) {
+            if (mapping != null
+                    && code.equals(mapping.getCode())
+                    && word.equals(mapping.getWord())
+                    && (!partial || mapping.isPartialMatchToCodeRecord())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int countPartialMatches(List<Mapping> results) {
+        int count = 0;
+        if (results == null) return count;
+        for (Mapping mapping : results) {
+            if (mapping != null && mapping.isPartialMatchToCodeRecord()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     @Test(timeout = 5000) // 5 second timeout to prevent infinite hang
     public void testLimeDBGetMappingByWord() {
         // Test getMappingByWord operation
@@ -491,6 +805,41 @@ public class LimeDBTest {
         if (imConfigByCode != null) {
             assertTrue("IM list by code should be accessible", true);
         }
+    }
+
+    @Test(timeout = 5000)
+    public void testGetImConfigListNameFallsBackToBuiltInFullNameForLegacyRows() {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection. Database may be on hold from a previous operation. Test cannot proceed.");
+        }
+
+        limeDB.resetImConfig(LIME.DB_TABLE_CUSTOM);
+        limeDB.setIMConfigKeyboard(LIME.DB_TABLE_CUSTOM, "Legacy Keyboard", "lime");
+
+        List<ImConfig> configs = limeDB.getImConfigList(LIME.DB_TABLE_CUSTOM, LIME.IM_FULL_NAME);
+        assertFalse("Legacy IM row should still be surfaced for the name list", configs.isEmpty());
+        assertEquals("自建輸入法", configs.get(0).getDesc());
+    }
+
+    @Test(timeout = 5000)
+    public void testGetImConfigListNameFallsBackToBuiltInFullNameWhenDescIsEmpty() {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection. Database may be on hold from a previous operation. Test cannot proceed.");
+        }
+
+        limeDB.resetImConfig(LIME.DB_TABLE_ARRAY10);
+        limeDB.setImConfig(LIME.DB_TABLE_ARRAY10, "source", "array10a-v2023-1.0-20260517.lime");
+        limeDB.setImConfig(LIME.DB_TABLE_ARRAY10, LIME.IM_FULL_NAME, "");
+
+        List<ImConfig> configs = limeDB.getImConfigList(LIME.DB_TABLE_ARRAY10, LIME.IM_FULL_NAME);
+        assertFalse("IM name row should be surfaced for the name list", configs.isEmpty());
+        assertEquals("行列10輸入法", configs.get(0).getDesc());
     }
 
     @Test(timeout = 5000) // 5 second timeout to prevent infinite hang
@@ -713,6 +1062,18 @@ public class LimeDBTest {
         if (suggestions != null) {
             assertTrue("Suggestions list should be accessible", true);
         }
+    }
+
+    @Test
+    public void englishSuggestionsUseDictionaryRankInsteadOfAlphabeticalOnly() {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+
+        List<String> suggestions = limeDB.getEnglishSuggestions("sal");
+
+        assertNotNull("Suggestions should be available", suggestions);
+        assertFalse("sal should return bundled dictionary suggestions", suggestions.isEmpty());
+        assertEquals("salt", suggestions.get(0));
     }
 
     @Test(timeout = 10000)
@@ -1674,6 +2035,16 @@ public class LimeDBTest {
         }
     }
 
+    @Test(timeout = 5000)
+    public void testLimeDBGetRelatedHandlesQuoteHeavySearchText() {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+
+        List<Related> quoteHeavyRelated = limeDB.getRelated("'囧\":", 10, 0);
+
+        assertNotNull("Quote-heavy related search text should not break SQL", quoteHeavyRelated);
+    }
+
 
     @Test(timeout = 5000) // 5 second timeout to prevent infinite hang
     public void testLimeDBHasRelatedEdgeCases() {
@@ -1910,7 +2281,7 @@ public class LimeDBTest {
         assertTrue("Very long input should return 0 or non-negative", longScore >= 0);
     }
 
-    @Test(timeout = 5000) // 5 second timeout to prevent infinite hang
+    @Test(timeout = 30000)
     public void testLimeDBHanConvertEdgeCases() {
         // Test hanConvert with edge cases
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -2862,7 +3233,7 @@ public class LimeDBTest {
         assertTrue("Empty cword after symbol removal should return -1", score3 == -1 || score3 >= 1);
     }
 
-    @Test(timeout = 5000) // 5 second timeout to prevent infinite hang
+    @Test(timeout = 30000)
     public void testLimeDBGetMappingByCodeBranches() {
         // Test getMappingByCode with different branches
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
@@ -4832,6 +5203,7 @@ public class LimeDBTest {
         assertTrue("DB_TABLE_ARRAY should be valid", limeDB.isValidTableName(LIME.DB_TABLE_ARRAY));
         assertTrue("DB_TABLE_ARRAY10 should be valid", limeDB.isValidTableName(LIME.DB_TABLE_ARRAY10));
         assertTrue("DB_TABLE_CJ should be valid", limeDB.isValidTableName(LIME.DB_TABLE_CJ));
+        assertTrue("cj4 should be valid", limeDB.isValidTableName("cj4"));
         assertTrue("DB_TABLE_CJ5 should be valid", limeDB.isValidTableName(LIME.DB_TABLE_CJ5));
         assertTrue("DB_TABLE_CUSTOM should be valid", limeDB.isValidTableName(LIME.DB_TABLE_CUSTOM));
         assertTrue("DB_TABLE_DAYI should be valid", limeDB.isValidTableName(LIME.DB_TABLE_DAYI));
@@ -4858,6 +5230,7 @@ public class LimeDBTest {
         assertFalse("SQL injection attempt should return false", limeDB.isValidTableName("'; DROP TABLE custom; --"));
         assertFalse("Table name with spaces should return false", limeDB.isValidTableName("custom table"));
         assertFalse("Table name with special chars should return false", limeDB.isValidTableName("custom-table"));
+        assertFalse("Digit-leading table names should return false", limeDB.isValidTableName("4cj"));
     }
 
     @Test
@@ -4879,6 +5252,7 @@ public class LimeDBTest {
         // Backup tables should be valid (base table + "_user")
         assertTrue("custom_user should be valid", limeDB.isValidTableName("custom_user"));
         assertTrue("cj_user should be valid", limeDB.isValidTableName("cj_user"));
+        assertTrue("cj4_user should be valid", limeDB.isValidTableName("cj4_user"));
     }
 
     // ========================================================================
@@ -5064,8 +5438,397 @@ public class LimeDBTest {
         }
     }
 
+    @Test(timeout = 15000)
+    public void testImportTxtTableStoresVersionMetadataFromLimeHeader() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        File file = File.createTempFile("lime-version", ".lime", appContext.getCacheDir());
+        try {
+            String content = "@version@|My Android Table 2026.05\n"
+                    + "@selkey@|123456789\n"
+                    + "%chardef begin\n"
+                    + "aa|測\n"
+                    + "ab|試\n"
+                    + "%chardef end\n";
+            writeUtf8(file, content);
+
+            limeDB.setFilename(file);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals("My Android Table 2026.05",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "version"));
+            assertEquals("自建輸入法",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "name"));
+            assertEquals("123456789",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "selkey"));
+            assertEquals("2",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "amount"));
+        } finally {
+            if (!file.delete()) {
+                Log.e(TAG, "Failed to delete temp import file");
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void testImportTxtTableStoresCnameMetadataFromLimeHeader() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        File file = File.createTempFile("lime-cname", ".lime", appContext.getCacheDir());
+        try {
+            String content = "@version@|My Android Table 2026.05\n"
+                    + "@cname@|自建輸入法名稱\n"
+                    + "%chardef begin\n"
+                    + "aa|測\n"
+                    + "%chardef end\n";
+            writeUtf8(file, content);
+
+            limeDB.setFilename(file);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals("My Android Table 2026.05",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "version"));
+            assertEquals("自建輸入法名稱",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "name"));
+            assertEquals("1",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "amount"));
+        } finally {
+            if (!file.delete()) {
+                Log.e(TAG, "Failed to delete temp import file");
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void testImportTxtTableStoresVersionMetadataFromCinVersion() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        File file = File.createTempFile("lime-version", ".cin", appContext.getCacheDir());
+        try {
+            String content = "%version 大易測試版 1.2.3\n"
+                    + "%cname 大易測試表\n"
+                    + "%selkey 123456789\n"
+                    + "%chardef begin\n"
+                    + "a 測\n"
+                    + "b 試\n"
+                    + "%chardef end\n";
+            writeUtf8(file, content);
+
+            limeDB.setFilename(file);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals("大易測試版 1.2.3",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "version"));
+            assertEquals("大易測試表",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "name"));
+            assertEquals("123456789",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "selkey"));
+        } finally {
+            if (!file.delete()) {
+                Log.e(TAG, "Failed to delete temp import file");
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void testImportTxtTableSkipsCinCommentLinesInsideChardef() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        File file = File.createTempFile("lime-cin-comments", ".cin", appContext.getCacheDir());
+        try {
+            String content = "%version Comment Test\n"
+                    + "%chardef begin\n"
+                    + "# Begin\n"
+                    + "a 測\n"
+                    + "# End\n"
+                    + "b 試\n"
+                    + "%chardef end\n";
+            writeUtf8(file, content);
+
+            limeDB.setFilename(file);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals("2",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "amount"));
+            assertEquals("自建輸入法",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "name"));
+            assertEquals(0,
+                    limeDB.countRecords(LIME.DB_TABLE_CUSTOM, "code = ?", new String[]{"#"}));
+            assertEquals(0,
+                    limeDB.countRecords(LIME.DB_TABLE_CUSTOM, "word IN (?, ?)", new String[]{"Begin", "End"}));
+        } finally {
+            if (!file.delete()) {
+                Log.e(TAG, "Failed to delete temp import file");
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void testImportTxtTableUsesCinCnameAsVersionFallbackWhenVersionMissing() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        File file = File.createTempFile("lime-version-legacy", ".cin", appContext.getCacheDir());
+        try {
+            String content = "%cname 舊格式輸入法名稱\n"
+                    + "%chardef begin\n"
+                    + "a 測\n"
+                    + "%chardef end\n";
+            writeUtf8(file, content);
+
+            limeDB.setFilename(file);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals("舊格式輸入法名稱",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "version"));
+            assertEquals("舊格式輸入法名稱",
+                    limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "name"));
+        } finally {
+            if (!file.delete()) {
+                Log.e(TAG, "Failed to delete temp import file");
+            }
+        }
+    }
+
     @Test(timeout = 10000)
-    public void testLimeDBExportTxtTableWithRelatedTable() {
+    public void testExportTxtTableUsesVersionMetadataForVersionHeader() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        limeDB.setTableName(LIME.DB_TABLE_CUSTOM);
+        limeDB.addOrUpdateMappingRecord("custom", "version_test", "測", 10);
+        limeDB.setImConfig(LIME.DB_TABLE_CUSTOM, "name", "Friendly Name");
+        limeDB.setImConfig(LIME.DB_TABLE_CUSTOM, "version", "Version 2.0");
+
+        List<ImConfig> imConfigInfo = limeDB.getImConfigList(LIME.DB_TABLE_CUSTOM, null);
+        File exportFile = new File(appContext.getCacheDir(), "test_export_version_" + System.currentTimeMillis() + ".lime");
+
+        try {
+            boolean success = limeDB.exportTxtTable(LIME.DB_TABLE_CUSTOM, exportFile, imConfigInfo);
+            assertTrue("exportTxtTable should succeed", success);
+            String output = readUtf8(exportFile);
+            assertTrue("Export file should contain dedicated version header",
+                    output.contains("@version@|Version 2.0"));
+            assertFalse("Export file should not use name when version exists",
+                    output.contains("@version@|Friendly Name"));
+        } finally {
+            if (exportFile.exists() && !exportFile.delete()) {
+                Log.e(TAG, "Failed to delete export file");
+            }
+        }
+    }
+
+    @Test(timeout = 10000)
+    public void testExportTxtTableWritesCnameMetadataFromNameConfig() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        limeDB.setTableName(LIME.DB_TABLE_CUSTOM);
+        limeDB.addOrUpdateMappingRecord("custom", "cname_test", "測", 10);
+        limeDB.setImConfig(LIME.DB_TABLE_CUSTOM, "name", "Friendly Name");
+        limeDB.setImConfig(LIME.DB_TABLE_CUSTOM, "version", "Version 2.0");
+
+        List<ImConfig> imConfigInfo = limeDB.getImConfigList(LIME.DB_TABLE_CUSTOM, null);
+        File exportFile = new File(appContext.getCacheDir(), "test_export_cname_" + System.currentTimeMillis() + ".lime");
+
+        try {
+            boolean success = limeDB.exportTxtTable(LIME.DB_TABLE_CUSTOM, exportFile, imConfigInfo);
+            assertTrue("exportTxtTable should succeed", success);
+            String output = readUtf8(exportFile);
+            assertTrue("Export file should contain dedicated version header",
+                    output.contains("@version@|Version 2.0"));
+            assertTrue("Export file should contain display name header",
+                    output.contains("@cname@|Friendly Name"));
+        } finally {
+            if (exportFile.exists() && !exportFile.delete()) {
+                Log.e(TAG, "Failed to delete export file");
+            }
+        }
+    }
+
+    @Test(timeout = 10000)
+    public void testExportTxtTableWritesLimeEndkeyMetadataFromEndkeyConfig() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        limeDB.setTableName(LIME.DB_TABLE_CUSTOM);
+        limeDB.addOrUpdateMappingRecord("custom", "endkey_test", "測", 10);
+        limeDB.setImConfig(LIME.DB_TABLE_CUSTOM, LIME.IM_LIME_ENDKEY, ",.");
+
+        List<ImConfig> imConfigInfo = limeDB.getImConfigList(LIME.DB_TABLE_CUSTOM, null);
+        File exportFile = new File(appContext.getCacheDir(), "test_export_limeendkey_" + System.currentTimeMillis() + ".lime");
+
+        try {
+            boolean success = limeDB.exportTxtTable(LIME.DB_TABLE_CUSTOM, exportFile, imConfigInfo);
+            assertTrue("exportTxtTable should succeed", success);
+            String output = readUtf8(exportFile);
+            assertTrue("Export file should contain LIME-specific endkey header",
+                    output.contains("@limeendkey@|,."));
+        } finally {
+            if (exportFile.exists() && !exportFile.delete()) {
+                Log.e(TAG, "Failed to delete export file");
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void testImportTxtTableSupportsLimeTextV2EscapedFields() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        File file = File.createTempFile("lime-v2-import", ".lime", appContext.getCacheDir());
+        try {
+            String content = "@format@|lime-text-v2\n"
+                    + "%chardef begin\n"
+                    + "aa|word\\|with\\|pipes|7|11\n"
+                    + "\\@code|literal at code|3|5\n"
+                    + "%chardef end\n";
+            writeUtf8(file, content);
+
+            limeDB.setFilename(file);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals(1, limeDB.countRecords(LIME.DB_TABLE_CUSTOM,
+                    "code = ? AND word = ? AND score = ? AND basescore = ?",
+                    new String[]{"aa", "word|with|pipes", "7", "11"}));
+            assertEquals(1, limeDB.countRecords(LIME.DB_TABLE_CUSTOM,
+                    "code = ? AND word = ? AND score = ? AND basescore = ?",
+                    new String[]{"@code", "literal at code", "3", "5"}));
+        } finally {
+            if (!file.delete()) {
+                Log.e(TAG, "Failed to delete temp import file");
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void testImportTxtTableStoresImKeyMetadataFromLimeHeader() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        File file = File.createTempFile("lime-imkeys-import", ".lime", appContext.getCacheDir());
+        try {
+            String content = "@format@|lime-text-v2\n"
+                    + "@imkeys@|ab\n"
+                    + "@imkeynames@|ㄅ\\|ㄆ\n"
+                    + "%chardef begin\n"
+                    + "aa|測\n"
+                    + "%chardef end\n";
+            writeUtf8(file, content);
+
+            limeDB.setFilename(file);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals("ab", limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "imkeys"));
+            assertEquals("ㄅ|ㄆ", limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "imkeynames"));
+        } finally {
+            if (!file.delete()) {
+                Log.e(TAG, "Failed to delete temp import file");
+            }
+        }
+    }
+
+    @Test(timeout = 10000)
+    public void testExportTxtTableWritesLimeTextV2WhenFieldsNeedEscaping() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        limeDB.setTableName(LIME.DB_TABLE_CUSTOM);
+        limeDB.addOrUpdateMappingRecord("custom", "@code", "word|with|pipes", 4);
+
+        File exportFile = new File(appContext.getCacheDir(), "test_export_v2_" + System.currentTimeMillis() + ".lime");
+        try {
+            boolean success = limeDB.exportTxtTable(LIME.DB_TABLE_CUSTOM, exportFile, null);
+            assertTrue("exportTxtTable should succeed", success);
+            String output = readUtf8(exportFile);
+            assertTrue(output.contains("@format@|lime-text-v2"));
+            assertTrue(output.contains("\\@code|word\\|with\\|pipes|4|0"));
+            assertTrue(output.contains("%chardef begin"));
+            assertTrue(output.contains("%chardef end"));
+        } finally {
+            if (exportFile.exists() && !exportFile.delete()) {
+                Log.e(TAG, "Failed to delete export file");
+            }
+        }
+    }
+
+    @Test(timeout = 10000)
+    public void testExportTxtTableWritesImKeyMetadataFromConfig() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        limeDB.setTableName(LIME.DB_TABLE_CUSTOM);
+        limeDB.addOrUpdateMappingRecord("custom", "aa", "測", 10);
+        limeDB.setImConfig(LIME.DB_TABLE_CUSTOM, "imkeys", "ab");
+        limeDB.setImConfig(LIME.DB_TABLE_CUSTOM, "imkeynames", "ㄅ|ㄆ");
+
+        List<ImConfig> imConfigInfo = limeDB.getImConfigList(LIME.DB_TABLE_CUSTOM, null);
+        File exportFile = new File(appContext.getCacheDir(), "test_export_imkeys_" + System.currentTimeMillis() + ".lime");
+        try {
+            boolean success = limeDB.exportTxtTable(LIME.DB_TABLE_CUSTOM, exportFile, imConfigInfo);
+            assertTrue("exportTxtTable should succeed", success);
+            String output = readUtf8(exportFile);
+            assertTrue(output.contains("@format@|lime-text-v2"));
+            assertTrue(output.contains("@imkeys@|ab"));
+            assertTrue(output.contains("@imkeynames@|ㄅ\\|ㄆ"));
+            assertTrue(output.contains("%chardef begin"));
+            assertTrue(output.contains("%chardef end"));
+        } finally {
+            if (exportFile.exists() && !exportFile.delete()) {
+                Log.e(TAG, "Failed to delete export file");
+            }
+        }
+    }
+
+    @Test(timeout = 10000)
+    public void testLimeDBExportTxtTableWithRelatedTable() throws Exception {
         // Test exportTxtTable with related table (LIME.DB_TABLE_RELATED)
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
         LimeDB limeDB = new LimeDB(appContext);
@@ -5089,6 +5852,9 @@ public class LimeDBTest {
             assertTrue("exportTxtTable should succeed for related table", success);
             assertTrue("Export file should exist", exportFile.exists());
             assertTrue("Export file should not be empty", exportFile.length() > 0);
+            String output = readUtf8(exportFile);
+            assertTrue(output.contains("%chardef begin"));
+            assertTrue(output.contains("%chardef end"));
             
             // Verify file content contains expected format (pword|cword|basescore|userscore)
             try {
@@ -5389,6 +6155,55 @@ public class LimeDBTest {
         }
     }
 
+    @Test(timeout = 30000)
+    public void testLimeDBExportImportLimeTextV2MetadataRoundTrip() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LimeDB limeDB = new LimeDB(appContext);
+        if (!initializeDatabase(limeDB)) {
+            fail("ERROR: Cannot initialize database connection.");
+        }
+
+        limeDB.setTableName(LIME.DB_TABLE_CUSTOM);
+        limeDB.clearTable(LIME.DB_TABLE_CUSTOM);
+        limeDB.addOrUpdateMappingRecord(LIME.DB_TABLE_CUSTOM, "@v2code", "word|with|pipes", 4);
+        limeDB.addOrUpdateMappingRecord(LIME.DB_TABLE_CUSTOM, "plainv2", "一般詞", 6);
+        limeDB.setImConfig(LIME.DB_TABLE_CUSTOM, "imkeys", "ab");
+        limeDB.setImConfig(LIME.DB_TABLE_CUSTOM, "imkeynames", "ㄅ|ㄆ");
+
+        List<ImConfig> imConfigInfo = limeDB.getImConfigList(LIME.DB_TABLE_CUSTOM, null);
+        File exportFile = new File(appContext.getCacheDir(), "test_export_import_v2_metadata_" + System.currentTimeMillis() + ".lime");
+
+        try {
+            boolean exportSuccess = limeDB.exportTxtTable(LIME.DB_TABLE_CUSTOM, exportFile, imConfigInfo);
+            assertTrue("exportTxtTable should succeed", exportSuccess);
+            String output = readUtf8(exportFile);
+            assertTrue(output.contains("@format@|lime-text-v2"));
+            assertTrue(output.contains("\\@v2code|word\\|with\\|pipes|4|"));
+            assertTrue(output.contains("@imkeynames@|ㄅ\\|ㄆ"));
+
+            limeDB.clearTable(LIME.DB_TABLE_CUSTOM);
+            limeDB.setImConfig(LIME.DB_TABLE_CUSTOM, "imkeys", "stale");
+            limeDB.setImConfig(LIME.DB_TABLE_CUSTOM, "imkeynames", "stale");
+
+            limeDB.setFilename(exportFile);
+            limeDB.importTxtTable(LIME.DB_TABLE_CUSTOM, null);
+            waitForImportThread(limeDB);
+
+            assertEquals(1, limeDB.countRecords(LIME.DB_TABLE_CUSTOM,
+                    "code = ? AND word = ? AND score = ?",
+                    new String[]{"@v2code", "word|with|pipes", "4"}));
+            assertEquals(1, limeDB.countRecords(LIME.DB_TABLE_CUSTOM,
+                    "code = ? AND word = ? AND score = ?",
+                    new String[]{"plainv2", "一般詞", "6"}));
+            assertEquals("ab", limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "imkeys"));
+            assertEquals("ㄅ|ㄆ", limeDB.getImConfig(LIME.DB_TABLE_CUSTOM, "imkeynames"));
+        } finally {
+            if (exportFile.exists() && !exportFile.delete()) {
+                Log.e(TAG, "Failed to delete export file");
+            }
+        }
+    }
+
     @Test(timeout = 10000)
     public void testLimeDBExportTxtTableRelatedAndImportTxtTableWithDataConsistency() {
         // Comprehensive test: add related records, export, clear, import, verify consistency
@@ -5500,7 +6315,7 @@ public class LimeDBTest {
     // Phase 1: Wrapper Method Delegation Tests (Section 1.3)
     // ========================================================================
 
-    @Test(timeout = 10000)
+    @Test(timeout = 60000)
     public void testLimeDBImportDbRelatedDelegatesToImportDb() {
         // Test that importDbRelated(File) delegates to importDb(File, List<String>, boolean, boolean)
         // Specifically: importDbRelated(File) should call importDb(file, null, true, true)

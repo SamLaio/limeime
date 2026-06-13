@@ -82,6 +82,7 @@ public class ImListFragment extends Fragment {
 
         RecyclerView recyclerView = rootView.findViewById(R.id.im_list_recycler);
         recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
+        ScrollableTabHelper.applyToRecyclerView(activity, recyclerView);
 
         adapter = new ImRowAdapter(new ArrayList<>());
         recyclerView.setAdapter(adapter);
@@ -143,6 +144,25 @@ public class ImListFragment extends Fragment {
         adapter = null;
     }
 
+    /**
+     * Returns true if {@code activeImCode} corresponds to an IM that is currently
+     * enabled (not disabled) in the in-memory list. Used to decide whether a newly
+     * enabled IM should become the active IM. Reads the adapter's in-memory list so
+     * it is not subject to the async DB write performed by setImEnabled().
+     */
+    private boolean isActiveImEnabled(String activeImCode) {
+        if (activeImCode == null || adapter == null) return false;
+        List<ImConfig> list = adapter.getImList();
+        if (list == null) return false;
+        for (ImConfig im : list) {
+            if (im == null || im.getCode() == null) continue;
+            if (activeImCode.equals(im.getCode())) {
+                return !im.isDisable();
+            }
+        }
+        return false;
+    }
+
     // -------- Adapter --------
 
     private class ImRowAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
@@ -157,9 +177,17 @@ public class ImListFragment extends Fragment {
             this.imList = imList;
         }
 
+        List<ImConfig> getImList() {
+            return imList;
+        }
+
         void setData(List<ImConfig> data) {
             this.imList = data != null ? data : new ArrayList<>();
             notifyDataSetChanged();
+            View root = getView();
+            if (root != null) {
+                ScrollableTabHelper.refreshRecyclerViewScrollbar(root.findViewById(R.id.im_list_recycler));
+            }
         }
 
         @Override
@@ -249,7 +277,19 @@ public class ImListFragment extends Fragment {
                 ManageImController ctrl = manageImController;
                 if (ctrl != null) {
                     ctrl.setImEnabled(im.getId(), checked);
-                    new net.toload.main.hd.global.LIMEPreferenceManager(requireContext()).syncIMActivatedState(ctrl.getImConfigFullNameList());
+                    net.toload.main.hd.global.LIMEPreferenceManager pref =
+                            new net.toload.main.hd.global.LIMEPreferenceManager(requireContext());
+                    pref.syncIMActivatedState(ctrl.getImConfigFullNameList());
+                    // When enabling an IM, make it the active IM if the currently
+                    // persisted active IM is not (or no longer) an enabled one. This
+                    // ensures the first IM installed/enabled on a fresh install becomes
+                    // active instead of leaving activeIM pointing at a default IM whose
+                    // keyboard config is not loaded (which falls back to the English
+                    // keyboard). Uses the adapter's in-memory list to stay race-free
+                    // against the async DB write in setImEnabled().
+                    if (checked && !isActiveImEnabled(pref.getActiveIM())) {
+                        pref.setActiveIM(im.getCode());
+                    }
                 }
             });
 

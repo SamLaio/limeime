@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -37,10 +37,12 @@ import androidx.core.content.ContextCompat;
 import net.toload.main.hd.data.ImConfig;
 import net.toload.main.hd.global.LIME;
 import net.toload.main.hd.global.LIMEPreferenceManager;
+import net.toload.main.hd.global.PreferenceBackupAdapter;
 import net.toload.main.hd.global.LIMEProgressListener;
 import net.toload.main.hd.global.LIMEUtilities;
 import net.toload.main.hd.limedb.LimeDB;
 import net.toload.main.hd.ui.LIMESettings;
+import net.lingala.zip4j.model.FileHeader;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -50,8 +52,10 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.ObjectStreamClass;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
@@ -237,6 +241,42 @@ public class  DBServer {
 	}
 
 	/**
+	 * Gets IM information for a specific field.
+	 *
+	 * <p>This method delegates to {@link LimeDB#getImConfig(String, String)} so DBServer
+	 * callers can use the same metadata proxy surface as iOS DBServer.
+	 *
+	 * @param imCode The IM code (e.g., LIME.DB_TABLE_PHONETIC, LIME.DB_TABLE_DAYI)
+	 * @param field The field name to retrieve
+	 * @return The field value, or empty string if not found or database error
+	 */
+	public String getImConfig(String imCode, String field) {
+		if (datasource == null) {
+			Log.e(TAG, "getImConfig(): datasource is null");
+			return "";
+		}
+		return datasource.getImConfig(imCode, field);
+	}
+
+	/**
+	 * Sets IM information for a specific field.
+	 *
+	 * <p>This method delegates to {@link LimeDB#setImConfig(String, String, String)} so
+	 * DBServer callers can store IM metadata without reaching into LimeDB directly.
+	 *
+	 * @param imCode The IM code (e.g., LIME.DB_TABLE_PHONETIC, LIME.DB_TABLE_DAYI)
+	 * @param field The field name to set
+	 * @param value The value to store
+	 */
+	public void setImConfig(String imCode, String field, String value) {
+		if (datasource == null) {
+			Log.e(TAG, "setImConfig(): datasource is null");
+			return;
+		}
+		datasource.setImConfig(imCode, field, value);
+	}
+
+	/**
 	 * Imports a related database file into the related table.
 	 *
 	 * <p>This method acts as a convenience wrapper for {@link LimeDB#importDbRelated(File)}
@@ -364,10 +404,13 @@ public class  DBServer {
         File fileSharedPrefsBackup = new File(dataDir, LIME.SHARED_PREFS_BACKUP_NAME);
         if(fileSharedPrefsBackup.exists() && !fileSharedPrefsBackup.delete()) Log.w(TAG, "Failed to delete existing shared preferences backup file");
         backupDefaultSharedPreference(fileSharedPrefsBackup);
+        File filePreferenceManifest = new File(dataDir, PreferenceBackupAdapter.MANIFEST_PATH);
+        backupPreferenceCompatibilityManifest(filePreferenceManifest);
 
         // create backup file list.
         String limeDBPath = ctx.getDatabasePath(LIME.DATABASE_NAME).getAbsolutePath();
-        String limeDBJournalPath = ctx.getDatabasePath(LIME.DATABASE_JOURNAL).getAbsolutePath();
+        File limeDBJournalFile = ctx.getDatabasePath(LIME.DATABASE_JOURNAL);
+        String limeDBJournalPath = limeDBJournalFile.getAbsolutePath();
         if (limeDBPath.startsWith(dataDir)) {
             limeDBPath = limeDBPath.substring(dataDir.length());
         }
@@ -378,8 +421,11 @@ public class  DBServer {
         //backupFileList.add(LIME.DATABASE_RELATIVE_FOLDER + File.separator + LIME.DATABASE_NAME);
         //backupFileList.add(LIME.DATABASE_RELATIVE_FOLDER + File.separator + LIME.DATABASE_JOURNAL);
         backupFileList.add(limeDBPath);
-        backupFileList.add(limeDBJournalPath);
+        if (limeDBJournalFile.exists()) {
+            backupFileList.add(limeDBJournalPath);
+        }
         backupFileList.add(LIME.SHARED_PREFS_BACKUP_NAME);
+        backupFileList.add(PreferenceBackupAdapter.MANIFEST_PATH);
 
         // hold database connection and close database.
         datasource.holdDBConnection(); //Jeremy '15,5,23
@@ -390,23 +436,33 @@ public class  DBServer {
         if(tempZip.exists() && !tempZip.delete()) Log.w(TAG, "Failed to delete existing temp zip file");
         OutputStream outputStream = null;
         FileInputStream inputStream = null;
+        boolean backupSucceeded = false;
 
         try {
             LIMEUtilities.zip(tempZip.getAbsolutePath(), backupFileList, dataDir , true);
+            if (!tempZip.exists() || tempZip.length() == 0) {
+                throw new IOException("Backup archive was not created or is empty");
+            }
             //saveFileToDownloads(tempZip);
             // Copy temp zip to the User selected URI
             inputStream = new FileInputStream(tempZip);
             outputStream = appContext.getContentResolver().openOutputStream(uri);
+            if (outputStream == null) {
+                throw new FileNotFoundException("Could not open backup output stream for URI: " + uri);
+            }
 
             byte[] buffer = new byte[LIME.BUFFER_SIZE_4KB];
             int bytesRead;
             while ((bytesRead = inputStream.read(buffer)) != -1) {
                 outputStream.write(buffer, 0, bytesRead);
             }
+            outputStream.flush();
+            backupSucceeded = true;
 
         } catch (Exception e) {
             Log.e(TAG, "Error backing up database", e);
             showNotificationMessage(appContext.getText(R.string.l3_initial_backup_error) + "");
+            throw new RemoteException("Error backing up database: " + e.getMessage());
         } finally {
             try {
                 if (outputStream != null) outputStream.close();
@@ -416,28 +472,23 @@ public class  DBServer {
             }
             // Reopen DB
             if (datasource != null) {
+                datasource.unHoldDBConnection(); //Jeremy '15,5,23
                 datasource.openDBConnection(true);
             }
             if (fileSharedPrefsBackup.exists() && !fileSharedPrefsBackup.delete()) Log.w(TAG, "Failed to delete shared preferences backup file in finally");
+            if (filePreferenceManifest.exists() && !filePreferenceManifest.delete()) Log.w(TAG, "Failed to delete preference manifest in finally");
             if (tempZip.exists() && !tempZip.delete()) Log.w(TAG, "Failed to delete temp zip file in finally");
 
-            showNotificationMessage(appContext.getText(R.string.l3_initial_backup_end) + "");
+            if (backupSucceeded) {
+                showNotificationMessage(appContext.getText(R.string.l3_initial_backup_end) + "");
+            }
         }
 
 
 
-        // backup finished.  unhold the database connection and false reopen the database.
-        datasource.unHoldDBConnection(); //Jeremy '15,5,23
-        //mLIMEPref.holdDatabaseConnection(false);
-        datasource.openDBConnection(true);
-
-        //cleanup the shared preference backup file.
-        if(fileSharedPrefsBackup.exists() && !fileSharedPrefsBackup.delete()) Log.w(TAG, "Failed to delete shared preferences backup file at end");
-
-
     }
 
-    public void restoreDatabase(Uri uri) {
+    public void restoreDatabase(Uri uri) throws IOException {
         if (DEBUG)
             Log.i(TAG, "restoreDatabase(Uri) Starting....");
 
@@ -458,12 +509,26 @@ public class  DBServer {
             while ((bytesRead = inputStream.read(buffer)) != -1) {
                 outputStream.write(buffer, 0, bytesRead);
             }
+            outputStream.flush();
+            outputStream.close();
+            outputStream = null;
+
+            // Reject zero-byte copies — Android Uri import can silently produce empty files
+            if (tempZip.length() == 0) {
+                throw new IOException("Restore failed: copied backup archive is empty (0 bytes)");
+            }
+
             Log.i(TAG, "restoreDatabase(Uri) temp file created: " + tempZip.getAbsolutePath());
             restoreDatabase(tempZip.getAbsolutePath());
 
+        } catch (IOException e) {
+            Log.e(TAG, "Error restoring database", e);
+            showNotificationMessage(appContext.getText(R.string.l3_initial_restore_error) + "");
+            throw e;
         } catch (Exception e) {
             Log.e(TAG, "Error restoring database", e);
             showNotificationMessage(appContext.getText(R.string.l3_initial_restore_error) + "");
+            throw new IOException("Restore failed: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()), e);
         } finally {
             try {
                 if (inputStream != null) inputStream.close();
@@ -475,46 +540,174 @@ public class  DBServer {
         }
     }
 
-	public void restoreDatabase(String srcFilePath) {
+	public void restoreDatabase(String srcFilePath) throws IOException {
 		File check = new File(srcFilePath);
         String dataDir = getDataDirPath();
 
-		if(check.exists()){
-
-			datasource.holdDBConnection(); //Jeremy '15,5,23
-			closeDatabase();
-            //restore shared preference
-            File sharedPref = new File(dataDir, LIME.SHARED_PREFS_BACKUP_NAME);
-
-            try {
-				LIMEUtilities.unzip(srcFilePath, dataDir, true);
-			} catch (Exception e) {
-				Log.e(TAG, "Error unzipping restore file", e);
-				showNotificationMessage(appContext.getText(R.string.l3_initial_restore_error) + "");
-			}
-			finally {
-				showNotificationMessage(appContext.getText(R.string.l3_initial_restore_end) + "");
-			}
-
-			datasource.unHoldDBConnection(); //Jeremy '15,5,23
-			datasource.openDBConnection(true);
-
-
-			restoreDefaultSharedPreference(sharedPref);
-            //Delete the shared preference backup file after restored.
-            if(sharedPref.exists() && !sharedPref.delete()) Log.w(TAG, "Failed to delete shared preferences backup file after restore");
-			//mLIMEPref.setResetCacheFlag(true);
-            net.toload.main.hd.SearchServer.resetCache(true);
-
-			// Check and upgrade the database table
-			datasource.checkAndUpdateRelatedTable();
-
-		}else{
+		if (!check.exists()) {
 			showNotificationMessage(appContext.getText(R.string.error_restore_not_found) + "");
-
+			throw new FileNotFoundException("Restore source file not found: " + srcFilePath);
 		}
 
+		// Validate the archive contains a lime.db entry before touching the live database.
+		// Prevents wiping the running DB when the user picks an unrelated/corrupted zip.
+		if (!zipContainsLimeDbEntry(check)) {
+			showNotificationMessage(appContext.getText(R.string.l3_initial_restore_error) + "");
+			throw new IOException("Restore failed: backup archive does not contain a lime.db entry");
+		}
+
+		datasource.holdDBConnection(); //Jeremy '15,5,23
+		closeDatabase();
+		//restore shared preference
+		File sharedPref = new File(dataDir, LIME.SHARED_PREFS_BACKUP_NAME);
+		File preferenceManifest = new File(dataDir, PreferenceBackupAdapter.MANIFEST_PATH);
+
+		boolean restoreSucceeded = false;
+		IOException restoreError = null;
+		try {
+			restoreFullBackupEntries(check, sharedPref, preferenceManifest);
+			restoreSucceeded = true;
+		} catch (Exception e) {
+			Log.e(TAG, "Error extracting restore file", e);
+			showNotificationMessage(appContext.getText(R.string.l3_initial_restore_error) + "");
+			restoreError = new IOException("Restore failed: unable to extract backup archive", e);
+		}
+
+		datasource.unHoldDBConnection(); //Jeremy '15,5,23
+		datasource.openDBConnection(true);
+		datasource.ensureCurrentDatabase();
+
+		if (!restoreSucceeded) {
+			throw restoreError;
+		}
+
+		showNotificationMessage(appContext.getText(R.string.l3_initial_restore_end) + "");
+
+		if (!restorePreferenceCompatibilityManifest(preferenceManifest)) {
+			restoreDefaultSharedPreference(sharedPref);
+		}
+		//Delete the shared preference backup file after restored.
+		if(sharedPref.exists() && !sharedPref.delete()) Log.w(TAG, "Failed to delete shared preferences backup file after restore");
+		if(preferenceManifest.exists() && !preferenceManifest.delete()) Log.w(TAG, "Failed to delete preference manifest after restore");
+		//mLIMEPref.setResetCacheFlag(true);
+		net.toload.main.hd.SearchServer.resetCache(true);
+
+		// Check and upgrade the database table
+		datasource.checkAndUpdateRelatedTable();
+		datasource.ensureCurrentDatabase();
 	}
+
+	private void restoreFullBackupEntries(File zipFile, File sharedPref, File preferenceManifest) throws IOException {
+		File databaseFile = ctx.getDatabasePath(LIME.DATABASE_NAME);
+		File journalFile = ctx.getDatabasePath(LIME.DATABASE_JOURNAL);
+		boolean restoredDatabase = false;
+
+		try (net.lingala.zip4j.ZipFile zip4jFile = new net.lingala.zip4j.ZipFile(zipFile)) {
+			for (FileHeader fileHeader : zip4jFile.getFileHeaders()) {
+				if (fileHeader.isDirectory()) {
+					continue;
+				}
+
+				String normalizedName = normalizeBackupEntryName(fileHeader.getFileName());
+				String lastPathComponent = lastPathComponent(normalizedName);
+				File target = null;
+
+				if (LIME.DATABASE_NAME.equals(lastPathComponent)) {
+					target = databaseFile;
+					restoredDatabase = true;
+				} else if (LIME.DATABASE_JOURNAL.equals(lastPathComponent)) {
+					target = journalFile;
+				} else if (LIME.SHARED_PREFS_BACKUP_NAME.equals(lastPathComponent)) {
+					target = sharedPref;
+				} else if (PreferenceBackupAdapter.MANIFEST_PATH.equals(normalizedName)) {
+					target = preferenceManifest;
+				}
+
+				if (target == null) {
+					continue;
+				}
+				try (InputStream input = zip4jFile.getInputStream(fileHeader)) {
+					copyZipEntryToFile(input, target);
+				}
+			}
+		}
+
+		if (!restoredDatabase) {
+			throw new IOException("Restore failed: backup archive does not contain a restorable lime.db entry");
+		}
+	}
+
+	private String normalizeBackupEntryName(String name) {
+		if (name == null) return "";
+		String normalized = name.replace('\\', '/');
+		while (normalized.startsWith("/")) {
+			normalized = normalized.substring(1);
+		}
+		return normalized;
+	}
+
+	private String lastPathComponent(String path) {
+		if (path == null || path.isEmpty()) return "";
+		int slash = path.lastIndexOf('/');
+		return slash >= 0 ? path.substring(slash + 1) : path;
+	}
+
+	private void copyZipEntryToFile(InputStream input, File target) throws IOException {
+		File parent = target.getParentFile();
+		if (parent != null && !parent.exists() && !parent.mkdirs()) {
+			throw new IOException("Failed to create restore target directory: " + parent.getAbsolutePath());
+		}
+
+		try (OutputStream output = new BufferedOutputStream(new FileOutputStream(target))) {
+			byte[] buffer = new byte[LIME.BUFFER_SIZE_4KB];
+			int read;
+			while ((read = input.read(buffer)) != -1) {
+				output.write(buffer, 0, read);
+			}
+		}
+	}
+
+	private boolean zipContainsLimeDbEntry(File zipFile) throws IOException {
+		try (net.lingala.zip4j.ZipFile zip4jFile = new net.lingala.zip4j.ZipFile(zipFile)) {
+			for (FileHeader fileHeader : zip4jFile.getFileHeaders()) {
+				String name = fileHeader.getFileName();
+				if (name != null && !fileHeader.isDirectory() && normalizeBackupEntryName(name).endsWith("lime.db")) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+    private void backupPreferenceCompatibilityManifest(File manifestFile) {
+        if (manifestFile == null) return;
+        File parent = manifestFile.getParentFile();
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            Log.w(TAG, "Failed to create preference manifest directory");
+            return;
+        }
+        if (manifestFile.exists() && !manifestFile.delete()) {
+            Log.w(TAG, "Failed to delete existing preference manifest");
+        }
+
+        try {
+            try (OutputStream output = new FileOutputStream(manifestFile)) {
+                output.write(PreferenceBackupAdapter.exportManifestBytes(appContext));
+            }
+        } catch (IOException | org.json.JSONException e) {
+            Log.e(TAG, "Error writing preference manifest", e);
+        }
+    }
+
+    private boolean restorePreferenceCompatibilityManifest(File manifestFile) {
+        if (manifestFile == null || !manifestFile.exists()) return false;
+        try (InputStream input = new FileInputStream(manifestFile)) {
+            return PreferenceBackupAdapter.restoreManifest(appContext, input);
+        } catch (IOException | org.json.JSONException e) {
+            Log.e(TAG, "Error restoring preference manifest", e);
+            return false;
+        }
+    }
 
 	public void backupDefaultSharedPreference(File sharePrefs) {
 		if(sharePrefs.exists() && !sharePrefs.delete()) Log.w(TAG, "Failed to delete existing shared preferences backup file");
@@ -543,7 +736,7 @@ public class  DBServer {
     @SuppressWarnings("unchecked")
 	public void restoreDefaultSharedPreference(File sharePrefs )
 	{
-        try (ObjectInputStream inputStream = new ObjectInputStream(new FileInputStream(sharePrefs))) {
+        try (ObjectInputStream inputStream = new LegacyPreferenceObjectInputStream(new FileInputStream(sharePrefs))) {
             try {
                 SharedPreferences.Editor prefEdit = appContext.getSharedPreferences(appContext.getPackageName() + "_preferences", Context.MODE_PRIVATE).edit();
                 prefEdit.clear();
@@ -551,6 +744,10 @@ public class  DBServer {
                 for (Map.Entry<String, ?> entry : entries.entrySet()) {
                     Object v = entry.getValue();
                     String key = entry.getKey();
+
+                    if ("PAYMENT_FLAG".equals(key)) {
+                        continue;
+                    }
 
                     if (v instanceof Boolean)
                         prefEdit.putBoolean(key, (Boolean) v);
@@ -560,10 +757,8 @@ public class  DBServer {
                         prefEdit.putInt(key, (Integer) v);
                     else if (v instanceof Long)
                         prefEdit.putLong(key, (Long) v);
-                    else if (v instanceof String) {
-                        if (!v.equals("PAYMENT_FLAG"))
-                            prefEdit.putString(key, ((String) v));
-                    }
+                    else if (v instanceof String)
+                        prefEdit.putString(key, ((String) v));
                 }
                 prefEdit.apply();
 
@@ -574,6 +769,39 @@ public class  DBServer {
             Log.e(TAG, "Error reading shared preferences backup file", ex);
         }
 	}
+
+    private static final class LegacyPreferenceObjectInputStream extends ObjectInputStream {
+        LegacyPreferenceObjectInputStream(InputStream input) throws IOException {
+            super(input);
+        }
+
+        @Override
+        protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
+            Class<?> resolvedClass = super.resolveClass(desc);
+            if (isAllowedLegacyPreferenceClass(resolvedClass)) {
+                return resolvedClass;
+            }
+            throw new InvalidClassException(desc.getName(), "Class is not allowed in legacy preference backup");
+        }
+
+        private static boolean isAllowedLegacyPreferenceClass(Class<?> clazz) {
+            if (clazz.isPrimitive()) return true;
+            if (clazz.isArray()) {
+                Class<?> componentType = clazz.getComponentType();
+                return componentType == Object.class || isAllowedLegacyPreferenceClass(componentType);
+            }
+            if (clazz == String.class) return true;
+            if (Number.class.isAssignableFrom(clazz) || clazz == Boolean.class || clazz == Character.class) return true;
+            if (isAllowedMapInternal(clazz.getName())) return true;
+            return clazz.getName().startsWith("java.util.") && Map.class.isAssignableFrom(clazz);
+        }
+
+        private static boolean isAllowedMapInternal(String className) {
+            return className.startsWith("java.util.HashMap$")
+                    || className.startsWith("java.util.LinkedHashMap$")
+                    || className.startsWith("java.util.Hashtable$");
+        }
+    }
 
 
 
@@ -659,7 +887,7 @@ public class  DBServer {
 			}
 
 
-		// If source doesn't exist, do not create output zip file — fail fast
+		// If source doesn't exist, do not create output zip file â fail fast
 		if (sourceFile == null || !sourceFile.exists() || !sourceFile.isFile()) {
 			Log.e(TAG, "zip(): source file does not exist: " + sourceFile);
 			return;
@@ -840,4 +1068,3 @@ public class  DBServer {
 	}
 
 }
-

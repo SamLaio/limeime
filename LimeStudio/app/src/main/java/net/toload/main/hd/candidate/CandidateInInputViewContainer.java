@@ -1,11 +1,9 @@
-
-
 /*
  *
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -27,8 +25,10 @@
 package net.toload.main.hd.candidate;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.util.AttributeSet;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageButton;
@@ -36,15 +36,30 @@ import android.widget.LinearLayout;
 
 import net.toload.main.hd.LIMEService;
 import net.toload.main.hd.R;
+import net.toload.main.hd.global.LIME;
 
 public class CandidateInInputViewContainer extends LinearLayout  implements View.OnClickListener {
 
     private static final boolean DEBUG = false;
     private static final String TAG = "CandiInputViewContainer";
+    private ImageButton mDismissButton;
+    private ImageButton mEmojiButton;
     private ImageButton mRightButton;
     private ImageButton mKeyboardButton;
+    private View mActionRow;
+    private View mRightButtonParent;
     private CandidateView mCandidateView;
     private LIMEService mService;
+    private static final long IDLE_TOOLS_REVEAL_DELAY_MS = 120L;
+    private boolean mIdleToolsRevealReady = true;
+    private final Runnable mRevealIdleToolsRunnable = new Runnable() {
+        @Override
+        public void run() {
+            mIdleToolsRevealReady = true;
+            requestLayout();
+            updateCandidateViewWidthConstraint();
+        }
+    };
 
     Context ctx;
 
@@ -65,17 +80,32 @@ public class CandidateInInputViewContainer extends LinearLayout  implements View
             Log.i(TAG, "initViews()");
         if (mCandidateView == null) {
             View mButtonRightExpand = findViewById(R.id.candidate_right_parent);
+            mRightButtonParent = mButtonRightExpand;
             // Ensure buttons are laid out in correct order
             if (mButtonRightExpand instanceof ViewGroup) {
                 android.view.ViewGroup vg = (android.view.ViewGroup) mButtonRightExpand;
                 vg.setClipChildren(false);
                 vg.setClipToPadding(false);
             }
+            mDismissButton = findViewById(R.id.candidate_dismiss);
+            mEmojiButton = findViewById(R.id.candidate_emoji);
             mRightButton = findViewById(R.id.candidate_right);
             mKeyboardButton = findViewById(R.id.candidate_keyboard);
+            if (mEmojiButton != null && mEmojiButton.getParent() instanceof View) {
+                mActionRow = (View) mEmojiButton.getParent();
+            }
 
+            if (mDismissButton != null) {
+                mDismissButton.setOnClickListener(this);
+            }
+            if (mEmojiButton != null) {
+                mEmojiButton.setOnClickListener(this);
+            }
             if (mRightButton != null) {
                 mRightButton.setOnClickListener(this);
+            }
+            if (mRightButtonParent != null) {
+                mRightButtonParent.setOnClickListener(this);
             }
             if (mKeyboardButton != null) {
                 mKeyboardButton.setOnClickListener(this);
@@ -92,8 +122,36 @@ public class CandidateInInputViewContainer extends LinearLayout  implements View
 
             assert mCandidateView != null;
             mCandidateView.setBackgroundColor(mCandidateView.mColorBackground);
+            if (mActionRow != null) {
+                mActionRow.setBackgroundColor(actionRowBackgroundColor(mCandidateView.mColorBackground));
+            }
+            if (mRightButtonParent != null) {
+                mRightButtonParent.setBackgroundColor(actionRowBackgroundColor(mCandidateView.mColorBackground));
+            }
+            if (mDismissButton != null) {
+                mDismissButton.setPadding(0, 0, 0, 0);
+                mDismissButton.setScaleType(ImageButton.ScaleType.CENTER);
+                mDismissButton.setMinimumWidth(0);
+                mDismissButton.setMinimumHeight(0);
+                mDismissButton.setImageDrawable(mCandidateView.makeDismissButtonGlyph());
+                mDismissButton.setBackgroundColor(dismissButtonBackgroundColor());
+                mDismissButton.post(() -> mCandidateView.storePopupDismissButtonWidth(mDismissButton));
+            }
+            if (mEmojiButton != null) {
+                mEmojiButton.setPadding(0, 0, 0, 0);
+                mEmojiButton.setScaleType(ImageButton.ScaleType.CENTER);
+                mEmojiButton.setMinimumWidth(0);
+                mEmojiButton.setMinimumHeight(0);
+                mEmojiButton.clearColorFilter();
+                mEmojiButton.setImageDrawable(mCandidateView.mDrawableEmojiInput);
+                mEmojiButton.setBackgroundColor(actionButtonBackgroundColor());
+            }
             if (mRightButton != null) {
-                mRightButton.setBackgroundColor(mCandidateView.mColorBackground);
+                mRightButton.setPadding(0, 0, 0, 0);
+                mRightButton.setScaleType(ImageButton.ScaleType.CENTER);
+                mRightButton.setMinimumWidth(0);
+                mRightButton.setMinimumHeight(0);
+                mRightButton.setBackgroundColor(actionButtonBackgroundColor());
             }
             if (mKeyboardButton != null) {
                 mKeyboardButton.setBackgroundColor(mCandidateView.mColorBackground);
@@ -157,7 +215,16 @@ public class CandidateInInputViewContainer extends LinearLayout  implements View
         if (mCandidateView != null) {
             boolean showKeyboardButton = (mService != null) && mService.isKeyboardViewHidden();
             boolean isEmpty = mCandidateView.isEmpty();
+            boolean showIdleTools = updateIdleToolsRevealState(isEmpty);
+            boolean showActiveChrome = shouldShowActiveChrome(isEmpty, showIdleTools, mIdleToolsRevealReady);
             
+            if (mDismissButton != null) {
+                mDismissButton.setVisibility(showActiveChrome ? View.VISIBLE : View.GONE);
+            }
+            if (mEmojiButton != null) {
+                mEmojiButton.setVisibility(showIdleTools ? View.VISIBLE : View.GONE);
+            }
+
             // Update keyboard button visibility
             if (mKeyboardButton != null) {
                 mKeyboardButton.setVisibility(showKeyboardButton ? View.VISIBLE : View.GONE);
@@ -166,19 +233,77 @@ public class CandidateInInputViewContainer extends LinearLayout  implements View
             // When empty: show voice input button
             // When not empty: show expand button based on keyboard visibility
             if (mRightButton != null) {
-                if (isEmpty) {
+                mRightButton.clearColorFilter();
+                mRightButton.setVisibility((showIdleTools || showActiveChrome) ? View.VISIBLE : View.GONE);
+                if (showIdleTools) {
                     mRightButton.setImageDrawable(mCandidateView.mDrawableVoiceInput);
                 } else {
                     // Show up arrow when keyboard is hidden, down arrow when keyboard is shown
                     boolean isKeyboardHidden = (mService != null) && mService.isKeyboardViewHidden();
-                    mRightButton.setImageDrawable(isKeyboardHidden ? 
+                    mRightButton.setImageDrawable(shouldShowCollapseGlyph(isEmpty, mCandidateView.isCandidateExpanded(), isKeyboardHidden) ?
                         mCandidateView.mDrawableExpandUpButton : 
-                        mCandidateView.mDrawableExpandDownButton);
+                            mCandidateView.mDrawableExpandDownButton);
                 }
+            }
+            if (mRightButtonParent != null) {
+                mRightButtonParent.setVisibility((showIdleTools || showActiveChrome) ? View.VISIBLE : View.GONE);
             }
         }
         
         super.requestLayout();
+    }
+
+    static int actionRowBackgroundColor(int candidateBackground) {
+        return candidateBackground;
+    }
+
+    public static int actionButtonBackgroundColor() {
+        return Color.TRANSPARENT;
+    }
+
+    public static int dismissButtonBackgroundColor() {
+        return Color.TRANSPARENT;
+    }
+
+    static boolean isRightActionClick(View clicked, View rightButton, View rightButtonParent) {
+        return clicked == rightButton || clicked == rightButtonParent;
+    }
+
+    static boolean isRightEdgeActionTap(float x, float y, int containerWidth, int candidateRowHeight, int actionWidth) {
+        return containerWidth > 0
+                && candidateRowHeight > 0
+                && actionWidth > 0
+                && y >= 0
+                && y <= candidateRowHeight
+                && x >= containerWidth - actionWidth;
+    }
+
+    static boolean shouldShowCollapseGlyph(boolean isEmpty, boolean isExpanded, boolean isKeyboardHidden) {
+        return !isEmpty && (isExpanded || isKeyboardHidden);
+    }
+
+    static boolean shouldShowIdleTools(boolean isEmpty, boolean idleRevealReady, boolean composingOrSearching) {
+        return isEmpty && idleRevealReady && !composingOrSearching;
+    }
+
+    static boolean shouldShowActiveChrome(boolean isEmpty, boolean showIdleTools, boolean idleRevealReady) {
+        return !isEmpty || (isEmpty && !showIdleTools && !idleRevealReady);
+    }
+
+    private boolean updateIdleToolsRevealState(boolean isEmpty) {
+        boolean composingOrSearching = isComposingOrSearching();
+        if (!isEmpty || composingOrSearching) {
+            removeCallbacks(mRevealIdleToolsRunnable);
+            mIdleToolsRevealReady = false;
+        } else if (!mIdleToolsRevealReady) {
+            removeCallbacks(mRevealIdleToolsRunnable);
+            postDelayed(mRevealIdleToolsRunnable, IDLE_TOOLS_REVEAL_DELAY_MS);
+        }
+        return shouldShowIdleTools(isEmpty, mIdleToolsRevealReady, composingOrSearching);
+    }
+
+    private boolean isComposingOrSearching() {
+        return mService != null && mService.isComposingOrSearchingCandidates();
     }
     
     /**
@@ -189,6 +314,24 @@ public class CandidateInInputViewContainer extends LinearLayout  implements View
         post(() -> {
             int containerWidth = getWidth();
             if (containerWidth > 0 && mCandidateView != null) {
+                boolean isEmpty = mCandidateView.isEmpty();
+                boolean showIdleTools = shouldShowIdleTools(
+                        isEmpty,
+                        mIdleToolsRevealReady,
+                        isComposingOrSearching());
+                boolean showActiveChrome = shouldShowActiveChrome(isEmpty, showIdleTools, mIdleToolsRevealReady);
+                if (mDismissButton != null) {
+                    mDismissButton.setVisibility(showActiveChrome ? View.VISIBLE : View.GONE);
+                }
+                if (mEmojiButton != null) {
+                    mEmojiButton.setVisibility(showIdleTools ? View.VISIBLE : View.GONE);
+                }
+                if (mRightButton != null) {
+                    mRightButton.setVisibility((showIdleTools || showActiveChrome) ? View.VISIBLE : View.GONE);
+                }
+                if (mRightButtonParent != null) {
+                    mRightButtonParent.setVisibility((showIdleTools || showActiveChrome) ? View.VISIBLE : View.GONE);
+                }
                 ViewGroup.LayoutParams params = mCandidateView.getLayoutParams();
                 if (params instanceof LinearLayout.LayoutParams) {
                     LinearLayout.LayoutParams llParams = (LinearLayout.LayoutParams) params;
@@ -196,16 +339,27 @@ public class CandidateInInputViewContainer extends LinearLayout  implements View
                     // Calculate buttons width - always use dimension resource for consistency
                     int buttonsWidth = 0;
                     int buttonWidth = getResources().getDimensionPixelSize(R.dimen.candidate_expand_button_width);
+                    int dismissWidth = getResources().getDimensionPixelSize(R.dimen.candidate_dismiss_button_width);
+                    boolean dismissVisible = mDismissButton != null && mDismissButton.getVisibility() == View.VISIBLE;
+                    boolean emojiVisible = mEmojiButton != null && mEmojiButton.getVisibility() == View.VISIBLE;
                     boolean keyboardVisible = mKeyboardButton != null && mKeyboardButton.getVisibility() == View.VISIBLE;
                     boolean rightVisible = mRightButton != null && mRightButton.getVisibility() == View.VISIBLE;
                     
                     if (DEBUG) {
                         Log.i(TAG, "Width constraint: containerWidth=" + containerWidth + 
                               ", keyboardVisible=" + keyboardVisible + 
+                              ", dismissVisible=" + dismissVisible +
+                              ", emojiVisible=" + emojiVisible +
                               ", rightVisible=" + rightVisible +
                               ", buttonWidth=" + buttonWidth);
                     }
                     
+                    if (dismissVisible) {
+                        buttonsWidth += dismissWidth;
+                    }
+                    if (emojiVisible) {
+                        buttonsWidth += buttonWidth;
+                    }
                     if (keyboardVisible) {
                         buttonsWidth += buttonWidth;
                     }
@@ -248,8 +402,42 @@ public class CandidateInInputViewContainer extends LinearLayout  implements View
     }
 
     @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (ev.getActionMasked() == MotionEvent.ACTION_UP
+                && mCandidateView != null
+                && !mCandidateView.isEmpty()) {
+            int candidateRowHeight = candidateRowHeight();
+            int actionWidth = getResources().getDimensionPixelSize(R.dimen.candidate_expand_button_width);
+            if (isRightEdgeActionTap(ev.getX(), ev.getY(), getWidth(), candidateRowHeight, actionWidth)) {
+                toggleCandidatePopup();
+                performClick();
+                return true;
+            }
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    private int candidateRowHeight() {
+        if (mActionRow != null && mActionRow.getHeight() > 0) {
+            return mActionRow.getHeight();
+        }
+        if (mCandidateView != null && mCandidateView.getHeight() > 0) {
+            return mCandidateView.getHeight();
+        }
+        return 0;
+    }
+
+    @Override
     public void onClick(View v) {
-        if (v == mKeyboardButton) {
+        if (v == mDismissButton) {
+            if (mCandidateView != null) {
+                mCandidateView.dismissComposingFromCandidate();
+            }
+        } else if (v == mEmojiButton) {
+            if (mService != null) {
+                mService.onKey(LIME.KEYCODE_EMOJI_PANEL, null, 0, 0);
+            }
+        } else if (v == mKeyboardButton) {
             // Restore keyboard view when keyboard button is clicked
             // Use forceRestore=true to restore even when candidates/composing text is present
             if (mService != null) {
@@ -258,11 +446,25 @@ public class CandidateInInputViewContainer extends LinearLayout  implements View
                 // Request layout to update button visibility
                 post(this::requestLayout);
             }
-        } else if (v == mRightButton) {
-            if (mCandidateView.isEmpty())
+        } else if (isRightActionClick(v, mRightButton, mRightButtonParent)) {
+            if (isShowingIdleTools())
                 mCandidateView.startVoiceInput();
-            else
-                mCandidateView.showCandidatePopup();
+            else if (!mCandidateView.isEmpty())
+                toggleCandidatePopup();
         }
+    }
+
+    private boolean isShowingIdleTools() {
+        return mCandidateView != null
+                && shouldShowIdleTools(mCandidateView.isEmpty(), mIdleToolsRevealReady, isComposingOrSearching());
+    }
+
+    private void toggleCandidatePopup() {
+        if (mCandidateView.isCandidateExpanded()) {
+            mCandidateView.hideCandidatePopup();
+        } else {
+            mCandidateView.showCandidatePopup();
+        }
+        post(this::requestLayout);
     }
 }

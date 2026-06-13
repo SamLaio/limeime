@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -65,6 +65,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -103,9 +104,28 @@ public class LimeDB extends LimeSQLiteOpenHelper {
     private static final boolean DEBUG = false;
     private static String TAG = "LimeDB";
 
+    private static String[] splitLeadingCodePoint(String text) {
+        if (text == null || text.isEmpty()) {
+            return new String[]{text, ""};
+        }
+        int end = text.offsetByCodePoints(0, 1);
+        return new String[]{text.substring(0, end), text.substring(end)};
+    }
+
+    private static String codePointSubstring(String text, int beginCodePoint, int endCodePoint) {
+        int begin = text.offsetByCodePoints(0, beginCodePoint);
+        int end = text.offsetByCodePoints(0, endCodePoint);
+        return text.substring(begin, end);
+    }
+
     private static SQLiteDatabase db = null;  //Jeremy '12,5,1 add static modifier. Shared db instance for dbserver and searchserver
-    private final static int DATABASE_VERSION = 103;
+    private final static int DATABASE_VERSION = 104;
     private final static String EMOJI_DATA_VERSION = "17.0";
+    // Scored English dictionary payload (docs/ENG_AUTO_COMPLETION.md). Self-versioned via
+    // an im(code='dictionary', title='version') row — independent of DATABASE_VERSION.
+    private final static String DICTIONARY_DATA_VERSION = "1.0";
+    private final static String DICTIONARY_TABLE = "dictionary";
+    private final static String DICTIONARY_PAYLOAD_TABLE = "dictionary_data";
     private final static String EMOJI_TABLE_DATA = "emoji_data";
     private final static String EMOJI_TABLE_FTS = "emoji_fts";
     private final static String EMOJI_TABLE_USER = "emoji_user";
@@ -403,7 +423,10 @@ public class LimeDB extends LimeSQLiteOpenHelper {
 
 
         // Jeremy '12,4,7 open DB connection in constructor
-        openDBConnection(true);
+        // Reuse a healthy shared connection; openDBConnection(false) now verifies
+        // the handle before reusing it and reopens stale handles.
+        openDBConnection(false);
+        ensureCurrentDatabase();
 
     }
 
@@ -592,7 +615,7 @@ public class LimeDB extends LimeSQLiteOpenHelper {
         // Whitelist of valid table names
         String[] validTables = {
             LIME.DB_TABLE_ARRAY, LIME.DB_TABLE_ARRAY10,
-            LIME.DB_TABLE_CJ, LIME.DB_TABLE_CJ5, LIME.DB_TABLE_CUSTOM,
+            LIME.DB_TABLE_CJ, LIME.DB_TABLE_CJ4, LIME.DB_TABLE_CJ5, LIME.DB_TABLE_CUSTOM,
             LIME.DB_TABLE_DAYI, LIME.DB_TABLE_ECJ, LIME.DB_TABLE_EZ,
             LIME.DB_TABLE_HS, LIME.DB_TABLE_PHONETIC, LIME.DB_TABLE_PINYIN,
             LIME.DB_TABLE_SCJ, LIME.DB_TABLE_WB,
@@ -680,8 +703,17 @@ public class LimeDB extends LimeSQLiteOpenHelper {
             long endTime = System.currentTimeMillis();
             Log.i(TAG, "OnUpgrade() upgrade database to verser 102.  Elapsed time = " + (endTime - startTime) + "ms.");
         }
-        if (oldVersion < 103) {
-            createEmojiTables(dbin, false);
+        // Emoji payload currency is NOT decided here. ensureCurrentDatabase() ->
+        // refreshEmojiDataIfNeeded() runs on every open/restore/factory-reset (right after
+        // getWritableDatabase() in the constructor), re-creates the emoji tables
+        // idempotently, and imports/refreshes data gated on the im-table version row
+        // (im.code='emoji', title='version'), not on the DB user_version. Gating emoji on
+        // an onUpgrade(oldVersion<103) line was insufficient and contributed to the #88
+        // restore-crash family (a restored DB can claim a current version but carry stale
+        // schema, skipping onUpgrade). Do NOT reintroduce a version-gated emoji line here;
+        // the same rule applies to the English dictionary payload.
+        if (oldVersion < 104) {
+            ensureCj4Schema(dbin);
         }
 
     }
@@ -823,25 +855,46 @@ public class LimeDB extends LimeSQLiteOpenHelper {
         }
 
         if (!force_reload && db != null && db.isOpen()) {
-            return true;
-        } else {
-
-            // Reset related phrase score cache
-            relatedScore.clear();
-
-            if (force_reload) {
+            try (Cursor cursor = db.rawQuery("SELECT 1", null)) {
+                return true;
+            } catch (Exception e) {
+                Log.w(TAG, "openDBConnection(): existing database handle is stale, reopening", e);
                 try {
-                    if (db != null && db.isOpen()) {
-                        db.close();
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Error in database operation", e);
+                    db.close();
+                } catch (Exception closeError) {
+                    Log.e(TAG, "Error closing stale database handle", closeError);
                 }
             }
-            db = this.getWritableDatabase();
-            databaseOnHold = false;
-            return db != null && db.isOpen();
         }
+
+        // Reset related phrase score cache
+        relatedScore.clear();
+
+        if (force_reload) {
+            try {
+                if (db != null && db.isOpen()) {
+                    db.close();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error in database operation", e);
+            }
+        }
+        db = this.getWritableDatabase();
+        databaseOnHold = false;
+        return db != null && db.isOpen();
+    }
+
+    public void ensureCurrentDatabase() {
+        if (checkDBConnection()) {
+            return;
+        }
+
+        ensureCj4Schema(db);
+        if (db.getVersion() < DATABASE_VERSION) {
+            db.setVersion(DATABASE_VERSION);
+        }
+        refreshEmojiDataIfNeeded();
+        refreshDictionaryDataIfNeeded();
     }
 
     /**
@@ -1566,6 +1619,7 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                     keyString.isEmpty() || keynameString.isEmpty()) {
                 switch (table) {
                     case LIME.DB_TABLE_CJ:
+                    case LIME.DB_TABLE_CJ4:
                     case LIME.DB_TABLE_SCJ:
                     case LIME.DB_TABLE_CJ5:
                     case LIME.DB_TABLE_ECJ:
@@ -1890,24 +1944,31 @@ public class LimeDB extends LimeSQLiteOpenHelper {
 
                     //Jeremy '15, 6, 1 between search clause without using related column for better sorting order.
                     //if(betweenSearch){
-                    selectClause = expandBetweenSearchClause(codeCol, code) + extraSelectClause;
                     String exactMatchCondition = " (" + codeCol + " ='" + escapedCode + "' " + extraExactMatchClause + ") ";
+                    int similarCodeCandidates = mLIMEPref.getSimilarCodeCandidates();
+                    if (similarCodeCandidates <= 0) {
+                        selectClause = exactMatchCondition;
+                    } else {
+                        selectClause = expandBetweenSearchClause(codeCol, code) + extraSelectClause;
+                    }
                     // Sort key order (issue #49 follow-up):
-                    //   1. exactmatch-with-score single-char priority
-                    //   2. exactmatch DESC                      -- exact hits always above partial hits
-                    //   3. length(code) >= codeLen              -- at-least-as-long-as-typed first
-                    //   4. score DESC / basescore DESC          -- when `sort` pref is on, score now
+                    //   1. exactmatch DESC                      -- exact hits always above partial hits
+                    //   2. length(code) >= codeLen              -- at-least-as-long-as-typed first
+                    //   3. exactmatch-with-score single-char priority / score DESC / basescore DESC
+                    //                                           -- when `sort` pref is on, score now
                     //                                              dominates over code-length so picks
                     //                                              from the partial-match list can
                     //                                              float to the top after score bumps
-                    //   5. (length(code) <= 5) * length(code)   -- tiebreaker among equal-score rows
-                    //   6. _id ASC
-                    sortClause = "( exactmatch = 1 and ( score > 0 or  basescore >0) and length(word)=1) desc, exactmatch desc,"
-                            + " (length(" + codeCol + ") >= " + codeLen + " ) desc, ";
+                    //   4. (length(code) <= 5) * length(code)   -- tiebreaker among equal-score rows
+                    //   5. _id ASC                              -- source insertion order for exact duplicate codes
+                    sortClause = "exactmatch desc, (length(" + codeCol + ") >= " + codeLen + " ) desc, ";
 
 
                     StringBuilder sortClauseBuilder = new StringBuilder(sortClause);
-                    if (sort) sortClauseBuilder.append(" score desc, basescore desc, ");
+                    if (sort) {
+                        sortClauseBuilder.append("( exactmatch = 1 and ( score > 0 or  basescore >0) and length(word)=1) desc, ");
+                        sortClauseBuilder.append("score desc, basescore desc, ");
+                    }
                     sortClauseBuilder.append("(length(" + codeCol + ") <= " + (Math.min(codeLen, 5)) + " )*length(" + codeCol + ") desc, ");
                     sortClauseBuilder.append("_id asc");
                     String finalSortClause = sortClauseBuilder.toString();
@@ -2850,12 +2911,12 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                 }
 
                 if (duplicateCheck.add(m.getWord())) {
-                    result.add(m);
-
                     if(m.isPartialMatchToCodeRecord()) {
+                        if(sCount >= sLimit) break;
                         sCount ++;
-                        if(sCount >sLimit) break;
                     }
+
+                    result.add(m);
                 }
                 rsize++;
                 if(DEBUG)
@@ -2890,6 +2951,7 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                 Mapping temp = new Mapping();
                 temp.setCode(query_code);
                 temp.setWord("，");
+                temp.setChinesePunctuationSymbolRecord();
                 if (result.size() > 3)
                     result.add(3, temp);
                 else
@@ -2899,6 +2961,7 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                 Mapping temp = new Mapping();
                 temp.setCode(query_code);
                 temp.setWord("。");
+                temp.setChinesePunctuationSymbolRecord();
                 if (result.size() > 3)
                     result.add(3, temp);
                 else
@@ -2972,17 +3035,17 @@ public class LimeDB extends LimeSQLiteOpenHelper {
 
                 limitClause = (getAllRecords) ? FINAL_RESULT_LIMIT : INITIAL_RESULT_LIMIT;
 
-                if (pword.length() > 1) {
+                int pwordCodePointLength = pword.codePointCount(0, pword.length());
+                if (pwordCodePointLength > 1) {
 
-                    String last = pword.substring(pword.length() - 1);
+                    String last = codePointSubstring(pword, pwordCodePointLength - 1, pwordCodePointLength);
 
                     String selectString =
                             "SELECT " + FIELD_ID + ", " + FIELD_DIC_pword + ", " + FIELD_DIC_cword + ", "
                                     + LIME.DB_RELATED_COLUMN_BASESCORE + ", " + LIME.DB_RELATED_COLUMN_USERSCORE
                                     + ", length(" + FIELD_DIC_pword + ") as len FROM " + LIME.DB_TABLE_RELATED + " where "
-                                    + FIELD_DIC_pword + " = '" + pword
-                                    + "' or " + FIELD_DIC_pword + " = '" + last
-                                    + "' and " + FIELD_DIC_cword + " is not null"
+                                    + FIELD_DIC_pword + " = ? or " + FIELD_DIC_pword + " = ?"
+                                    + " and " + FIELD_DIC_cword + " is not null"
                                     + " order by len desc, " + LIME.DB_RELATED_COLUMN_USERSCORE + " desc, "
                                     + LIME.DB_RELATED_COLUMN_BASESCORE + " desc ";
 
@@ -2992,7 +3055,7 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                         Log.i(TAG, "getRelatedPhrase() selectString = " + selectString);
 
                     try {
-                        cursor = db.rawQuery(selectString, null);
+                        cursor = db.rawQuery(selectString, new String[]{pword, last});
                     }catch(SQLiteException sqe){
                         if (DEBUG)
                             Log.e(TAG, "Error in database operation", sqe);
@@ -3002,9 +3065,9 @@ public class LimeDB extends LimeSQLiteOpenHelper {
 
 
                 } else {
-                    cursor = db.query(LIME.DB_TABLE_RELATED, null, FIELD_DIC_pword + " = '" + pword
-                            + "' and " + FIELD_DIC_cword + " is not null "
-                            , null, null, null, LIME.DB_RELATED_COLUMN_USERSCORE + " DESC, "
+                    cursor = db.query(LIME.DB_TABLE_RELATED, null,
+                            FIELD_DIC_pword + " = ? and " + FIELD_DIC_cword + " is not null ",
+                            new String[]{pword}, null, null, LIME.DB_RELATED_COLUMN_USERSCORE + " DESC, "
                             + LIME.DB_RELATED_COLUMN_BASESCORE + " DESC", limitClause);
                 }
                 if (cursor != null) {
@@ -3280,6 +3343,19 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                     + " (code, title, desc, keyboard, disable, selkey, endkey, spacestyle) "
                     + "select code, title, desc, keyboard, disable, selkey, endkey, spacestyle "
                     + "from sourceDB." + LIME.DB_TABLE_IM);
+                for (String tableName : validTableNames) {
+                    db.execSQL("insert into " + LIME.DB_TABLE_IM
+                        + " (code, title, desc) "
+                        + "select ?, ?, ? where not exists (select 1 from " + LIME.DB_TABLE_IM
+                        + " where code=? and title=?)",
+                        new Object[]{
+                            tableName,
+                            LIME.IM_FULL_NAME,
+                            defaultImFullName(tableName, tableName),
+                            tableName,
+                            LIME.IM_FULL_NAME
+                        });
+                }
             }
 
             // Import related table if requested
@@ -3598,13 +3674,18 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                     return;
                 }
 
+                String version = "";
                 String imname = "";
                 String line;
                 String endkey = "";
+                String limeendkey = "";
                 String selkey = "";
                 String spacestyle = "";
+                boolean escapedFormat = false;
                 StringBuilder imkeys = new StringBuilder();
                 StringBuilder imkeynames = new StringBuilder();
+                String imkeysHeader = "";
+                String imkeynamesHeader = "";
 
 
                 // Check if source file is .cin format
@@ -3622,6 +3703,9 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                     List<String> templist = new ArrayList<>();
                     while ((line = buf.readLine()) != null
                             && !isCinFormat) {
+                        if (line.trim().isEmpty() || line.trim().startsWith("#")) {
+                            continue;
+                        }
                         templist.add(line);
                         if (i >= maxLinesToProcess) {
                             break;
@@ -3721,9 +3805,11 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                                 // Add by Jeremy '10, 3 , 27
                                 // use %cname as mapping_version of .cin
                                 // Jeremy '11,6,5 add selkey, endkey and spacestyle support
-                                if (!(line.trim().toLowerCase(Locale.US).startsWith("%cname")
+                                if (!(line.trim().toLowerCase(Locale.US).startsWith("%version")
+                                        || line.trim().toLowerCase(Locale.US).startsWith("%cname")
                                         || line.trim().toLowerCase(Locale.US).startsWith("%selkey")
                                         || line.trim().toLowerCase(Locale.US).startsWith("%endkey")
+                                        || line.trim().toLowerCase(Locale.US).startsWith("%limeendkey")
                                         || line.trim().toLowerCase(Locale.US).startsWith("%spacestyle")
                                 )) {
                                     continue;
@@ -3764,27 +3850,68 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                         } else if (line.trim().isEmpty()) {
                             continue;
                         }
+                        if (!isCinFormat && line.trim().startsWith("#")) {
+                            continue;
+                        }
                         //else { line.length() }
 
                         try {
+                            if (!isCinFormat && line.trim().startsWith("@")) {
+                                List<String> metaParts = splitLimeMetadataFields(line, escapedFormat);
+                                if (metaParts.size() >= 2) {
+                                    String metaKey = metaParts.get(0).trim().toLowerCase(Locale.US);
+                                    String metaValue = metaParts.get(1).trim();
+                                    if ("@format@".equals(metaKey)) {
+                                        escapedFormat = "lime-text-v2".equalsIgnoreCase(metaValue);
+                                        continue;
+                                    } else if ("@version@".equals(metaKey)) {
+                                        version = metaValue;
+                                        continue;
+                                    } else if ("@cname@".equals(metaKey)) {
+                                        imname = metaValue;
+                                        if (version.isEmpty()) version = imname;
+                                        continue;
+                                    } else if ("@selkey@".equals(metaKey)) {
+                                        selkey = metaValue;
+                                        continue;
+                                    } else if ("@endkey@".equals(metaKey)) {
+                                        endkey = metaValue;
+                                        continue;
+                                    } else if ("@limeendkey@".equals(metaKey)) {
+                                        limeendkey = metaValue;
+                                        continue;
+                                    } else if ("@spacestyle@".equals(metaKey)) {
+                                        spacestyle = metaValue;
+                                        continue;
+                                    } else if ("@imkeys@".equals(metaKey)) {
+                                        imkeysHeader = metaValue;
+                                        continue;
+                                    } else if ("@imkeynames@".equals(metaKey)) {
+                                        imkeynamesHeader = metaValue;
+                                        continue;
+                                    }
+                                }
+                                continue;
+                            }
+
                             // Handle related table import format: pword|cword|basescore|userscore
                             if (isRelatedTable && delimiter_symbol.equals("|")) {
                                 try {
-                                    String[] parts = line.split("\\|");
-                                    if (parts.length >= 4) {
-                                        String pword = parts[0].trim();
-                                        String cword = parts[1].trim();
+                                    List<String> parts = splitEscapedFields(line, delimiter_symbol, escapedFormat);
+                                    if (parts.size() >= 4) {
+                                        String pword = parts.get(0).trim();
+                                        String cword = parts.get(1).trim();
                                         int basescore = 0;
                                         int userscore = 0;
                                         
                                         try {
-                                            basescore = Integer.parseInt(parts[2].trim());
+                                            basescore = Integer.parseInt(parts.get(2).trim());
                                         } catch (NumberFormatException e) {
                                             if (DEBUG) Log.e(TAG, "Error parsing basescore from line: " + line, e);
                                         }
                                         
                                         try {
-                                            userscore = Integer.parseInt(parts[3].trim());
+                                            userscore = Integer.parseInt(parts.get(3).trim());
                                         } catch (NumberFormatException e) {
                                             if (DEBUG) Log.e(TAG, "Error parsing userscore from line: " + line, e);
                                         }
@@ -3803,20 +3930,20 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                                             }
                                         }
                                         continue; // Skip regular parsing for related table
-                                    } else if (parts.length == 3) {
+                                    } else if (parts.size() == 3) {
                                         // Legacy format: pword+cword|basescore|userscore (backward compatibility)
-                                        String pwordCword = parts[0].trim();
+                                        String pwordCword = parts.get(0).trim();
                                         int basescore = 0;
                                         int userscore = 0;
                                         
                                         try {
-                                            basescore = Integer.parseInt(parts[1].trim());
+                                            basescore = Integer.parseInt(parts.get(1).trim());
                                         } catch (NumberFormatException e) {
                                             if (DEBUG) Log.e(TAG, "Error parsing basescore from line: " + line, e);
                                         }
                                         
                                         try {
-                                            userscore = Integer.parseInt(parts[2].trim());
+                                            userscore = Integer.parseInt(parts.get(2).trim());
                                         } catch (NumberFormatException e) {
                                             if (DEBUG) Log.e(TAG, "Error parsing userscore from line: " + line, e);
                                         }
@@ -3827,15 +3954,14 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                                         String cword = "";
                                         
                                         if (!pwordCword.isEmpty()) {
-                                            // Try 1 character first
-                                            pword = pwordCword.substring(0, Math.min(1, pwordCword.length()));
-                                            if (pwordCword.length() > 1) {
-                                                cword = pwordCword.substring(1);
-                                            }
+                                            String[] relatedWords = splitLeadingCodePoint(pwordCword);
+                                            pword = relatedWords[0];
+                                            cword = relatedWords[1];
                                             // If cword is empty or too short, try 2 characters for pword
                                             if (cword.isEmpty() && pwordCword.length() > 2) {
-                                                pword = pwordCword.substring(0, Math.min(2, pwordCword.length()));
-                                                cword = pwordCword.substring(2);
+                                                int end = pwordCword.offsetByCodePoints(0, Math.min(2, pwordCword.codePointCount(0, pwordCword.length())));
+                                                pword = pwordCword.substring(0, end);
+                                                cword = pwordCword.substring(end);
                                             }
                                         }
                                         
@@ -3864,69 +3990,54 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                             String code = null, word = null;
                             if (isCinFormat) {
                                 if (line.contains("\t")) {
+                                    List<String> parts = splitEscapedFields(line, "\t", false);
                                     try {
-                                        code = line.split("\t")[0];
-                                        word = line.split("\t")[1];
+                                        code = parts.get(0);
+                                        word = parts.get(1);
                                     } catch (Exception e) {
                                         if (DEBUG) Log.e(TAG, "Error parsing line with tab delimiter: " + line, e);
                                         continue;
                                     }
                                     try {
                                         // Simply ignore error and try to load score and basescore values
-                                        source_score = Integer.parseInt(line.split("\t")[2]);
-                                        source_basescore = Integer.parseInt(line.split("\t")[3]);
+                                        source_score = Integer.parseInt(parts.get(2).trim());
+                                        source_basescore = Integer.parseInt(parts.get(3).trim());
                                     } catch (Exception e) {
                                         if (DEBUG) Log.e(TAG, "Error parsing score values from line: " + line, e);
                                     }
                                 } else if (line.contains(" ")) {
+                                    List<String> parts = splitEscapedFields(line, " ", false);
                                     try {
-                                        code = line.split(" ")[0];
-                                        word = line.split(" ")[1];
+                                        code = parts.get(0);
+                                        word = parts.get(1);
                                     } catch (Exception e) {
                                         if (DEBUG) Log.e(TAG, "Error parsing line with space delimiter: " + line, e);
                                         continue;
                                     }
                                     try {
                                         // Simply ignore error and try to load score and basescore values
-                                        source_score = Integer.parseInt(line.split(" ")[2]);
-                                        source_basescore = Integer.parseInt(line.split(" ")[3]);
+                                        source_score = Integer.parseInt(parts.get(2).trim());
+                                        source_basescore = Integer.parseInt(parts.get(3).trim());
                                     } catch (Exception e) {
                                         if (DEBUG) Log.e(TAG, "Error parsing score values from line: " + line, e);
                                     }
                                 }
                             } else {
-                                if (delimiter_symbol.equals("|")) {
-                                    try {
-                                        code = line.split("\\|")[0];
-                                        word = line.split("\\|")[1];
-                                    } catch (Exception e) {
-                                        if (DEBUG) Log.e(TAG, "Error parsing line with pipe delimiter: " + line, e);
-                                        continue;
-                                    }
-                                    try {
-                                        // Simply ignore error and try to load score and basescore values
-                                        source_score = Integer.parseInt(line.split("\\|")[2]);
-                                        source_basescore = Integer.parseInt(line.split("\\|")[3]);
-                                    } catch (Exception e) {
-                                        if (DEBUG) Log.e(TAG, "Error parsing score values from line: " + line, e);
-                                    }
-                                } else {
-                                    try {
-                                        code = line.split(delimiter_symbol)[0];
-                                        word = line.split(delimiter_symbol)[1];
-                                    } catch (Exception e) {
-                                        if (DEBUG) Log.e(TAG, "Error parsing line with delimiter: " + line, e);
-                                        continue;
-                                    }
-                                    try {
-                                        // Simply ignore error and try to load score and basescore values
-                                        source_score = Integer.parseInt(line.split(delimiter_symbol)[2]);
-                                        source_basescore = Integer.parseInt(line.split(delimiter_symbol)[3]);
-                                    } catch (Exception e) {
-                                        if (DEBUG) Log.e(TAG, "Error parsing score values from line: " + line, e);
-                                    }
+                                List<String> parts = splitEscapedFields(line, delimiter_symbol, escapedFormat);
+                                try {
+                                    code = parts.get(0);
+                                    word = parts.get(1);
+                                } catch (Exception e) {
+                                    if (DEBUG) Log.e(TAG, "Error parsing line with delimiter: " + line, e);
+                                    continue;
                                 }
-
+                                try {
+                                    // Simply ignore error and try to load score and basescore values
+                                    source_score = Integer.parseInt(parts.get(2).trim());
+                                    source_basescore = Integer.parseInt(parts.get(3).trim());
+                                } catch (Exception e) {
+                                    if (DEBUG) Log.e(TAG, "Error parsing score values from line: " + line, e);
+                                }
                             }
                             if (code == null || code.trim().isEmpty()) {
                                 continue;
@@ -3939,34 +4050,34 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                                 word = word.trim();
                             }
 
-                            // Skip meta header lines (export writes @version@, @selkey@, @endkey@, @spacestyle@)
                             String codeLower = code.toLowerCase(Locale.US);
-                            if (codeLower.startsWith("@")) {
-                                if (codeLower.contains("@version@")) {
-                                    imname = word.trim();
-                                } else if (codeLower.contains("@selkey@")) {
-                                    selkey = word.trim();
-                                } else if (codeLower.contains("@endkey@")) {
-                                    endkey = word.trim();
-                                } else if (codeLower.contains("@spacestyle@")) {
-                                    spacestyle = word.trim();
-                                }
-                                continue; // do not insert meta into table
+                            boolean escapedMetadataCode = escapedFormat && line.trim().startsWith("\\%");
+                            String metadataWord = word.trim();
+                            if (!escapedMetadataCode && codeLower.startsWith("%") && line.length() > code.length()) {
+                                metadataWord = line.substring(code.length()).trim();
                             }
 
-                            if (codeLower.contains("%cname")) {
-                                imname = word.trim();
+                            if (!escapedMetadataCode && codeLower.equals("%version")) {
+                                version = metadataWord;
                                 continue;
-                            } else if (codeLower.contains("%selkey")) {
-                                selkey = word.trim();
+                            } else if (!escapedMetadataCode && codeLower.equals("%cname")) {
+                                imname = metadataWord;
+                                if (version.isEmpty()) version = imname;
+                                continue;
+                            } else if (!escapedMetadataCode && codeLower.equals("%selkey")) {
+                                selkey = metadataWord;
                                 if (DEBUG) Log.i(TAG, "loadfile(): selkey:" + selkey);
                                 continue;
-                            } else if (codeLower.contains("%endkey")) {
-                                endkey = word.trim();
+                            } else if (!escapedMetadataCode && codeLower.equals("%endkey")) {
+                                endkey = metadataWord;
                                 if (DEBUG) Log.i(TAG, "loadfile(): endkey:" + endkey);
                                 continue;
-                            } else if (codeLower.contains("%spacestyle")) {
-                                spacestyle = word.trim();
+                            } else if (!escapedMetadataCode && codeLower.equals("%limeendkey")) {
+                                limeendkey = metadataWord;
+                                if (DEBUG) Log.i(TAG, "loadfile(): limeendkey:" + limeendkey);
+                                continue;
+                            } else if (!escapedMetadataCode && codeLower.equals("%spacestyle")) {
+                                spacestyle = metadataWord;
                                 continue;
                             } else {
                                 code = codeLower;
@@ -4031,8 +4142,12 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                     mLIMEPref.setParameter("_table", "");
 
                     setImConfig(table, "source", filename.getName());
+                    if (version.isEmpty()) {
+                        version = filename.getName();
+                    }
+                    setImConfig(table, "version", version);
                     if (imname.isEmpty()) {
-                        setImConfig(table, "name", filename.getName());
+                        setImConfig(table, "name", defaultImFullName(table, filename.getName()));
                     } else {
                         setImConfig(table, "name", imname);
                     }
@@ -4057,9 +4172,12 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                     } else {
                         if (!selkey.isEmpty()) setImConfig(table, "selkey", selkey);
                         if (!endkey.isEmpty()) setImConfig(table, "endkey", endkey);
+                        if (!limeendkey.isEmpty()) setImConfig(table, LIME.IM_LIME_ENDKEY, limeendkey);
                         if (!spacestyle.isEmpty()) setImConfig(table, "spacestyle", spacestyle);
-                        if (!imkeys.toString().isEmpty()) setImConfig(table, "imkeys", imkeys.toString());
-                        if (!imkeynames.toString().isEmpty()) setImConfig(table, "imkeynames", imkeynames.toString());
+                        if (!imkeysHeader.isEmpty()) setImConfig(table, "imkeys", imkeysHeader);
+                        else if (!imkeys.toString().isEmpty()) setImConfig(table, "imkeys", imkeys.toString());
+                        if (!imkeynamesHeader.isEmpty()) setImConfig(table, "imkeynames", imkeynamesHeader);
+                        else if (!imkeynames.toString().isEmpty()) setImConfig(table, "imkeynames", imkeynames.toString());
                     }
                     if (DEBUG)
                         Log.i(TAG, "importTxtTable():update IM info: imkeys:" + imkeys + " imkeynames:" + imkeynames);
@@ -4100,6 +4218,8 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                         }
                     } else if (table.equals(LIME.DB_TABLE_DAYI)) {
                         kConfig = getKeyboardConfig("dayisym");
+                    } else if (table.equals(LIME.DB_TABLE_CJ4)) {
+                        kConfig = getKeyboardConfig("cj");
                     } else if (table.equals(LIME.DB_TABLE_CJ5)) {
                         kConfig = getKeyboardConfig("cj");
                     } else if (table.equals(LIME.DB_TABLE_ECJ)) {
@@ -4200,6 +4320,138 @@ public class LimeDB extends LimeSQLiteOpenHelper {
             return " ";
         }
 
+    }
+
+    private List<String> splitLimeMetadataFields(String line, boolean escapedFormat) {
+        String[] delimiters = {"|", "\t", ",", " "};
+        for (String delimiter : delimiters) {
+            List<String> parts = splitEscapedFields(line, delimiter, escapedFormat);
+            if (parts.size() >= 2 && parts.get(0).trim().startsWith("@")) {
+                if (parts.size() == 2) {
+                    return parts;
+                }
+                List<String> merged = new ArrayList<>();
+                merged.add(parts.get(0));
+                StringBuilder value = new StringBuilder(parts.get(1));
+                for (int i = 2; i < parts.size(); i++) {
+                    value.append(delimiter).append(parts.get(i));
+                }
+                merged.add(value.toString());
+                return merged;
+            }
+        }
+        List<String> fallback = new ArrayList<>();
+        fallback.add(line);
+        return fallback;
+    }
+
+    private String defaultImFullName(String table, String fallback) {
+        if (table != null) {
+            for (int i = 0; i < LIME.IM_CODES.length && i < LIME.IM_FULL_NAMES.length; i++) {
+                if (table.equals(LIME.IM_CODES[i])) {
+                    return LIME.IM_FULL_NAMES[i];
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private List<String> splitEscapedFields(String line, String delimiter, boolean escapedFormat) {
+        List<String> result = new ArrayList<>();
+        if (delimiter == null || delimiter.isEmpty()) {
+            result.add(decodeEscapedField(line, escapedFormat));
+            return result;
+        }
+
+        char delimiterChar = delimiter.charAt(0);
+        StringBuilder field = new StringBuilder();
+        boolean escaping = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (escapedFormat && escaping) {
+                field.append(decodeEscapedChar(c));
+                escaping = false;
+            } else if (escapedFormat && c == '\\') {
+                escaping = true;
+            } else if (c == delimiterChar) {
+                result.add(field.toString());
+                field.setLength(0);
+            } else {
+                field.append(c);
+            }
+        }
+        if (escapedFormat && escaping) {
+            field.append('\\');
+        }
+        result.add(field.toString());
+        return result;
+    }
+
+    private String decodeEscapedField(String value, boolean escapedFormat) {
+        if (!escapedFormat || value == null || value.indexOf('\\') < 0) {
+            return value;
+        }
+        StringBuilder out = new StringBuilder();
+        boolean escaping = false;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (escaping) {
+                out.append(decodeEscapedChar(c));
+                escaping = false;
+            } else if (c == '\\') {
+                escaping = true;
+            } else {
+                out.append(c);
+            }
+        }
+        if (escaping) {
+            out.append('\\');
+        }
+        return out.toString();
+    }
+
+    private char decodeEscapedChar(char c) {
+        if (c == 't') return '\t';
+        if (c == 'n') return '\n';
+        return c;
+    }
+
+    private String escapeField(String value, String delimiter) {
+        if (value == null) {
+            return "";
+        }
+        char delimiterChar = (delimiter == null || delimiter.isEmpty()) ? '|' : delimiter.charAt(0);
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\\') out.append("\\\\");
+            else if (c == delimiterChar) out.append('\\').append(c);
+            else if (c == '@') out.append("\\@");
+            else if (c == '%') out.append("\\%");
+            else if (c == '\t') out.append("\\t");
+            else if (c == '\n') out.append("\\n");
+            else out.append(c);
+        }
+        return out.toString();
+    }
+
+    private boolean needsEscapedField(String value, String delimiter, boolean codeField) {
+        if (value == null) {
+            return false;
+        }
+        char delimiterChar = (delimiter == null || delimiter.isEmpty()) ? '|' : delimiter.charAt(0);
+        String lower = value.toLowerCase(Locale.US);
+        return value.indexOf(delimiterChar) >= 0
+                || value.indexOf('\\') >= 0
+                || value.indexOf('\t') >= 0
+                || value.indexOf('\n') >= 0
+                || (codeField && value.startsWith("@"))
+                || (codeField && (lower.startsWith("%version")
+                || lower.startsWith("%cname")
+                || lower.startsWith("%selkey")
+                || lower.startsWith("%endkey")
+                || lower.startsWith("%limeendkey")
+                || lower.startsWith("%spacestyle")));
     }
 
    /* */
@@ -4314,13 +4566,13 @@ public class LimeDB extends LimeSQLiteOpenHelper {
             Cursor cursor;
 
             if (cword == null || cword.trim().isEmpty()) {
-                cursor = db.query(LIME.DB_TABLE_RELATED, null, FIELD_DIC_pword + " = '"
-                        + pword + "'" + " AND " + FIELD_DIC_cword + " IS NULL"
-                        , null, null, null, null, null);
+                cursor = db.query(LIME.DB_TABLE_RELATED, null,
+                        FIELD_DIC_pword + " = ? AND " + FIELD_DIC_cword + " IS NULL",
+                        new String[]{pword}, null, null, null, null);
             } else {
-                cursor = db.query(LIME.DB_TABLE_RELATED, null, FIELD_DIC_pword + " = '"
-                        + pword + "'" + " AND " + FIELD_DIC_cword + " = '"
-                        + cword + "'", null, null, null, null, null);
+                cursor = db.query(LIME.DB_TABLE_RELATED, null,
+                        FIELD_DIC_pword + " = ? AND " + FIELD_DIC_cword + " = ?",
+                        new String[]{pword, cword}, null, null, null, null);
             }
 
             if (cursor.moveToFirst()) {
@@ -4660,16 +4912,26 @@ public class LimeDB extends LimeSQLiteOpenHelper {
         //Jeremy '12,5,1 checkDBConnection() when db is restoring or replaced.
         if (checkDBConnection()) return null;
 
+        // Lazy guard: make sure the scored dictionary is present/current even in a session
+        // that never opened settings (mirrors emoji's checkEmojiDB()).
+        refreshDictionaryDataIfNeeded();
 
         List<String> result = new ArrayList<>();
+        String prefix = (word == null) ? "" : word;
+        String upper = prefixUpperBound(prefix);
+        if (prefix.isEmpty() || upper == null) return result;
+
         try {
-            //String value = "";
             int similarSize = mLIMEPref.getSimilarCodeCandidates();
 
-            String selectString = "SELECT word FROM dictionary WHERE word MATCH '" + word + "*' AND word <> '"+ word +"'ORDER BY word ASC LIMIT " + similarSize + ";";
-            //SQLiteDatabase db = this.getSqliteDb(true);
+            // Indexed prefix range scan (no FTS). Ranking: (score + basescore) DESC, word ASC.
+            // Keeps the #103 exact-match filter (word <> prefix).
+            String selectString =
+                    "SELECT word FROM " + DICTIONARY_TABLE +
+                    " WHERE word >= ? AND word < ? AND word <> ?" +
+                    " ORDER BY (score + basescore) DESC, word ASC LIMIT " + similarSize;
 
-            Cursor cursor = db.rawQuery(selectString, null);
+            Cursor cursor = db.rawQuery(selectString, new String[]{prefix, upper, prefix});
             if (cursor != null) {
                 if (cursor.getCount() > 0) {
                     cursor.moveToFirst();
@@ -4687,6 +4949,26 @@ public class LimeDB extends LimeSQLiteOpenHelper {
         }
 
         return result;
+    }
+
+    /**
+     * Half-open upper bound for a prefix range scan: the prefix with its final code point
+     * incremented ("sal" -> "sam"). If the prefix ends at the maximum code point, drop it
+     * and increment the previous character (standard string-successor). Returns null when no
+     * successor exists (empty prefix or all-max), in which case the caller skips the query.
+     */
+    private static String prefixUpperBound(String prefix) {
+        if (prefix == null || prefix.isEmpty()) return null;
+        char[] chars = prefix.toCharArray();
+        for (int i = chars.length - 1; i >= 0; i--) {
+            if (chars[i] != Character.MAX_VALUE) {
+                char[] out = new char[i + 1];
+                System.arraycopy(chars, 0, out, 0, i + 1);
+                out[i] = (char) (chars[i] + 1);
+                return new String(out);
+            }
+        }
+        return null; // all characters at max — no successor
     }
 
     /**
@@ -4910,12 +5192,28 @@ public class LimeDB extends LimeSQLiteOpenHelper {
     }
 
     private boolean isEmojiDataCurrent() {
+        if (!hasEmojiDataRows()) {
+            return false;
+        }
         try (Cursor cursor = db.rawQuery(
                 "SELECT desc FROM " + LIME.DB_TABLE_IM + " WHERE code=? AND title=?",
                 new String[]{"emoji", "version"})) {
             return cursor != null && cursor.moveToFirst() && EMOJI_DATA_VERSION.equals(cursor.getString(0));
         } catch (Exception e) {
             Log.e(TAG, "Error checking emoji data version", e);
+            return false;
+        }
+    }
+
+    private boolean hasEmojiDataRows() {
+        return hasEmojiDataRows(db);
+    }
+
+    private static boolean hasEmojiDataRows(SQLiteDatabase targetDb) {
+        try (Cursor cursor = targetDb.rawQuery("SELECT COUNT(*) FROM " + EMOJI_TABLE_DATA, null)) {
+            return cursor != null && cursor.moveToFirst() && cursor.getInt(0) > 0;
+        } catch (Exception e) {
+            Log.e(TAG, "Error checking emoji data row count", e);
             return false;
         }
     }
@@ -4947,9 +5245,232 @@ public class LimeDB extends LimeSQLiteOpenHelper {
         }
     }
 
+    // ---------------------------------------------------------------------------------
+    // Scored English dictionary (docs/ENG_AUTO_COMPLETION.md "Scored Dictionary (Android)")
+    //
+    // Replaces the legacy fts3(word) dictionary with a plain indexed scored table
+    // dictionary(word, basescore, score). Self-versioned via im(code='dictionary',
+    // title='version') — checked on every open in ensureCurrentDatabase(), NOT via
+    // lime.db user_version (which stays 104). Mirrors the emoji payload mechanism above.
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * Idempotent open-path dictionary check. Drops a legacy fts3 dictionary, creates the
+     * scored table if missing/wrong-shape, then imports basescore from the bundled
+     * R.raw.dictionary payload when the im version row is absent or stale. Gated on actual
+     * schema state, never on user_version, so a restored DB that lies about its version is
+     * still repaired.
+     */
+    private void refreshDictionaryDataIfNeeded() {
+        if (checkDBConnection()) {
+            return;
+        }
+        ensureDictionarySchema(db);
+        if (isDictionaryDataCurrent()) {
+            return;
+        }
+
+        File importFile = new File(mContext.getCacheDir(), "dictionary_import.db");
+        try (InputStream inputStream = mContext.getResources().openRawResource(R.raw.dictionary)) {
+            LIMEUtilities.copyRAWFile(inputStream, importFile);
+            if (!tableExists(importFile.getAbsolutePath(), DICTIONARY_PAYLOAD_TABLE)) {
+                Log.w(TAG, "Bundled dictionary.db does not contain dictionary_data; keeping existing dictionary");
+                return;
+            }
+            importDictionaryData(importFile);
+        } catch (Exception e) {
+            Log.e(TAG, "Error refreshing dictionary data", e);
+        } finally {
+            if (importFile.exists() && !importFile.delete()) {
+                Log.w(TAG, "Failed to delete temporary dictionary import database");
+            }
+        }
+    }
+
+    /**
+     * Ensure the scored dictionary table exists in the expected shape. Drops a legacy fts3
+     * dictionary defensively (BEFORE create), creates the scored table + indexes when the
+     * current object is missing or not the scored shape. The legacy fts3(word) table has no
+     * score column, so this is a clean drop-and-rebuild (nothing to preserve).
+     */
+    private static void ensureDictionarySchema(SQLiteDatabase targetDb) {
+        if (isLegacyFtsDictionary(targetDb)) {
+            dropLegacyFtsDictionary(targetDb);
+        }
+        if (!isScoredDictionaryShape(targetDb)) {
+            targetDb.execSQL("DROP TABLE IF EXISTS " + DICTIONARY_TABLE);
+            targetDb.execSQL("CREATE TABLE IF NOT EXISTS " + DICTIONARY_TABLE + " (" +
+                    "word TEXT PRIMARY KEY, " +
+                    "basescore INTEGER NOT NULL DEFAULT 0, " +
+                    "score INTEGER NOT NULL DEFAULT 0)");
+        }
+        targetDb.execSQL("CREATE INDEX IF NOT EXISTS dictionary_word_idx ON " + DICTIONARY_TABLE + "(word)");
+        targetDb.execSQL("CREATE INDEX IF NOT EXISTS dictionary_rank_idx ON " + DICTIONARY_TABLE + "(score + basescore)");
+    }
+
+    /** True when a 'dictionary' object exists and is an FTS virtual table. */
+    private static boolean isLegacyFtsDictionary(SQLiteDatabase targetDb) {
+        try (Cursor cursor = targetDb.rawQuery(
+                "SELECT sql FROM sqlite_master WHERE name=?", new String[]{DICTIONARY_TABLE})) {
+            if (cursor != null && cursor.moveToFirst()) {
+                String sql = cursor.getString(0);
+                return sql != null && sql.toLowerCase(Locale.US).contains("virtual table")
+                        && sql.toLowerCase(Locale.US).contains("using fts");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error probing legacy fts dictionary", e);
+        }
+        return false;
+    }
+
+    /** True when 'dictionary' exists with both basescore and score columns. */
+    private static boolean isScoredDictionaryShape(SQLiteDatabase targetDb) {
+        boolean hasBase = false, hasScore = false;
+        try (Cursor cursor = targetDb.rawQuery("PRAGMA table_info(" + DICTIONARY_TABLE + ")", null)) {
+            if (cursor != null) {
+                int nameIdx = cursor.getColumnIndex("name");
+                while (cursor.moveToNext()) {
+                    String col = nameIdx >= 0 ? cursor.getString(nameIdx) : null;
+                    if ("basescore".equals(col)) hasBase = true;
+                    else if ("score".equals(col)) hasScore = true;
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error probing scored dictionary shape", e);
+        }
+        return hasBase && hasScore;
+    }
+
+    /**
+     * Remove a legacy fts3 dictionary and its shadow tables. Tries a normal DROP first; if
+     * SQLite rejects it because the saved DDL references an unavailable fts module (the #88
+     * crash family), falls back to a narrow writable_schema cleanup of the dictionary object
+     * and its shadow tables. Then bumps the schema version so the connection re-reads it.
+     */
+    private static void dropLegacyFtsDictionary(SQLiteDatabase targetDb) {
+        try {
+            targetDb.execSQL("DROP TABLE IF EXISTS " + DICTIONARY_TABLE);
+        } catch (Exception dropEx) {
+            Log.w(TAG, "Normal DROP of legacy fts dictionary failed; using writable_schema cleanup", dropEx);
+            try {
+                targetDb.execSQL("PRAGMA writable_schema=ON");
+                targetDb.execSQL("DELETE FROM sqlite_master WHERE name='" + DICTIONARY_TABLE +
+                        "' OR name LIKE 'dictionary\\_%' ESCAPE '\\'");
+                targetDb.execSQL("PRAGMA writable_schema=OFF");
+                targetDb.execSQL("PRAGMA schema_version=" + (getSchemaVersion(targetDb) + 1));
+            } catch (Exception cleanupEx) {
+                Log.e(TAG, "writable_schema cleanup of legacy fts dictionary failed", cleanupEx);
+            }
+        }
+        // Android's fts3 DROP TABLE does not always cascade-drop the shadow tables, so drop
+        // every remaining 'dictionary_%' SHADOW TABLE discovered from sqlite_master. Restrict
+        // to type='table' so we never touch the scored table's own indexes (dictionary_word_idx
+        // / dictionary_rank_idx also match 'dictionary_%').
+        for (String shadow : remainingDictionaryShadowTables(targetDb)) {
+            try {
+                targetDb.execSQL("DROP TABLE IF EXISTS " + shadow);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    /** Names of remaining 'dictionary_%' shadow TABLES (excludes indexes). */
+    private static java.util.List<String> remainingDictionaryShadowTables(SQLiteDatabase targetDb) {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        try (Cursor cursor = targetDb.rawQuery(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                        + "AND name LIKE 'dictionary\\_%' ESCAPE '\\'", null)) {
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    names.add(cursor.getString(0));
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error listing dictionary shadow tables", e);
+        }
+        return names;
+    }
+
+    private static int getSchemaVersion(SQLiteDatabase targetDb) {
+        try (Cursor cursor = targetDb.rawQuery("PRAGMA schema_version", null)) {
+            return (cursor != null && cursor.moveToFirst()) ? cursor.getInt(0) : 0;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** True when the dictionary has rows and the stored im version row matches the constant. */
+    private boolean isDictionaryDataCurrent() {
+        if (!hasDictionaryRows(db)) {
+            return false;
+        }
+        try (Cursor cursor = db.rawQuery(
+                "SELECT desc FROM " + LIME.DB_TABLE_IM + " WHERE code=? AND title=?",
+                new String[]{"dictionary", "version"})) {
+            return cursor != null && cursor.moveToFirst()
+                    && DICTIONARY_DATA_VERSION.equals(cursor.getString(0));
+        } catch (Exception e) {
+            Log.e(TAG, "Error checking dictionary data version", e);
+            return false;
+        }
+    }
+
+    private static boolean hasDictionaryRows(SQLiteDatabase targetDb) {
+        try (Cursor cursor = targetDb.rawQuery("SELECT COUNT(*) FROM " + DICTIONARY_TABLE, null)) {
+            return cursor != null && cursor.moveToFirst() && cursor.getInt(0) > 0;
+        } catch (Exception e) {
+            Log.e(TAG, "Error checking dictionary row count", e);
+            return false;
+        }
+    }
+
+    /**
+     * Import basescore from the bundled dictionary.db payload. Upserts basescore for every
+     * word while preserving any existing per-user score, then stamps the im version row.
+     * Never clears existing data on a bad payload (guarded by the caller).
+     */
+    private void importDictionaryData(File importFile) {
+        String attachedPath = quoteSqlString(importFile.getAbsolutePath());
+        db.beginTransaction();
+        try {
+            db.execSQL("ATTACH DATABASE " + attachedPath + " AS dict_src");
+            // Upsert basescore; keep score. INSERT defaults score to 0 for new words.
+            db.execSQL("INSERT INTO " + DICTIONARY_TABLE + " (word, basescore, score) " +
+                    "SELECT word, basescore, 0 FROM dict_src." + DICTIONARY_PAYLOAD_TABLE + " " +
+                    "WHERE true " +
+                    "ON CONFLICT(word) DO UPDATE SET basescore = excluded.basescore");
+            db.execSQL("INSERT OR REPLACE INTO " + LIME.DB_TABLE_IM + " (code, title, desc) " +
+                    "VALUES ('dictionary', 'version', '" + DICTIONARY_DATA_VERSION + "')");
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+            try {
+                db.execSQL("DETACH DATABASE dict_src");
+            } catch (Exception e) {
+                Log.w(TAG, "Error detaching dictionary import database", e);
+            }
+        }
+    }
+
+    /**
+     * Learn a picked English word by incrementing its score (+1). UPDATE-only: a picked word
+     * is always already in the dictionary, so a missing row is a stale pick and is ignored.
+     * Safe to call from any thread; guarded by checkDBConnection() like other writes.
+     */
+    public synchronized void recordEnglishUsage(String word) {
+        if (word == null || word.trim().isEmpty()) return;
+        if (checkDBConnection()) return;
+        try {
+            db.execSQL("UPDATE " + DICTIONARY_TABLE + " SET score = score + 1 WHERE word = ?",
+                    new Object[]{word});
+        } catch (Exception e) {
+            Log.e(TAG, "Error recording English usage for: " + word, e);
+        }
+    }
+
     private static void createEmojiTables(SQLiteDatabase targetDb, boolean forceRecreate) {
         if (forceRecreate) {
-            targetDb.execSQL("DROP TABLE IF EXISTS " + EMOJI_TABLE_FTS);
+            dropEmojiFtsTable(targetDb);
             targetDb.execSQL("DROP TABLE IF EXISTS " + EMOJI_TABLE_USER);
             targetDb.execSQL("DROP TABLE IF EXISTS " + EMOJI_TABLE_DATA);
         }
@@ -4965,13 +5486,32 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                 "tags_tw TEXT, " +
                 "version REAL NOT NULL)");
         targetDb.execSQL("CREATE INDEX IF NOT EXISTS idx_emoji_group ON " + EMOJI_TABLE_DATA + "(group_name, sort_order)");
-        if (!tableExists(targetDb, EMOJI_TABLE_FTS)) {
+        boolean recreatedEmojiFts = false;
+        if (!tableExists(targetDb, EMOJI_TABLE_FTS) || !isEmojiFtsTableUsable(targetDb)) {
+            dropEmojiFtsTable(targetDb);
             createEmojiFtsTable(targetDb);
+            recreatedEmojiFts = true;
         }
         targetDb.execSQL("CREATE TABLE IF NOT EXISTS " + EMOJI_TABLE_USER + " (" +
                 "value TEXT PRIMARY KEY REFERENCES " + EMOJI_TABLE_DATA + "(value), " +
                 "last_used INTEGER, " +
                 "use_count INTEGER NOT NULL DEFAULT 0)");
+        if (recreatedEmojiFts && hasEmojiDataRows(targetDb)) {
+            rebuildEmojiFts(targetDb);
+        }
+    }
+
+    private static void ensureCj4Schema(SQLiteDatabase targetDb) {
+        targetDb.execSQL("CREATE TABLE IF NOT EXISTS " + LIME.DB_TABLE_CJ4 + " (" +
+                "_id INTEGER primary key autoincrement, " +
+                "code text, " +
+                "code3r text, " +
+                "word text, " +
+                "related text, " +
+                "score integer, " +
+                "'basescore' type integer)");
+        targetDb.execSQL("CREATE INDEX IF NOT EXISTS cj4_idx_code ON " + LIME.DB_TABLE_CJ4 + " (code)");
+        targetDb.delete(LIME.DB_TABLE_KEYBOARD, LIME.DB_KEYBOARD_COLUMN_CODE + " = ?", new String[]{LIME.DB_TABLE_CJ4});
     }
 
     private static boolean tableExists(SQLiteDatabase targetDb, String tableName) {
@@ -4997,19 +5537,85 @@ public class LimeDB extends LimeSQLiteOpenHelper {
         }
     }
 
+    private static boolean isEmojiFtsTableUsable(SQLiteDatabase targetDb) {
+        try (Cursor cursor = targetDb.rawQuery("SELECT rowid FROM " + EMOJI_TABLE_FTS + " LIMIT 0", null)) {
+            return cursor != null;
+        } catch (SQLiteException e) {
+            Log.w(TAG, "Existing emoji FTS table is unusable; recreating", e);
+            return false;
+        }
+    }
+
     private static void createEmojiFtsTable(SQLiteDatabase targetDb) {
+        createEmojiFts4Table(targetDb);
+    }
+
+    private static void createEmojiFts4Table(SQLiteDatabase targetDb) {
         try {
-            targetDb.execSQL("CREATE VIRTUAL TABLE " + EMOJI_TABLE_FTS + " USING fts5(" +
+            targetDb.execSQL("CREATE VIRTUAL TABLE " + EMOJI_TABLE_FTS + " USING fts4(" +
                     "name_en, name_tw, tags_en, tags_tw, " +
-                    "content='" + EMOJI_TABLE_DATA + "', content_rowid='rowid', " +
-                    "tokenize='unicode61 remove_diacritics 1')");
-        } catch (SQLiteException fts5Error) {
-            Log.w(TAG, "FTS5 unavailable for emoji search; falling back to FTS4", fts5Error);
+                    "tokenize=unicode61 \"remove_diacritics=1\", " +
+                    "content=" + EMOJI_TABLE_DATA + ")");
+        } catch (SQLiteException fts4Error) {
+            String message = fts4Error.getMessage();
+            if (message == null || !message.contains("already exists")) {
+                throw fts4Error;
+            }
+            Log.w(TAG, "Removing residual emoji FTS schema before retrying FTS4 fallback", fts4Error);
+            dropEmojiFtsSchemaRows(targetDb);
             targetDb.execSQL("CREATE VIRTUAL TABLE " + EMOJI_TABLE_FTS + " USING fts4(" +
                     "name_en, name_tw, tags_en, tags_tw, " +
                     "tokenize=unicode61 \"remove_diacritics=1\", " +
                     "content=" + EMOJI_TABLE_DATA + ")");
         }
+    }
+
+    private static void dropEmojiFtsTable(SQLiteDatabase targetDb) {
+        SQLiteException dropError = null;
+        try {
+            targetDb.execSQL("DROP TABLE IF EXISTS " + EMOJI_TABLE_FTS);
+        } catch (SQLiteException e) {
+            dropError = e;
+            Log.w(TAG, "DROP TABLE failed while cleaning emoji FTS", e);
+        }
+        if (!emojiFtsSchemaRowsExist(targetDb)) {
+            if (dropError != null) {
+                throw dropError;
+            }
+            return;
+        }
+        Log.w(TAG, "Removing residual emoji FTS schema before recreating FTS4 table");
+        dropEmojiFtsSchemaRows(targetDb);
+    }
+
+    private static boolean emojiFtsSchemaRowsExist(SQLiteDatabase targetDb) {
+        try (Cursor cursor = targetDb.rawQuery(
+                "SELECT 1 FROM sqlite_master WHERE name = ? OR tbl_name = ? OR name LIKE ? LIMIT 1",
+                new String[]{EMOJI_TABLE_FTS, EMOJI_TABLE_FTS, EMOJI_TABLE_FTS + "_%"})) {
+            return cursor != null && cursor.moveToFirst();
+        }
+    }
+
+    private static void dropEmojiFtsSchemaRows(SQLiteDatabase targetDb) {
+        targetDb.execSQL("PRAGMA writable_schema=ON");
+        try {
+            targetDb.delete("sqlite_master",
+                    "name = ? OR tbl_name = ? OR name LIKE ?",
+                    new String[]{EMOJI_TABLE_FTS, EMOJI_TABLE_FTS, EMOJI_TABLE_FTS + "_%"});
+            bumpSchemaVersion(targetDb);
+        } finally {
+            targetDb.execSQL("PRAGMA writable_schema=OFF");
+        }
+    }
+
+    private static void bumpSchemaVersion(SQLiteDatabase targetDb) {
+        int schemaVersion = 0;
+        try (Cursor cursor = targetDb.rawQuery("PRAGMA schema_version", null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                schemaVersion = cursor.getInt(0);
+            }
+        }
+        targetDb.execSQL("PRAGMA schema_version = " + (schemaVersion + 1));
     }
 
     private static void clearEmojiBaseData(SQLiteDatabase targetDb) {
@@ -5247,7 +5853,7 @@ public class LimeDB extends LimeSQLiteOpenHelper {
      * <ul>
      *   <li><b>Regular mapping tables:</b> .lime format
      *     <ul>
-     *       <li>Header lines with IM info (@version@, @selkey@, @endkey@, @spacestyle@) if imConfig provided</li>
+     *       <li>Header lines with IM info (@format@, @version@, @cname@, @selkey@, @endkey@, @limeendkey@, @spacestyle@) if imConfig provided</li>
      *       <li>Data lines: code|word|score|basescore</li>
      *     </ul>
      *   </li>
@@ -5327,6 +5933,20 @@ public class LimeDB extends LimeSQLiteOpenHelper {
 
                             int totalRecords = relatedList.size();
                             int processedRecords = 0;
+                            boolean useEscapedFormat = false;
+                            for (Related w : relatedList) {
+                                if (needsEscapedField(w.getPword(), "|", false)
+                                        || needsEscapedField(w.getCword(), "|", false)) {
+                                    useEscapedFormat = true;
+                                    break;
+                                }
+                            }
+                            if (useEscapedFormat) {
+                                fout.write("@format@|lime-text-v2");
+                                fout.newLine();
+                            }
+                            fout.write("%chardef begin");
+                            fout.newLine();
 
                             // Write records
                             for (Related w : relatedList) {
@@ -5339,7 +5959,9 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                                     Log.w(TAG,"Skipped record with pWord ="+w.getPword() + ", cWord= " + w.getCword() + ", base score= " + w.getBasescore() + ", user score= " + w.getUserscore() + ".");
                                     continue;
                                 }
-                                String s = w.getPword() + "|" + w.getCword() + "|" + w.getBasescore() + "|" + w.getUserscore();
+                                String pword = useEscapedFormat ? escapeField(w.getPword(), "|") : w.getPword();
+                                String cword = useEscapedFormat ? escapeField(w.getCword(), "|") : w.getCword();
+                                String s = pword + "|" + cword + "|" + w.getBasescore() + "|" + w.getUserscore();
                                 fout.write(s);
                                 fout.newLine();
                                 
@@ -5348,6 +5970,8 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                                 progressStatus = mContext.getString(R.string.l3_database_exporting_records) + progressPercentageDone + "%";
 
                             }
+                            fout.write("%chardef end");
+                            fout.newLine();
                         } else {
                             // Export regular table format: code|word|score|basescore
                             List<Record> records = getRecordList(table, null, false, 0, 0);
@@ -5361,35 +5985,91 @@ public class LimeDB extends LimeSQLiteOpenHelper {
 
                             int totalRecords = records.size();
                             int processedRecords = 0;
+                            boolean useEscapedFormat = false;
+                            for (Record w : records) {
+                                if (needsEscapedField(w.getCode(), "|", true)
+                                        || needsEscapedField(w.getWord(), "|", false)) {
+                                    useEscapedFormat = true;
+                                    break;
+                                }
+                            }
 
                             // Write IM info headers if provided
                             if (imConfig != null && !imConfig.isEmpty()) {
 
+                                String version = "";
+                                String name = "";
+                                String selkey = "";
+                                String endkey = "";
+                                String limeendkey = "";
+                                String spacestyle = "";
+                                String imkeys = "";
+                                String imkeynames = "";
                                 for (ImConfig i : imConfig) {
                                     if (threadAborted) break;
-                                    
-                                    if (i.getTitle().equals(LIME.IM_FULL_NAME)) {
-                                        String s = "@version@|" + i.getDesc();
-                                        fout.write(s);
-                                        fout.newLine();
-                                    }
-                                    if (i.getTitle().equals(LIME.IM_SELKEY)) {
-                                        String s = "@selkey@|" + i.getDesc();
-                                        fout.write(s);
-                                        fout.newLine();
-                                    }
-                                    if (i.getTitle().equals(LIME.IM_ENDKEY)) {
-                                        String s = "@endkey@|" + i.getDesc();
-                                        fout.write(s);
-                                        fout.newLine();
-                                    }
-                                    if (i.getTitle().equals(LIME.IM_SPACESTYLE)) {
-                                        String s = "@spacestyle@|" + i.getDesc();
-                                        fout.write(s);
-                                        fout.newLine();
-                                    }
+
+                                    if ("version".equals(i.getTitle())) version = i.getDesc();
+                                    else if (LIME.IM_FULL_NAME.equals(i.getTitle()) || "name".equals(i.getTitle())) name = i.getDesc();
+                                    else if (LIME.IM_SELKEY.equals(i.getTitle())) selkey = i.getDesc();
+                                    else if (LIME.IM_ENDKEY.equals(i.getTitle())) endkey = i.getDesc();
+                                    else if (LIME.IM_LIME_ENDKEY.equals(i.getTitle())) limeendkey = i.getDesc();
+                                    else if (LIME.IM_SPACESTYLE.equals(i.getTitle())) spacestyle = i.getDesc();
+                                    else if ("imkeys".equals(i.getTitle())) imkeys = i.getDesc();
+                                    else if ("imkeynames".equals(i.getTitle())) imkeynames = i.getDesc();
                                 }
+                                if (needsEscapedField(version, "|", false)
+                                        || needsEscapedField(name, "|", false)
+                                        || needsEscapedField(selkey, "|", false)
+                                        || needsEscapedField(endkey, "|", false)
+                                        || needsEscapedField(limeendkey, "|", false)
+                                        || needsEscapedField(spacestyle, "|", false)
+                                        || needsEscapedField(imkeys, "|", false)
+                                        || needsEscapedField(imkeynames, "|", false)) {
+                                    useEscapedFormat = true;
+                                }
+                                if (useEscapedFormat) {
+                                    fout.write("@format@|lime-text-v2");
+                                    fout.newLine();
+                                }
+                                String exportVersion = !version.isEmpty() ? version : name;
+                                if (!exportVersion.isEmpty()) {
+                                    fout.write("@version@|" + (useEscapedFormat ? escapeField(exportVersion, "|") : exportVersion));
+                                    fout.newLine();
+                                }
+                                if (!name.isEmpty()) {
+                                    fout.write("@cname@|" + (useEscapedFormat ? escapeField(name, "|") : name));
+                                    fout.newLine();
+                                }
+                                if (!selkey.isEmpty()) {
+                                    fout.write("@selkey@|" + (useEscapedFormat ? escapeField(selkey, "|") : selkey));
+                                    fout.newLine();
+                                }
+                                if (!endkey.isEmpty()) {
+                                    fout.write("@endkey@|" + (useEscapedFormat ? escapeField(endkey, "|") : endkey));
+                                    fout.newLine();
+                                }
+                                if (!limeendkey.isEmpty()) {
+                                    fout.write("@limeendkey@|" + (useEscapedFormat ? escapeField(limeendkey, "|") : limeendkey));
+                                    fout.newLine();
+                                }
+                                if (!spacestyle.isEmpty()) {
+                                    fout.write("@spacestyle@|" + (useEscapedFormat ? escapeField(spacestyle, "|") : spacestyle));
+                                    fout.newLine();
+                                }
+                                if (!imkeys.isEmpty()) {
+                                    fout.write("@imkeys@|" + (useEscapedFormat ? escapeField(imkeys, "|") : imkeys));
+                                    fout.newLine();
+                                }
+                                if (!imkeynames.isEmpty()) {
+                                    fout.write("@imkeynames@|" + (useEscapedFormat ? escapeField(imkeynames, "|") : imkeynames));
+                                    fout.newLine();
+                                }
+                            } else if (useEscapedFormat) {
+                                fout.write("@format@|lime-text-v2");
+                                fout.newLine();
                             }
+                            fout.write("%chardef begin");
+                            fout.newLine();
 
                             // Write records
                             for (Record w : records) {
@@ -5400,7 +6080,9 @@ public class LimeDB extends LimeSQLiteOpenHelper {
 
                                     continue;
                                 }
-                                String s = w.getCode() + "|" + w.getWord() + "|" + w.getScore() + "|" + w.getBasescore();
+                                String code = useEscapedFormat ? escapeField(w.getCode(), "|") : w.getCode();
+                                String word = useEscapedFormat ? escapeField(w.getWord(), "|") : w.getWord();
+                                String s = code + "|" + word + "|" + w.getScore() + "|" + w.getBasescore();
                                 fout.write(s);
                                 fout.newLine();
                                 
@@ -5409,6 +6091,8 @@ public class LimeDB extends LimeSQLiteOpenHelper {
                                 progressStatus = mContext.getString(R.string.l3_database_exporting_records) + processedRecords + "/" + totalRecords;
 
                             }
+                            fout.write("%chardef end");
+                            fout.newLine();
                         }
                         
                         if (!threadAborted) {
@@ -5587,23 +6271,76 @@ public class LimeDB extends LimeSQLiteOpenHelper {
             cursor.moveToFirst();
             while (!cursor.isAfterLast()) {
                 //result.add(ImConfig.get(cursor));
-                ImConfig record = new ImConfig();
-                record.setId(getCursorInt(cursor, LIME.DB_IM_COLUMN_ID));
-                record.setCode(getCursorString(cursor, LIME.DB_IM_COLUMN_CODE));
-                record.setTitle(getCursorString(cursor, LIME.DB_IM_COLUMN_TITLE));
-                record.setDesc(getCursorString(cursor, LIME.DB_IM_COLUMN_DESC));
-                record.setKeyboard(getCursorString(cursor, LIME.DB_IM_COLUMN_KEYBOARD));
-                String disableStr = getCursorString(cursor, LIME.DB_IM_COLUMN_DISABLE);
-                record.setDisable(Boolean.getBoolean(disableStr));
-                record.setSelkey(getCursorString(cursor, LIME.DB_IM_COLUMN_SELKEY));
-                record.setEndkey(getCursorString(cursor, LIME.DB_IM_COLUMN_ENDKEY));
-                record.setSpacestyle(getCursorString(cursor, LIME.DB_IM_COLUMN_SPACESTYLE));
+                ImConfig record = getImConfigFromCursor(cursor);
                 cursor.moveToNext();
                 result.add(record);
             }
             cursor.close();
         }
+        appendLegacyFullNameConfigs(result, code, configEntry);
+        applyFullNameFallbacks(result, configEntry);
         return result;
+    }
+
+    private ImConfig getImConfigFromCursor(Cursor cursor) {
+        ImConfig record = new ImConfig();
+        record.setId(getCursorInt(cursor, LIME.DB_IM_COLUMN_ID));
+        record.setCode(getCursorString(cursor, LIME.DB_IM_COLUMN_CODE));
+        record.setTitle(getCursorString(cursor, LIME.DB_IM_COLUMN_TITLE));
+        record.setDesc(getCursorString(cursor, LIME.DB_IM_COLUMN_DESC));
+        record.setKeyboard(getCursorString(cursor, LIME.DB_IM_COLUMN_KEYBOARD));
+        String disableStr = getCursorString(cursor, LIME.DB_IM_COLUMN_DISABLE);
+        record.setDisable(Boolean.parseBoolean(disableStr));
+        record.setSelkey(getCursorString(cursor, LIME.DB_IM_COLUMN_SELKEY));
+        record.setEndkey(getCursorString(cursor, LIME.DB_IM_COLUMN_ENDKEY));
+        record.setSpacestyle(getCursorString(cursor, LIME.DB_IM_COLUMN_SPACESTYLE));
+        return record;
+    }
+
+    private void appendLegacyFullNameConfigs(List<ImConfig> result, String code, String configEntry) {
+        if (!LIME.IM_FULL_NAME.equals(configEntry)) return;
+
+        Set<String> existingCodes = new HashSet<>();
+        for (ImConfig record : result) {
+            if (record != null && record.getCode() != null) {
+                existingCodes.add(record.getCode());
+            }
+        }
+
+        for (int i = 0; i < LIME.IM_CODES.length && i < LIME.IM_FULL_NAMES.length; i++) {
+            String imCode = LIME.IM_CODES[i];
+            if (code != null && code.length() > 1 && !imCode.equals(code)) continue;
+            if (existingCodes.contains(imCode)) continue;
+            ImConfig legacy = getFirstImConfigForCode(imCode);
+            if (legacy == null) continue;
+            legacy.setTitle(LIME.IM_FULL_NAME);
+            legacy.setDesc(LIME.IM_FULL_NAMES[i]);
+            result.add(legacy);
+        }
+    }
+
+    private void applyFullNameFallbacks(List<ImConfig> result, String configEntry) {
+        if (!LIME.IM_FULL_NAME.equals(configEntry)) return;
+        for (ImConfig record : result) {
+            if (record == null) continue;
+            String desc = record.getDesc();
+            if (desc == null || desc.isEmpty()) {
+                record.setDesc(defaultImFullName(record.getCode(), record.getCode()));
+            }
+        }
+    }
+
+    private ImConfig getFirstImConfigForCode(String code) {
+        Cursor cursor = db.query(LIME.DB_TABLE_IM, null,
+                LIME.DB_IM_COLUMN_CODE + " = ?",
+                new String[]{code}, null, null, LIME.DB_IM_COLUMN_ID + " ASC", "1");
+        if (cursor == null) return null;
+        try {
+            if (!cursor.moveToFirst()) return null;
+            return getImConfigFromCursor(cursor);
+        } finally {
+            cursor.close();
+        }
     }
 
     /**
@@ -5748,17 +6485,21 @@ public class LimeDB extends LimeSQLiteOpenHelper {
         Cursor cursor;
 
         StringBuilder queryBuilder = new StringBuilder();
+        List<String> queryArgs = new ArrayList<>();
         String cword = "";
 
-        if (pword != null && pword.length() > 1) {
-            cword = pword.substring(1);
-            pword = pword.substring(0, 1);
+        if (pword != null && pword.codePointCount(0, pword.length()) > 1) {
+            String[] relatedWords = splitLeadingCodePoint(pword);
+            pword = relatedWords[0];
+            cword = relatedWords[1];
         }
         if (pword != null && !pword.isEmpty()) {
-            queryBuilder.append(LIME.DB_RELATED_COLUMN_PWORD).append(" = '").append(pword).append("' AND ");
+            queryBuilder.append(LIME.DB_RELATED_COLUMN_PWORD).append(" = ? AND ");
+            queryArgs.add(pword);
         }
         if (!cword.isEmpty()) {
-            queryBuilder.append(LIME.DB_RELATED_COLUMN_CWORD).append(" LIKE '").append(cword).append("%' AND ");
+            queryBuilder.append(LIME.DB_RELATED_COLUMN_CWORD).append(" LIKE ? AND ");
+            queryArgs.add(cword + "%");
         }
 
         queryBuilder.append("ifnull(").append(LIME.DB_RELATED_COLUMN_CWORD).append(", '') <> ''");
@@ -5774,7 +6515,8 @@ public class LimeDB extends LimeSQLiteOpenHelper {
 
         cursor = db.query(LIME.DB_TABLE_RELATED,
                 null, query,
-                null, null, null, order);
+                queryArgs.isEmpty() ? null : queryArgs.toArray(new String[0]),
+                null, null, order);
 
         cursor.moveToFirst();
         while (!cursor.isAfterLast()) {
@@ -6177,9 +6919,7 @@ public class LimeDB extends LimeSQLiteOpenHelper {
         if(dbFile.exists() && !dbFile.delete()) Log.w(TAG, "Failed to delete database file");
         LIMEUtilities.copyRAWFile(mContext.getResources().openRawResource(R.raw.lime), dbFile);
         openDBConnection(true);
-
-        createEmojiTables(db, true);
-        refreshEmojiDataIfNeeded();
+        ensureCurrentDatabase();
 
         if(hanConverter != null)
             hanConverter.close();

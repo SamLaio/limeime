@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -31,12 +31,15 @@ import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 
+import androidx.core.os.ConfigurationCompat;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import net.toload.main.hd.candidate.CandidateView;
 import net.toload.main.hd.global.LIME;
 import net.toload.main.hd.global.LIMEPreferenceManager;
+import net.toload.main.hd.global.LIMEUtilities;
+import net.toload.main.hd.data.ImConfig;
 import net.toload.main.hd.data.Mapping;
 import net.toload.main.hd.LIMEService;
 import net.toload.main.hd.SearchServer;
@@ -44,6 +47,7 @@ import net.toload.main.hd.keyboard.LIMEBaseKeyboard;
 import net.toload.main.hd.keyboard.LIMEKeyboard;
 import net.toload.main.hd.keyboard.LIMEKeyboardView;
 
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mockito;
@@ -53,6 +57,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
@@ -63,12 +68,775 @@ import static org.mockito.Mockito.*;
 @RunWith(AndroidJUnit4.class)
 public class LIMEServiceTest {
 
+    private void setPrivateField(Object target, String fieldName, Object value) throws Exception {
+        Class<?> currentClass = target.getClass();
+        Field field = null;
+        while (currentClass != null && field == null) {
+            try {
+                field = currentClass.getDeclaredField(fieldName);
+            } catch (NoSuchFieldException e) {
+                currentClass = currentClass.getSuperclass();
+            }
+        }
+        if (field == null) {
+            throw new NoSuchFieldException(fieldName);
+        }
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> T getPrivateField(Object target, String fieldName) throws Exception {
+        Class<?> currentClass = target.getClass();
+        Field field = null;
+        while (currentClass != null && field == null) {
+            try {
+                field = currentClass.getDeclaredField(fieldName);
+            } catch (NoSuchFieldException e) {
+                currentClass = currentClass.getSuperclass();
+            }
+        }
+        if (field == null) {
+            throw new NoSuchFieldException(fieldName);
+        }
+        field.setAccessible(true);
+        return (T) field.get(target);
+    }
+
+    @Before
+    public void clearEmojiDisplayPositionPrefs() {
+        // Tests in this class write to enable_emoji / enable_emoji_position to
+        // exercise the legacy-migration branch in LIMEPreferenceManager. If the
+        // process is killed before the migration's async apply() flushes, those
+        // keys can be left in SharedPreferences and break later runs that read
+        // the default. Clear them before each test so defaults are honored.
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(appContext)
+                .edit()
+                .remove("enable_emoji")
+                .remove("enable_emoji_position")
+                .commit();
+    }
+
     @Test
     public void emojiKeyboardSpecialKeyCodesUseReservedCrossPlatformRange() {
         assertEquals(-201, LIME.KEYCODE_EMOJI_PANEL);
         assertEquals(-202, LIME.KEYCODE_EMOJI_ABC);
         assertEquals(-203, LIME.KEYCODE_EMOJI_CATEGORY_RECENT);
-        assertEquals(-211, LIME.KEYCODE_EMOJI_CATEGORY_FLAGS);
+        assertEquals(-211, LIME.KEYCODE_EMOJI_CATEGORY_SYMBOLS);
+        assertEquals(-212, LIME.KEYCODE_EMOJI_CATEGORY_FLAGS);
+    }
+
+    @Test
+    public void emojiInsertionPositionSkipsChinesePunctuationAtRequestedSlot() {
+        List<Mapping> candidates = new ArrayList<>();
+        candidates.add(createCandidate("a", "a"));
+        candidates.add(createCandidate("a", "甲"));
+        candidates.add(createCandidate("a", "乙"));
+
+        Mapping punctuation = createCandidate(",", "，");
+        punctuation.setChinesePunctuationSymbolRecord();
+        candidates.add(punctuation);
+        candidates.add(createCandidate("a", "丙"));
+
+        assertEquals(4, LIMEService.adjustedEmojiInsertionPosition(candidates, 3));
+    }
+
+    @Test
+    public void emojiInsertionPositionSkipsUntypedChineseCommaPeriodAtRequestedSlot() {
+        List<Mapping> commaCandidates = new ArrayList<>();
+        commaCandidates.add(createCandidate(",", ","));
+        commaCandidates.add(createCandidate(",", "甲"));
+        commaCandidates.add(createCandidate(",", "乙"));
+        commaCandidates.add(createCandidate(",", "，"));
+        commaCandidates.add(createCandidate(",", "丙"));
+
+        List<Mapping> periodCandidates = new ArrayList<>();
+        periodCandidates.add(createCandidate(".", "."));
+        periodCandidates.add(createCandidate(".", "甲"));
+        periodCandidates.add(createCandidate(".", "乙"));
+        periodCandidates.add(createCandidate(".", "。"));
+        periodCandidates.add(createCandidate(".", "丙"));
+
+        assertEquals(4, LIMEService.adjustedEmojiInsertionPosition(commaCandidates, 3));
+        assertEquals(4, LIMEService.adjustedEmojiInsertionPosition(periodCandidates, 3));
+    }
+
+    @Test
+    public void endkeyCommitKeyRequiresOptInAndComposing() {
+        assertTrue(LIMEService.isEndkeyCommitKey(';', ";/", false, 2, true));
+        assertTrue(LIMEService.isEndkeyCommitKey('/', ";/", false, 2, true));
+        assertTrue(LIMEService.isEndkeyCommitKey(';', ";/", false, 2, false));
+
+        assertFalse(LIMEService.isEndkeyCommitKey(';', "", false, 2, true));
+        assertFalse(LIMEService.isEndkeyCommitKey(';', null, false, 2, true));
+        assertFalse(LIMEService.isEndkeyCommitKey(';', ";/", true, 2, true));
+        assertTrue(LIMEService.isEndkeyCommitKey(';', ";/", false, 0, true));
+        assertFalse(LIMEService.isEndkeyCommitKey(',', ";/", false, 2, true));
+    }
+
+    // #96: general exact-match highlight rule. When the candidate after the composing echo
+    // has the same code as the echo (the typed code), it is an exact match and must be
+    // highlighted -- including an auto-inserted full-width punctuation candidate whose code
+    // equals the typed ',' / '.'. This is NOT punctuation-specific; it is driven only by
+    // code equality. Locks the fix so future refactors do not re-introduce the drift.
+    @Test
+    public void defaultHighlightedCandidateHighlightsExactMatchAfterComposingEcho() {
+        Mapping composing = createPlainCandidate(".", ".");
+        composing.setComposingCodeRecord();
+        Mapping punctuation = createPlainCandidate(".", "。");
+        punctuation.setChinesePunctuationSymbolRecord();
+        List<Mapping> candidates = new ArrayList<>();
+        candidates.add(composing);
+        candidates.add(punctuation);
+
+        assertEquals(1, LIMEService.defaultHighlightedCandidateIndex(candidates, false));
+    }
+
+    // The exact-match rule is code-equality driven, not record-type driven: a candidate whose
+    // code differs from the composing echo's code is NOT an exact match and the composing
+    // echo stays highlighted.
+    @Test
+    public void defaultHighlightedCandidateDoesNotPromoteArbitrarySecondCandidate() {
+        Mapping composing = createPlainCandidate(".", ".");
+        composing.setComposingCodeRecord();
+        Mapping arbitrary = createPlainCandidate("..extra", "not-default");
+        List<Mapping> candidates = new ArrayList<>();
+        candidates.add(composing);
+        candidates.add(arbitrary);
+
+        assertEquals(0, LIMEService.defaultHighlightedCandidateIndex(candidates, false));
+    }
+
+    @Test
+    public void defaultHighlightedCandidateDoesNotSelectRelatedOrEnglishLists() {
+        Mapping related = createPlainCandidate("", "明天");
+        related.setRelatedPhraseRecord();
+        Mapping english = createPlainCandidate("", "tomorrow");
+        english.setEnglishSuggestionRecord();
+
+        List<Mapping> relatedCandidates = new ArrayList<>();
+        relatedCandidates.add(related);
+        List<Mapping> englishCandidates = new ArrayList<>();
+        englishCandidates.add(english);
+
+        assertEquals(-1, LIMEService.defaultHighlightedCandidateIndex(relatedCandidates, false));
+        assertEquals(-1, LIMEService.defaultHighlightedCandidateIndex(englishCandidates, false));
+    }
+
+    @Test
+    public void endkeyCommitCandidateResolutionIsSeparateFromDefaultHighlighting() {
+        Mapping composing = createPlainCandidate(".", ".");
+        composing.setComposingCodeRecord();
+        Mapping punctuation = createPlainCandidate(".", "。");
+        punctuation.setChinesePunctuationSymbolRecord();
+        List<Mapping> candidates = new ArrayList<>();
+        candidates.add(composing);
+        candidates.add(punctuation);
+
+        // For an exact-match candidate after the composing echo, the visible highlight and
+        // the endkey commit target now agree on index 1. The two resolvers stay distinct
+        // (they diverge for related/English browse-only lists) but coincide here.
+        assertEquals(1, LIMEService.defaultHighlightedCandidateIndex(candidates, false));
+        assertSame(punctuation, LIMEService.endkeyCommitCandidateForSuggestions(candidates));
+    }
+
+    @Test
+    public void englishPredictionCandidatesKeepComposingWordWhenSuggestionsAreEmpty() {
+        List<Mapping> candidates = LIMEService.buildEnglishPredictionCandidates("salt", new ArrayList<Mapping>());
+
+        assertEquals(1, candidates.size());
+        assertEquals("salt", candidates.get(0).getWord());
+        assertTrue(candidates.get(0).isComposingCodeRecord());
+    }
+
+    @Test
+    public void englishPredictionCandidatesKeepSuggestionsAfterComposingWord() {
+        Mapping suggestion = createPlainCandidate("", "salty");
+        suggestion.setEnglishSuggestionRecord();
+        List<Mapping> suggestions = new ArrayList<>();
+        suggestions.add(suggestion);
+
+        List<Mapping> candidates = LIMEService.buildEnglishPredictionCandidates("salt", suggestions);
+
+        assertEquals(2, candidates.size());
+        assertEquals("salt", candidates.get(0).getWord());
+        assertTrue(candidates.get(0).isComposingCodeRecord());
+        assertSame(suggestion, candidates.get(1));
+    }
+
+    @Test
+    public void endkeyCommitAppendsOptedInImkeyBeforeCommitting() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        InputConnection inputConnection = mock(InputConnection.class);
+        when(inputConnection.commitText(any(), anyInt())).thenReturn(true);
+
+        class TestableLIMEService extends LIMEService {
+            @Override
+            public InputConnection getCurrentInputConnection() {
+                return inputConnection;
+            }
+        }
+
+        Mapping composing = createCandidate("aa;", "aa;");
+        composing.setComposingCodeRecord();
+        Mapping candidate = createCandidate("aa;", "日");
+        LinkedList<Mapping> candidates = new LinkedList<>();
+        candidates.add(composing);
+        candidates.add(candidate);
+
+        SearchServer searchServer = mock(SearchServer.class);
+        when(searchServer.getImConfig("custom", LIME.IM_LIME_ENDKEY)).thenReturn(";/");
+        when(searchServer.getImConfig("custom", "imkeys")).thenReturn("abcdefghijklmnopqrstuvwxyz;");
+        when(searchServer.getMappingByCode("aa;", true, false)).thenReturn(candidates);
+        when(searchServer.getRealCodeLength(candidate, "aa;")).thenReturn(3);
+        when(searchServer.getRelatedByWord("日", false)).thenReturn(new LinkedList<>());
+
+        TestableLIMEService service = new TestableLIMEService();
+        initializeEndkeyTestService(service, appContext, searchServer, "custom", "custom", "aa", true);
+
+        CandidateView candidateView = mock(CandidateView.class);
+        when(candidateView.takeSelectedSuggestion()).thenReturn(true);
+        setPrivateField(service, "mCandidateView", candidateView);
+
+        Method handleEndkeyCommit = LIMEService.class.getDeclaredMethod("handleEndkeyCommit", int.class);
+        handleEndkeyCommit.setAccessible(true);
+
+        assertTrue((Boolean) handleEndkeyCommit.invoke(service, (int) ';'));
+        verify(searchServer).getMappingByCode("aa;", true, false);
+        verify(candidateView, never()).takeSelectedSuggestion();
+        verify(inputConnection).commitText("日", 1);
+
+        assertFalse((Boolean) handleEndkeyCommit.invoke(service, (int) ','));
+    }
+
+    @Test
+    public void endkeyOutsideImkeysCommitsCurrentThenRawTriggerWhenNoTriggerMapping() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        InputConnection inputConnection = mock(InputConnection.class);
+        when(inputConnection.commitText(any(), anyInt())).thenReturn(true);
+
+        class TestableLIMEService extends LIMEService {
+            @Override
+            public InputConnection getCurrentInputConnection() {
+                return inputConnection;
+            }
+        }
+
+        Mapping candidate = createCandidate("aa", "日");
+        SearchServer searchServer = mock(SearchServer.class);
+        when(searchServer.getImConfig("cj4", LIME.IM_LIME_ENDKEY)).thenReturn(",.");
+        when(searchServer.getImConfig("cj4", "imkeys")).thenReturn("abcdefghijklmnopqrstuvwxyz");
+        when(searchServer.getRealCodeLength(candidate, "aa")).thenReturn(2);
+        when(searchServer.getRelatedByWord("日", false)).thenReturn(new LinkedList<>());
+
+        TestableLIMEService service = new TestableLIMEService();
+        initializeEndkeyTestService(service, appContext, searchServer, "cj4", "cj", "aa", true);
+        setPrivateField(service, "hasMappingList", true);
+        setPrivateField(service, "selectedCandidate", candidate);
+
+        CandidateView candidateView = mock(CandidateView.class);
+        when(candidateView.takeSelectedSuggestion()).thenReturn(false);
+        setPrivateField(service, "mCandidateView", candidateView);
+
+        Method handleEndkeyCommit = LIMEService.class.getDeclaredMethod("handleEndkeyCommit", int.class);
+        handleEndkeyCommit.setAccessible(true);
+
+        assertTrue((Boolean) handleEndkeyCommit.invoke(service, (int) ','));
+        verify(candidateView).takeSelectedSuggestion();
+        verify(inputConnection).commitText("日", 1);
+        verify(inputConnection).commitText(",", 1);
+    }
+
+    @Test
+    public void endkeyOutsideImkeysCommitsCurrentThenFreshTriggerCandidate() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        InputConnection inputConnection = mock(InputConnection.class);
+        when(inputConnection.commitText(any(), anyInt())).thenReturn(true);
+
+        class TestableLIMEService extends LIMEService {
+            @Override
+            public InputConnection getCurrentInputConnection() {
+                return inputConnection;
+            }
+        }
+
+        Mapping composing = createCandidate("aa", "aa");
+        composing.setComposingCodeRecord();
+        Mapping candidate = createCandidate("aa", "昌");
+        LinkedList<Mapping> candidates = new LinkedList<>();
+        candidates.add(composing);
+        candidates.add(candidate);
+        Mapping commaComposing = createCandidate(",", ",");
+        commaComposing.setComposingCodeRecord();
+        Mapping commaCandidate = createCandidate(",", "，");
+        LinkedList<Mapping> commaCandidates = new LinkedList<>();
+        commaCandidates.add(commaComposing);
+        commaCandidates.add(commaCandidate);
+
+        SearchServer searchServer = mock(SearchServer.class);
+        when(searchServer.getImConfig("cj", LIME.IM_LIME_ENDKEY)).thenReturn(",.");
+        when(searchServer.getImConfig("cj", "imkeys")).thenReturn("abcdefghijklmnopqrstuvwxyz");
+        when(searchServer.getMappingByCode("aa", true, false)).thenReturn(candidates);
+        when(searchServer.getMappingByCode(",", true, false)).thenReturn(commaCandidates);
+        when(searchServer.getRealCodeLength(candidate, "aa")).thenReturn(2);
+        when(searchServer.getRealCodeLength(commaCandidate, ",")).thenReturn(1);
+        when(searchServer.getRelatedByWord("昌", false)).thenReturn(new LinkedList<>());
+        when(searchServer.getRelatedByWord("，", false)).thenReturn(new LinkedList<>());
+
+        TestableLIMEService service = new TestableLIMEService();
+        initializeEndkeyTestService(service, appContext, searchServer, "cj", "cj", "aa", false);
+
+        CandidateView candidateView = mock(CandidateView.class);
+        when(candidateView.takeSelectedSuggestion()).thenReturn(false);
+        setPrivateField(service, "mCandidateView", candidateView);
+
+        Method handleEndkeyCommit = LIMEService.class.getDeclaredMethod("handleEndkeyCommit", int.class);
+        handleEndkeyCommit.setAccessible(true);
+
+        assertTrue((Boolean) handleEndkeyCommit.invoke(service, (int) ','));
+        verify(searchServer).getMappingByCode("aa", true, false);
+        verify(searchServer).getMappingByCode(",", true, false);
+        org.mockito.InOrder inOrder = inOrder(inputConnection);
+        inOrder.verify(inputConnection).commitText("昌", 1);
+        inOrder.verify(inputConnection).commitText("，", 1);
+    }
+
+    @Test
+    public void endkeyCommitIgnoresStalePrefixCandidateAndResolvesCurrentComposing() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        InputConnection inputConnection = mock(InputConnection.class);
+        when(inputConnection.commitText(any(), anyInt())).thenReturn(true);
+
+        class TestableLIMEService extends LIMEService {
+            @Override
+            public InputConnection getCurrentInputConnection() {
+                return inputConnection;
+            }
+        }
+
+        Mapping staleCandidate = createCandidate("a", "日");
+        Mapping composing = createCandidate("aa", "aa");
+        composing.setComposingCodeRecord();
+        Mapping currentCandidate = createCandidate("aa", "昌");
+        LinkedList<Mapping> candidates = new LinkedList<>();
+        candidates.add(composing);
+        candidates.add(currentCandidate);
+
+        SearchServer searchServer = mock(SearchServer.class);
+        when(searchServer.getImConfig("cj", LIME.IM_LIME_ENDKEY)).thenReturn(",.");
+        when(searchServer.getMappingByCode("aa", true, false)).thenReturn(candidates);
+        when(searchServer.getRealCodeLength(currentCandidate, "aa")).thenReturn(2);
+        when(searchServer.getRelatedByWord("昌", false)).thenReturn(new LinkedList<>());
+
+        TestableLIMEService service = new TestableLIMEService();
+        initializeEndkeyTestService(service, appContext, searchServer, "cj", "cj", "aa", true);
+        setPrivateField(service, "hasMappingList", true);
+        setPrivateField(service, "selectedCandidate", staleCandidate);
+
+        CandidateView candidateView = mock(CandidateView.class);
+        when(candidateView.takeSelectedSuggestion()).thenReturn(false);
+        setPrivateField(service, "mCandidateView", candidateView);
+
+        Method handleEndkeyCommit = LIMEService.class.getDeclaredMethod("handleEndkeyCommit", int.class);
+        handleEndkeyCommit.setAccessible(true);
+
+        assertTrue((Boolean) handleEndkeyCommit.invoke(service, (int) ','));
+        verify(searchServer).getMappingByCode("aa", true, false);
+        verify(inputConnection).commitText("昌", 1);
+    }
+
+    @Test
+    public void endkeyCommitDoesNotPickHighlightedStalePrefixCandidate() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        InputConnection inputConnection = mock(InputConnection.class);
+        when(inputConnection.commitText(any(), anyInt())).thenReturn(true);
+
+        class TestableLIMEService extends LIMEService {
+            @Override
+            public InputConnection getCurrentInputConnection() {
+                return inputConnection;
+            }
+        }
+
+        Mapping staleCandidate = createCandidate("a", "日");
+        Mapping composing = createCandidate("aa", "aa");
+        composing.setComposingCodeRecord();
+        Mapping currentCandidate = createCandidate("aa", "昌");
+        LinkedList<Mapping> candidates = new LinkedList<>();
+        candidates.add(composing);
+        candidates.add(currentCandidate);
+
+        SearchServer searchServer = mock(SearchServer.class);
+        when(searchServer.getImConfig("cj", LIME.IM_LIME_ENDKEY)).thenReturn(",.");
+        when(searchServer.getMappingByCode("aa", true, false)).thenReturn(candidates);
+        when(searchServer.getRealCodeLength(currentCandidate, "aa")).thenReturn(2);
+        when(searchServer.getRelatedByWord("昌", false)).thenReturn(new LinkedList<>());
+
+        TestableLIMEService service = new TestableLIMEService();
+        initializeEndkeyTestService(service, appContext, searchServer, "cj", "cj", "aa", true);
+        setPrivateField(service, "hasMappingList", true);
+        setPrivateField(service, "selectedCandidate", staleCandidate);
+
+        CandidateView candidateView = mock(CandidateView.class);
+        when(candidateView.takeSelectedSuggestion()).thenReturn(true);
+        setPrivateField(service, "mCandidateView", candidateView);
+
+        Method handleEndkeyCommit = LIMEService.class.getDeclaredMethod("handleEndkeyCommit", int.class);
+        handleEndkeyCommit.setAccessible(true);
+
+        assertTrue((Boolean) handleEndkeyCommit.invoke(service, (int) ','));
+        verify(candidateView, never()).takeSelectedSuggestion();
+        verify(searchServer).getMappingByCode("aa", true, false);
+        verify(inputConnection).commitText("昌", 1);
+    }
+
+    @Test
+    public void conventionalEndkeyMetadataDoesNotTriggerLimeEndkeyCommit() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        DBServer.getInstance(appContext).setImConfig("custom", "endkey", ";/");
+        DBServer.getInstance(appContext).setImConfig("custom", "limeendkey", "");
+
+        LIMEService service = new LIMEService();
+        setPrivateField(service, "SearchSrv", new SearchServer(appContext));
+        setPrivateField(service, "activeIM", "custom");
+        setPrivateField(service, "mEnglishOnly", false);
+        setPrivateField(service, "mComposing", new StringBuilder("aa"));
+        setPrivateField(service, "hasCandidatesShown", true);
+
+        CandidateView candidateView = mock(CandidateView.class);
+        when(candidateView.takeSelectedSuggestion()).thenReturn(true);
+        setPrivateField(service, "mCandidateView", candidateView);
+
+        Method handleEndkeyCommit = LIMEService.class.getDeclaredMethod("handleEndkeyCommit", int.class);
+        handleEndkeyCommit.setAccessible(true);
+
+        assertFalse((Boolean) handleEndkeyCommit.invoke(service, (int) ';'));
+        verify(candidateView, never()).takeSelectedSuggestion();
+    }
+
+    @Test
+    public void emojiInsertionPositionYieldsToCommaPeriodShiftedByComposingEcho() {
+        List<Mapping> candidates = new ArrayList<>();
+        candidates.add(createCandidate(",", ","));
+        candidates.add(createCandidate(",", "力"));
+        candidates.add(createCandidate(",", "犭"));
+        candidates.add(createCandidate(",", "加"));
+        candidates.add(createCandidate(",", "，"));
+        candidates.add(createCandidate(",", "加速"));
+
+        assertEquals(5, LIMEService.adjustedEmojiInsertionPosition(candidates, 3));
+    }
+
+    @Test
+    public void emojiPanelStartsOnRecentCategory() {
+        MockInputMethodServiceHelper helper = new MockInputMethodServiceHelper();
+
+        Integer categoryIndex = helper.getField("mEmojiCategoryIndex");
+
+        assertEquals(Integer.valueOf(0), categoryIndex);
+    }
+
+    @Test
+    public void emojiPanelDarkThemeColorsAvoidLightSearchSurfaceAndBlackGlyphs() {
+        LIMEService.EmojiPanelColors colors = LIMEService.emojiPanelColorsForTheme(1, false);
+
+        assertNotEquals(0xF2FFFFFF, colors.searchBackground);
+        assertNotEquals(0xFF000000, colors.searchText);
+        assertNotEquals(0xFF000000, colors.searchIcon);
+        assertNotEquals(0xFF000000, colors.iconText);
+        assertNotEquals(0x22000000, colors.categoryHighlight);
+    }
+
+    @Test
+    public void emojiPanelCustomThemeSearchIconsUseNormalKeyBackgroundColors() {
+        assertEquals(0xFFF49AC1, LIMEService.emojiPanelColorsForTheme(2, false).searchIcon);
+        assertEquals(0xFF9BC5E4, LIMEService.emojiPanelColorsForTheme(3, false).searchIcon);
+        assertEquals(0xFFB28ABF, LIMEService.emojiPanelColorsForTheme(4, false).searchIcon);
+        assertEquals(0xFF39B54A, LIMEService.emojiPanelColorsForTheme(5, false).searchIcon);
+    }
+
+    @Test
+    public void emojiCategoryTabsScaleWithKeyboardSizeAndRemainScrollable() {
+        assertEquals(56, LIMEService.emojiCategoryTabWidthDp(1.0f));
+        assertEquals(67, LIMEService.emojiCategoryTabWidthDp(1.2f));
+        assertEquals(45, LIMEService.emojiCategoryTabWidthDp(0.8f));
+    }
+
+    @Test
+    public void emojiPanelGlyphsScaleLightlyWithKeyboardSize() {
+        assertEquals(28, LIMEService.emojiPanelGlyphSize(1.0f));
+        assertEquals(31, LIMEService.emojiPanelGlyphSize(1.2f));
+        assertEquals(25, LIMEService.emojiPanelGlyphSize(0.8f));
+    }
+
+    @Test
+    public void emojiCategoryGlyphMatchesEmojiPanelGlyphSize() {
+        assertEquals(LIMEService.emojiPanelGlyphSize(1.0f), LIMEService.emojiCategoryGlyphSizeDp(1.0f));
+        assertEquals(LIMEService.emojiPanelGlyphSize(1.2f), LIMEService.emojiCategoryGlyphSizeDp(1.2f));
+        assertEquals(LIMEService.emojiPanelGlyphSize(0.8f), LIMEService.emojiCategoryGlyphSizeDp(0.8f));
+    }
+
+    @Test
+    public void emojiModeAndBackspaceControlsMatchCategoryTabSizing() {
+        assertEquals(LIMEService.emojiCategoryTabWidthDp(1.0f), LIMEService.emojiSideControlWidthDp(1.0f));
+        assertEquals(LIMEService.emojiCategoryTabWidthDp(1.2f), LIMEService.emojiSideControlWidthDp(1.2f));
+        assertEquals(Math.round(LIMEService.emojiCategoryGlyphSizeDp(1.0f) * 0.8f),
+                LIMEService.emojiModeControlGlyphSize(1.0f));
+        assertEquals(Math.round(LIMEService.emojiCategoryGlyphSizeDp(1.2f) * 0.8f),
+                LIMEService.emojiModeControlGlyphSize(1.2f));
+        assertEquals(LIMEService.emojiCategoryGlyphSizeDp(1.0f), LIMEService.emojiBackspaceGlyphSize(1.0f));
+        assertEquals(LIMEService.emojiCategoryGlyphSizeDp(1.2f), LIMEService.emojiBackspaceGlyphSize(1.2f));
+    }
+
+    @Test
+    public void emojiPanelSystemThemeFollowsNightModeForColors() {
+        LIMEService.EmojiPanelColors systemDark = LIMEService.emojiPanelColorsForTheme(6, true);
+        LIMEService.EmojiPanelColors systemLight = LIMEService.emojiPanelColorsForTheme(6, false);
+
+        assertEquals(LIMEService.emojiPanelColorsForTheme(1, false).searchBackground, systemDark.searchBackground);
+        assertEquals(LIMEService.emojiPanelColorsForTheme(0, false).searchBackground, systemLight.searchBackground);
+    }
+
+    @Test
+    public void emojiPanelFollowSystemUsesSystemAccentHighlight() {
+        int dynamicPurple = 0xFF6750A4;
+
+        LIMEService.EmojiPanelColors systemLight = LIMEService.emojiPanelColorsForTheme(6, false, dynamicPurple);
+        LIMEService.EmojiPanelColors systemDark = LIMEService.emojiPanelColorsForTheme(6, true, dynamicPurple);
+
+        assertEquals(0x336750A4, systemLight.categoryHighlight);
+        assertEquals(0x336750A4, systemDark.categoryHighlight);
+        assertEquals(0x22000000, LIMEService.emojiPanelColorsForTheme(0, false, dynamicPurple).categoryHighlight);
+        assertEquals(0x33FFFFFF, LIMEService.emojiPanelColorsForTheme(1, true, dynamicPurple).categoryHighlight);
+    }
+
+    @Test
+    public void keyboardThemeValuesKeepExistingFollowSystemOption() {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+
+        assertArrayEquals(
+                new String[]{"0", "1", "2", "3", "4", "5", "6"},
+                appContext.getResources().getStringArray(R.array.keyboard_themes_values));
+    }
+
+    @Test
+    public void emojiCategoryPaginationKeepsCategoryCompact() {
+        MockInputMethodServiceHelper helper = new MockInputMethodServiceHelper();
+        List<List<String>> categories = new ArrayList<>();
+        categories.add(new ArrayList<>());
+        List<String> largeCategory = new ArrayList<>();
+        for (int i = 0; i < 75; i++) {
+            largeCategory.add("e" + i);
+        }
+        categories.add(largeCategory);
+
+        @SuppressWarnings("unchecked")
+        List<List<String>> pages = (List<List<String>>) helper.invokeMethod(
+                "paginateEmojiCategories",
+                new Class<?>[]{List.class},
+                categories);
+
+        assertNotNull(pages);
+        assertEquals(10, pages.size());
+        assertEquals(75, pages.get(1).size());
+        assertEquals(largeCategory, pages.get(1));
+
+        int[] starts = helper.getField("mEmojiCategoryPageStarts");
+        assertNotNull(starts);
+        assertEquals(0, starts[0]);
+        assertEquals(1, starts[1]);
+
+        List<Integer> pageCategoryIndexes = helper.getField("mEmojiPageCategoryIndexes");
+        assertNotNull(pageCategoryIndexes);
+        assertEquals(Integer.valueOf(0), pageCategoryIndexes.get(0));
+        assertEquals(Integer.valueOf(1), pageCategoryIndexes.get(1));
+    }
+
+    @Test
+    public void reverseLookupUsesPersistentLimeToast() {
+        MockInputMethodServiceHelper helper = new MockInputMethodServiceHelper();
+        CandidateView candidateView = helper.injectMockCandidateView();
+        LIMEService service = helper.getService();
+
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                service.showReverseLookup("大: k"));
+
+        verify(candidateView).showLimeToastUntilNextKey("大: k");
+        verify(candidateView, never()).setComposingText(anyString());
+    }
+
+    @Test
+    public void nextKeyClearsPersistentLimeToast() {
+        MockInputMethodServiceHelper helper = new MockInputMethodServiceHelper();
+        CandidateView candidateView = helper.injectMockCandidateView();
+        helper.injectMockInputView();
+        helper.injectMockKeyboardSwitcher();
+        LIMEService service = helper.getService();
+
+        try {
+            service.onKey(LIMEBaseKeyboard.KEYCODE_SHIFT, null, 0, 0);
+        } catch (Exception ignored) {
+            // The service is not bound as a real IME in this focused test.
+        }
+
+        verify(candidateView).hideLimeToast();
+    }
+
+    @Test
+    public void singleShiftTapTogglesBetweenShiftedAndUnshiftedOnly() {
+        LIMEService.ShiftTapState state = LIMEService.nextShiftTapState(false, false, false);
+        assertTrue(state.shifted);
+        assertFalse(state.capsLock);
+
+        state = LIMEService.nextShiftTapState(state.shifted, state.capsLock, false);
+        assertFalse(state.shifted);
+        assertFalse(state.capsLock);
+
+        state = LIMEService.nextShiftTapState(state.shifted, state.capsLock, false);
+        assertTrue(state.shifted);
+        assertFalse(state.capsLock);
+    }
+
+    @Test
+    public void doubleShiftTapEntersShiftLockAndSingleTapUnlocks() {
+        LIMEService.ShiftTapState state = LIMEService.nextShiftTapState(false, false, true);
+        assertTrue(state.shifted);
+        assertTrue(state.capsLock);
+
+        state = LIMEService.nextShiftTapState(state.shifted, state.capsLock, false);
+        assertFalse(state.shifted);
+        assertFalse(state.capsLock);
+
+        state = LIMEService.nextShiftTapState(true, false, true);
+        assertTrue(state.shifted);
+        assertTrue(state.capsLock);
+    }
+
+    @Test
+    public void imPickerSelectionShowsSelectedImNameToast() {
+        MockInputMethodServiceHelper helper = new MockInputMethodServiceHelper();
+        CandidateView candidateView = helper.injectMockCandidateView();
+        helper.initializeLIMEPref();
+
+        ArrayList<String> imList = new ArrayList<>();
+        imList.add("cj");
+        imList.add("dayi");
+        imList.add("phonetic");
+        helper.setField("activatedIMList", imList);
+
+        ArrayList<String> fullNameList = new ArrayList<>();
+        fullNameList.add("倉頡輸入法");
+        fullNameList.add("大易輸入法");
+        fullNameList.add("注音輸入法");
+        helper.setField("activatedIMFullNameList", fullNameList);
+
+        helper.setField("activeIM", "cj");
+        helper.setFieldBoolean("mEnglishOnly", true);
+
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                helper.invokeMethod("handleIMSelection", new Class<?>[]{int.class}, 1));
+
+        verify(candidateView).showLimeToast("大易輸入法");
+    }
+
+    @Test
+    public void dismissCandidateComposingCancelsInputConnectionComposingText() throws Exception {
+        InputConnection inputConnection = mock(InputConnection.class);
+        when(inputConnection.commitText(any(), anyInt())).thenReturn(true);
+        when(inputConnection.finishComposingText()).thenReturn(true);
+
+        class TestableLIMEService extends LIMEService {
+            @Override
+            public InputConnection getCurrentInputConnection() {
+                return inputConnection;
+            }
+        }
+
+        LIMEService service = new TestableLIMEService();
+        CandidateView candidateView = createMockCandidateView();
+        injectMockComponents(service, candidateView, null, null, null);
+
+        Field composingField = LIMEService.class.getDeclaredField("mComposing");
+        composingField.setAccessible(true);
+        composingField.set(service, new StringBuilder("abc"));
+
+        Field candidateListField = LIMEService.class.getDeclaredField("mCandidateList");
+        candidateListField.setAccessible(true);
+        LinkedList<Mapping> candidateList = new LinkedList<>();
+        candidateList.add(new Mapping());
+        candidateListField.set(service, candidateList);
+
+        service.dismissCandidateComposing();
+
+        verify(candidateView).hideCandidatePopup();
+        verify(inputConnection).commitText("", 0);
+        verify(inputConnection).finishComposingText();
+        assertEquals(0, ((StringBuilder) composingField.get(service)).length());
+        assertTrue(((LinkedList<?>) candidateListField.get(service)).isEmpty());
+    }
+
+    private static Mapping createCandidate(String code, String word) {
+        Mapping mapping = new Mapping();
+        mapping.setCode(code);
+        mapping.setWord(word);
+        mapping.setExactMatchToCodeRecord();
+        return mapping;
+    }
+
+    private static Mapping createPlainCandidate(String code, String word) {
+        Mapping mapping = new Mapping();
+        mapping.setCode(code);
+        mapping.setWord(word);
+        return mapping;
+    }
+
+    private static ImConfig createImConfig(String code, String desc, String keyboard) {
+        ImConfig imConfig = new ImConfig();
+        imConfig.setCode(code);
+        imConfig.setDesc(desc);
+        imConfig.setKeyboard(keyboard);
+        imConfig.setDisable(false);
+        return imConfig;
+    }
+
+    private LIMEPreferenceManager initializeEndkeyTestService(
+            LIMEService service,
+            Context appContext,
+            SearchServer searchServer,
+            String activeIM,
+            String currentSoftKeyboard,
+            String composing,
+            boolean candidatesShown) throws Exception {
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(appContext)
+                .edit()
+                .putString("han_convert_option", "0")
+                .putBoolean("english_dictionary_enable", false)
+                .putString("physical_keyboard_type", "normal_keyboard")
+                .putBoolean("disable_physical_selkey", false)
+                .putString("selkey_option", "0")
+                .putBoolean("persistent_language_mode", false)
+                .putString("keyboard_list", activeIM)
+                .putString("keyboard_state", "0;1;2;3;4;5;6")
+                .commit();
+
+        LIMEPreferenceManager prefManager = new LIMEPreferenceManager(appContext);
+        setPrivateField(service, "SearchSrv", searchServer);
+        setPrivateField(service, "activeIM", activeIM);
+        setPrivateField(service, "mEnglishOnly", false);
+        setPrivateField(service, "mComposing", new StringBuilder(composing));
+        setPrivateField(service, "hasCandidatesShown", candidatesShown);
+        setPrivateField(service, "hasMappingList", false);
+        setPrivateField(service, "selectedCandidate", null);
+        setPrivateField(service, "currentSoftKeyboard", currentSoftKeyboard);
+        setPrivateField(service, "mLIMEPref", prefManager);
+        setPrivateField(service, "mCandidateList", new LinkedList<Mapping>());
+        setPrivateField(service, "LDComposingBuffer", "");
+        setPrivateField(service, "mPredictionOn", false);
+        setPrivateField(service, "hasPhysicalKeyPressed", false);
+        setPrivateField(service, "hasNumberMapping", false);
+        setPrivateField(service, "hasSymbolMapping", false);
+        return prefManager;
     }
 
     /**
@@ -344,6 +1112,40 @@ public class LIMEServiceTest {
         } catch (Exception e) {
             // Reflection failed, continue anyway
         }
+    }
+
+    private void attachTargetContext(LIMEService limeService) {
+        try {
+            Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+            Method attachBaseContext = android.content.ContextWrapper.class.getDeclaredMethod(
+                    "attachBaseContext", Context.class);
+            attachBaseContext.setAccessible(true);
+            attachBaseContext.invoke(limeService, appContext);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to attach target context to LIMEService", e);
+        }
+    }
+
+    private void runOnMainAndRethrow(ThrowingRunnable runnable) throws Exception {
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+            try {
+                runnable.run();
+            } catch (Throwable throwable) {
+                failure.set(throwable);
+            }
+        });
+        Throwable throwable = failure.get();
+        if (throwable instanceof Exception) {
+            throw (Exception) throwable;
+        }
+        if (throwable != null) {
+            throw new AssertionError(throwable);
+        }
+    }
+
+    private interface ThrowingRunnable {
+        void run() throws Exception;
     }
 
     /**
@@ -629,6 +1431,104 @@ public class LIMEServiceTest {
         assertTrue("Enter keycode should be newline", LIMEService.MY_KEYCODE_ENTER == 10);
     }
 
+    @Test
+    public void emojiSearchDoneAndEnterKeysDismissSearchMode() {
+        assertTrue("Done key should dismiss emoji search",
+                LIMEService.isEmojiSearchDoneKey(LIMEBaseKeyboard.KEYCODE_DONE));
+        assertTrue("Enter key should dismiss emoji search",
+                LIMEService.isEmojiSearchDoneKey(LIMEService.MY_KEYCODE_ENTER));
+        assertFalse("Printable characters should stay in emoji search input",
+                LIMEService.isEmojiSearchDoneKey('a'));
+    }
+
+    @Test
+    public void emojiSearchDismissAndEnterKeysReturnToSourceKeyboard() {
+        assertTrue("Done key should leave emoji search and restore the source keyboard",
+                LIMEService.shouldExitEmojiSearchToKeyboard(LIMEBaseKeyboard.KEYCODE_DONE));
+        assertTrue("Enter key should leave emoji search and restore the source keyboard",
+                LIMEService.shouldExitEmojiSearchToKeyboard(LIMEService.MY_KEYCODE_ENTER));
+        assertTrue("Emoji/search dismiss key should leave emoji search and restore the source keyboard",
+                LIMEService.shouldExitEmojiSearchToKeyboard(LIME.KEYCODE_EMOJI_PANEL));
+        assertFalse("Printable characters should stay in emoji search input",
+                LIMEService.shouldExitEmojiSearchToKeyboard('a'));
+    }
+
+    @Test
+    public void emojiSearchUsesNormalCandidateStripOnlyWhileSearching() {
+        assertEquals(View.VISIBLE,
+                LIMEService.emojiSearchInputCandidateStripVisibility(true, true));
+        assertEquals(View.GONE,
+                LIMEService.emojiSearchInputCandidateStripVisibility(true, false));
+        assertEquals(View.GONE,
+                LIMEService.emojiSearchInputCandidateStripVisibility(false, true));
+    }
+
+    @Test
+    public void emojiSearchKeyboardShowsDoneActionInsteadOfSearchAction() {
+        int options = EditorInfo.IME_ACTION_SEARCH | EditorInfo.IME_FLAG_NO_EXTRACT_UI;
+
+        int emojiSearchOptions = LIMEService.emojiSearchImeOptions(options);
+
+        assertEquals(EditorInfo.IME_ACTION_DONE,
+                emojiSearchOptions & EditorInfo.IME_MASK_ACTION);
+        assertEquals(EditorInfo.IME_FLAG_NO_EXTRACT_UI,
+                emojiSearchOptions & EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+    }
+
+    @Test
+    public void emojiSearchStartsWithSourceKeyboardMode() {
+        assertTrue("English source should start emoji search with English keyboard",
+                LIMEService.emojiSearchInitialEnglishOnly(true));
+        assertFalse("Chinese source should start emoji search with Chinese keyboard",
+                LIMEService.emojiSearchInitialEnglishOnly(false));
+    }
+
+    @Test
+    public void emojiSearchModeKeysToggleKeyboardWithoutExitingSearch() {
+        assertTrue(LIMEService.isEmojiSearchKeyboardModeKey(LIMEService.KEYCODE_SWITCH_TO_ENGLISH_MODE));
+        assertTrue(LIMEService.isEmojiSearchKeyboardModeKey(LIMEService.KEYCODE_SWITCH_TO_IM_MODE));
+        assertTrue(LIMEService.isEmojiSearchKeyboardModeKey(LIME.KEYCODE_EMOJI_ABC));
+        assertFalse(LIMEService.isEmojiSearchKeyboardModeKey('a'));
+
+        assertFalse("Mode keys should stay inside emoji search",
+                LIMEService.shouldExitEmojiSearchToKeyboard(LIMEService.KEYCODE_SWITCH_TO_IM_MODE));
+        assertFalse("Mode keys should stay inside emoji search",
+                LIMEService.shouldExitEmojiSearchToKeyboard(LIMEService.KEYCODE_SWITCH_TO_ENGLISH_MODE));
+
+        assertTrue("abc key should switch search keyboard to English",
+                LIMEService.resolveEmojiSearchEnglishOnlyForModeKey(
+                        LIMEService.KEYCODE_SWITCH_TO_ENGLISH_MODE, false));
+        assertFalse("中 key should switch search keyboard to Chinese",
+                LIMEService.resolveEmojiSearchEnglishOnlyForModeKey(
+                        LIMEService.KEYCODE_SWITCH_TO_IM_MODE, true));
+        assertFalse("Emoji ABC mode key should switch search keyboard to Chinese",
+                LIMEService.resolveEmojiSearchEnglishOnlyForModeKey(LIME.KEYCODE_EMOJI_ABC, true));
+        assertTrue("Non-mode keys keep the current search keyboard language",
+                LIMEService.resolveEmojiSearchEnglishOnlyForModeKey('a', true));
+    }
+
+    @Test
+    public void emojiSearchPrintableKeysOnlyBypassComposerInEnglishMode() {
+        assertTrue("English emoji search should write printable keys directly to search text",
+                LIMEService.shouldEmojiSearchConsumePrintableKey('a', true));
+        assertFalse("Chinese emoji search should let printable keys go through IM composing",
+                LIMEService.shouldEmojiSearchConsumePrintableKey('a', false));
+        assertFalse("Non-printable keys are handled by dedicated emoji search branches",
+                LIMEService.shouldEmojiSearchConsumePrintableKey(LIMEBaseKeyboard.KEYCODE_DELETE, true));
+    }
+
+    @Test
+    public void emojiSearchCandidatePickPolicySeparatesEmojiFromComposedText() {
+        assertFalse("Emoji search candidates should commit emoji, not become search text",
+                LIMEService.shouldAppendPickedCandidateToEmojiSearch(true, true, true, false));
+        assertTrue("Chinese composed candidates should become emoji search text",
+                LIMEService.shouldAppendPickedCandidateToEmojiSearch(true, true, false, false));
+        assertFalse("Raw composing code should not be accepted as search text",
+                LIMEService.shouldAppendPickedCandidateToEmojiSearch(true, true, false, true));
+        assertFalse("Normal candidate pick outside emoji search is unchanged",
+                LIMEService.shouldAppendPickedCandidateToEmojiSearch(false, true, false, false));
+    }
+
     /**
      * Tests vibration feedback triggers on key press.
      */
@@ -745,7 +1645,7 @@ public class LIMEServiceTest {
             keyboardHidden == android.content.res.Configuration.KEYBOARDHIDDEN_UNDEFINED);
         
         // Test locale
-        java.util.Locale locale = config.locale;
+        java.util.Locale locale = ConfigurationCompat.getLocales(config).get(0);
         assertNotNull("Locale should not be null", locale);
         assertNotNull("Locale language should not be null", locale.getLanguage());
         
@@ -2182,6 +3082,68 @@ public class LIMEServiceTest {
         prefManager.setShowArrowKeys(originalValue);
     }
 
+    @Test
+    public void startupConfigVersionBumpsWhenStartupRelevantPrefsChange() {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LIMEPreferenceManager prefManager = new LIMEPreferenceManager(appContext);
+        String originalActiveIm = prefManager.getActiveIM();
+        String originalActivatedState = prefManager.getIMActivatedState();
+        int originalShowArrowKeys = prefManager.getShowArrowKeys();
+        int originalSplitKeyboard = prefManager.getSplitKeyboard();
+
+        try {
+            prefManager.resetStartupConfigVersion();
+            assertEquals(0L, prefManager.getStartupConfigVersion());
+
+            long initializedVersion = prefManager.initializeStartupConfigVersion();
+            assertTrue(initializedVersion > 0L);
+
+            String newActiveIm = LIME.IM_DAYI.equals(prefManager.getActiveIM())
+                    ? LIME.IM_PHONETIC
+                    : LIME.IM_DAYI;
+            prefManager.setActiveIM(newActiveIm);
+            long afterActiveIm = prefManager.getStartupConfigVersion();
+            assertTrue(afterActiveIm > initializedVersion);
+
+            String newActivatedState = "5;6".equals(prefManager.getIMActivatedState())
+                    ? "6"
+                    : "5;6";
+            prefManager.setIMActivatedState(newActivatedState);
+            long afterActivatedState = prefManager.getStartupConfigVersion();
+            assertTrue(afterActivatedState > afterActiveIm);
+
+            prefManager.setShowArrowKeys(prefManager.getShowArrowKeys() == 0 ? 1 : 0);
+            long afterArrowKeys = prefManager.getStartupConfigVersion();
+            assertTrue(afterArrowKeys > afterActivatedState);
+
+            prefManager.setSplitKeyboard(prefManager.getSplitKeyboard() == 0 ? 1 : 0);
+            assertTrue(prefManager.getStartupConfigVersion() > afterArrowKeys);
+        } finally {
+            prefManager.setActiveIM(originalActiveIm);
+            prefManager.setIMActivatedState(originalActivatedState);
+            prefManager.setShowArrowKeys(originalShowArrowKeys);
+            prefManager.setSplitKeyboard(originalSplitKeyboard);
+        }
+    }
+
+    @Test
+    public void startupConfigVersionResetsOnlyForDirectStartupPreferenceChanges() {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LIMEPreferenceManager prefManager = new LIMEPreferenceManager(appContext);
+
+        long initializedVersion = prefManager.initializeStartupConfigVersion();
+        assertTrue(initializedVersion > 0L);
+
+        assertTrue(prefManager.resetStartupConfigVersionIfStartupPreferenceChanged("keyboard_theme"));
+        assertEquals(0L, prefManager.getStartupConfigVersion());
+
+        long reinitializedVersion = prefManager.initializeStartupConfigVersion();
+        assertTrue(reinitializedVersion > 0L);
+
+        assertFalse(prefManager.resetStartupConfigVersionIfStartupPreferenceChanged("restore_on_import_phonetic"));
+        assertEquals(reinitializedVersion, prefManager.getStartupConfigVersion());
+    }
+
     /**
      * Tests split keyboard preference get/set.
      */
@@ -2222,25 +3184,7 @@ public class LIMEServiceTest {
     }
 
     /**
-     * Tests emoji mode enable/disable setting.
-     */
-    @Test
-    public void test_5_6_2_1_EmojiModeSetting() {
-        // Test emoji mode setting (used by LIMEService)
-        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        LIMEPreferenceManager prefManager = new LIMEPreferenceManager(appContext);
-        
-        boolean emojiMode = prefManager.getEmojiMode();
-        // Value can be true or false, just verify it's accessible
-        assertTrue("Emoji mode should be accessible", true);
-        
-        // Note: setEmojiMode() method doesn't exist in LIMEPreferenceManager
-        // Only getter is available, so we just verify the getter works
-        assertTrue("Emoji mode getter should work", true);
-    }
-
-    /**
-     * Tests emoji display position preference (inline, separate).
+     * Tests emoji display position preference. Value 0 disables inline emoji.
      */
     @Test
     public void test_5_6_2_2_EmojiDisplayPositionSetting() {
@@ -2250,8 +3194,18 @@ public class LIMEServiceTest {
         
         Integer emojiDisplayPosition = prefManager.getEmojiDisplayPosition();
         assertNotNull("Emoji display position should not be null", emojiDisplayPosition);
+        assertEquals("Emoji display position should default to fifth candidate slot",
+                5, (int) emojiDisplayPosition);
         assertTrue("Emoji display position should be valid", emojiDisplayPosition >= 0);
-        
+
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(appContext)
+                .edit()
+                .putBoolean("enable_emoji", false)
+                .putString("enable_emoji_position", "3")
+                .commit();
+        assertEquals("Old disabled emoji pref should migrate to position none",
+                0, (int) prefManager.getEmojiDisplayPosition());
+
         // Note: setEmojiDisplayPosition() method doesn't exist in LIMEPreferenceManager
         // Only getter is available, so we just verify the getter works
         assertTrue("Emoji display position getter should work", true);
@@ -2538,12 +3492,9 @@ public class LIMEServiceTest {
         assertTrue("Selkey option should have valid default", 
                   selkeyOption >= 0 && selkeyOption <= 2);
         
-        boolean emojiMode = prefManager.getEmojiMode();
-        // Value can be true or false, just verify it's accessible
-        assertTrue("Emoji mode should have valid default", true);
-        
         int emojiDisplayPosition = prefManager.getEmojiDisplayPosition();
-        assertTrue("Emoji display position should have valid default", emojiDisplayPosition >= 0);
+        assertEquals("Emoji display position should default to fifth candidate slot",
+                5, emojiDisplayPosition);
         
         Integer hanConvertOption = prefManager.getHanCovertOption();
         assertNotNull("Han convert option should not be null", hanConvertOption);
@@ -6050,6 +7001,210 @@ public class LIMEServiceTest {
         }
     }
 
+    @Test
+    public void emojiContentIsNotRenderedDuringInputViewStartup() throws Exception {
+        LIMEService service = new LIMEService();
+        attachTargetContext(service);
+        runOnMainAndRethrow(service::onCreate);
+
+        Method initialViewAndSwitcher = LIMEService.class.getDeclaredMethod("initialViewAndSwitcher", boolean.class);
+        initialViewAndSwitcher.setAccessible(true);
+        runOnMainAndRethrow(() -> initialViewAndSwitcher.invoke(service, true));
+
+        assertNotNull("Emoji shell should exist after input view setup",
+                service.getEmojiKeyboardViewForTesting());
+        assertFalse("Full emoji content should stay out of startup",
+                service.isEmojiContentRenderedForTesting());
+        assertEquals("Emoji pages should not be built before emoji is opened",
+                0, service.getEmojiPageViewCountForTesting());
+    }
+
+    @Test
+    public void emojiContentRendersWhenEmojiKeyboardIsOpened() throws Exception {
+        LIMEService service = new LIMEService();
+        attachTargetContext(service);
+        runOnMainAndRethrow(service::onCreate);
+
+        Method initialViewAndSwitcher = LIMEService.class.getDeclaredMethod("initialViewAndSwitcher", boolean.class);
+        initialViewAndSwitcher.setAccessible(true);
+        runOnMainAndRethrow(() -> initialViewAndSwitcher.invoke(service, true));
+
+        Method showEmojiKeyboard = LIMEService.class.getDeclaredMethod("showEmojiKeyboard");
+        showEmojiKeyboard.setAccessible(true);
+        runOnMainAndRethrow(() -> showEmojiKeyboard.invoke(service));
+
+        assertTrue("Emoji content should render on first emoji open",
+                service.isEmojiContentRenderedForTesting());
+        assertTrue("Emoji pages should be built on first emoji open",
+                service.getEmojiPageViewCountForTesting() > 0);
+        assertTrue("Emoji category tabs should be built on first emoji open",
+                service.getEmojiCategoryTabCountForTesting() > 0);
+    }
+
+    @Test
+    public void onStartInputOnlyKeepsPhysicalKeyboardStartupStateReady() throws Exception {
+        LIMEService service = new LIMEService();
+        attachTargetContext(service);
+        runOnMainAndRethrow(service::onCreate);
+
+        EditorInfo editorInfo = new EditorInfo();
+        editorInfo.inputType = EditorInfo.TYPE_CLASS_TEXT;
+
+        runOnMainAndRethrow(service::onInitializeInterface);
+        runOnMainAndRethrow(() -> service.onStartInput(editorInfo, false));
+
+        assertNotNull("SearchServer should be ready for physical-key lookup",
+                getPrivateField(service, "SearchSrv"));
+        assertNotNull("Active IM should be ready before onStartInputView",
+                getPrivateField(service, "activeIM"));
+        assertNotNull("Keyboard switcher should be initialized from onInitializeInterface",
+                getPrivateField(service, "mKeyboardSwitcher"));
+        assertNotNull("Embedded candidate host should be available for physical keyboard candidates",
+                getPrivateField(service, "mCandidateInInputView"));
+        assertNotNull("Composing buffer should be initialized for first physical key",
+                getPrivateField(service, "mComposing"));
+        assertTrue("Prediction state should be enabled for text fields",
+                (Boolean) getPrivateField(service, "mPredictionOn"));
+        assertFalse("Physical-key startup path should not render full emoji content",
+                service.isEmojiContentRenderedForTesting());
+    }
+
+    @Test
+    public void visibleStartupReturnsEmbeddedCandidateInputViewWithoutEagerEmojiContent() throws Exception {
+        LIMEService service = new LIMEService();
+        attachTargetContext(service);
+        runOnMainAndRethrow(service::onCreate);
+
+        EditorInfo editorInfo = new EditorInfo();
+        editorInfo.inputType = EditorInfo.TYPE_CLASS_TEXT;
+
+        runOnMainAndRethrow(service::onInitializeInterface);
+        runOnMainAndRethrow(() -> service.onStartInput(editorInfo, false));
+
+        AtomicReference<View> inputView = new AtomicReference<>();
+        runOnMainAndRethrow(() -> inputView.set(service.onCreateInputView()));
+        runOnMainAndRethrow(() -> service.onStartInputView(editorInfo, false));
+
+        assertSame("Visible startup should return the embedded candidate container",
+                getPrivateField(service, "mCandidateInInputView"), inputView.get());
+        assertNotNull("Keyboard view should be attached for visible startup",
+                getPrivateField(service, "mInputView"));
+        assertNotNull("Candidate strip view should be attached for visible startup",
+                getPrivateField(service, "mCandidateViewInInputView"));
+        assertFalse("Visible startup should not render full emoji content before emoji opens",
+                service.isEmojiContentRenderedForTesting());
+    }
+
+    @Test
+    public void startupConfigSnapshotAvoidsRepeatedKeyboardConfigQueriesWhenVersionUnchanged() throws Exception {
+        Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        LIMEPreferenceManager prefManager = new LIMEPreferenceManager(appContext);
+        prefManager.resetStartupConfigVersion();
+        prefManager.setActiveIM(LIME.IM_PHONETIC);
+        prefManager.setIMActivatedState("6");
+        prefManager.initializeStartupConfigVersion();
+
+        LIMEService service = new LIMEService();
+        setPrivateField(service, "mLIMEPref", prefManager);
+        setPrivateField(service, "activeIM", LIME.IM_PHONETIC);
+        setPrivateField(service, "activatedIMFullNameList", new ArrayList<String>());
+        setPrivateField(service, "activatedIMList", new ArrayList<String>());
+        setPrivateField(service, "activatedIMShortNameList", new ArrayList<String>());
+        setPrivateField(service, "mKeyboardThemeIndex", prefManager.getKeyboardTheme());
+        setPrivateField(service, "mShowArrowKeys", prefManager.getShowArrowKeys());
+        setPrivateField(service, "mSplitKeyboard", prefManager.getSplitKeyboard());
+        setPrivateField(service, "mInputView", createMockInputView());
+
+        LIMEKeyboardSwitcher keyboardSwitcher = createMockKeyboardSwitcher();
+        when(keyboardSwitcher.getImConfigKeyboard(LIME.IM_PHONETIC)).thenReturn(LIME.IM_PHONETIC);
+        setPrivateField(service, "mKeyboardSwitcher", keyboardSwitcher);
+
+        ImConfig phonetic = createImConfig(LIME.IM_PHONETIC, "注音", LIME.IM_PHONETIC);
+        List<ImConfig> imConfigs = new ArrayList<>();
+        imConfigs.add(phonetic);
+
+        SearchServer searchServer = mock(SearchServer.class);
+        when(searchServer.getImConfigList(null, LIME.IM_FULL_NAME)).thenReturn(imConfigs);
+        when(searchServer.getKeyboardConfigList()).thenReturn(new ArrayList<>());
+        when(searchServer.getAllImKeyboardConfigList()).thenReturn(imConfigs);
+        setPrivateField(service, "SearchSrv", searchServer);
+
+        EditorInfo editorInfo = new EditorInfo();
+        editorInfo.inputType = EditorInfo.TYPE_CLASS_TEXT;
+
+        Method initOnStartInput = LIMEService.class.getDeclaredMethod("initOnStartInput", EditorInfo.class);
+        initOnStartInput.setAccessible(true);
+        initOnStartInput.invoke(service, editorInfo);
+        initOnStartInput.invoke(service, editorInfo);
+
+        verify(searchServer, times(1)).getImConfigList(null, LIME.IM_FULL_NAME);
+        verify(searchServer, times(1)).getKeyboardConfigList();
+        verify(searchServer, times(1)).getAllImKeyboardConfigList();
+    }
+
+    @Test
+    public void onCreateInputViewWithoutStartInputViewReturnsCandidateHostWithoutEagerEmojiContent() throws Exception {
+        LIMEService service = new LIMEService();
+        attachTargetContext(service);
+        runOnMainAndRethrow(service::onCreate);
+        runOnMainAndRethrow(service::onInitializeInterface);
+
+        AtomicReference<View> inputView = new AtomicReference<>();
+        runOnMainAndRethrow(() -> inputView.set(service.onCreateInputView()));
+
+        assertSame("onCreateInputView should return the embedded candidate host even before onStartInputView",
+                getPrivateField(service, "mCandidateInInputView"), inputView.get());
+        assertNotNull("Keyboard view should be ready when the input view is created",
+                getPrivateField(service, "mInputView"));
+        assertNotNull("Candidate strip should be ready when the input view is created",
+                getPrivateField(service, "mCandidateViewInInputView"));
+        assertFalse("Creating the input view should not render full emoji content",
+                service.isEmojiContentRenderedForTesting());
+    }
+
+    @Test
+    public void deferredStartupTaskRunsOnlyForCurrentInputViewGeneration() throws Exception {
+        LIMEService service = new LIMEService();
+        attachTargetContext(service);
+
+        int firstGeneration = service.getInputViewGenerationForTesting();
+        AtomicReference<Boolean> firstTaskRan = new AtomicReference<>(false);
+        service.runIfCurrentInputViewGenerationForTesting(firstGeneration, () -> firstTaskRan.set(true));
+        assertTrue("Task should run while the captured generation is current", firstTaskRan.get());
+
+        service.advanceInputViewGenerationForTesting();
+
+        AtomicReference<Boolean> staleTaskRan = new AtomicReference<>(false);
+        service.runIfCurrentInputViewGenerationForTesting(firstGeneration, () -> staleTaskRan.set(true));
+        assertFalse("Task should be skipped after the input view generation changes", staleTaskRan.get());
+    }
+
+    @Test
+    public void followSystemAccentApplyIsSkippedWhenStateAndViewsAreUnchanged() throws Exception {
+        LIMEService service = new LIMEService();
+        attachTargetContext(service);
+
+        LIMEKeyboardView inputView = createMockInputView();
+        CandidateView embeddedCandidateView = createMockCandidateView();
+        CandidateView floatingCandidateView = createMockCandidateView();
+        setPrivateField(service, "mInputView", inputView);
+        setPrivateField(service, "mCandidateViewInInputView", embeddedCandidateView);
+        setPrivateField(service, "mCandidateView", floatingCandidateView);
+
+        service.applyFollowSystemAccentColorsForTesting(0xFF336699, false);
+        service.applyFollowSystemAccentColorsForTesting(0xFF336699, false);
+
+        verify(inputView, times(1)).applyFollowSystemAccentColor(0xFF336699, false);
+        verify(embeddedCandidateView, times(1)).applyFollowSystemAccentColor(0xFF336699, false);
+        verify(floatingCandidateView, times(1)).applyFollowSystemAccentColor(0xFF336699, false);
+
+        service.applyFollowSystemAccentColorsForTesting(0xFF336699, true);
+
+        verify(inputView, times(1)).applyFollowSystemAccentColor(0xFF336699, true);
+        verify(embeddedCandidateView, times(1)).applyFollowSystemAccentColor(0xFF336699, true);
+        verify(floatingCandidateView, times(1)).applyFollowSystemAccentColor(0xFF336699, true);
+    }
+
     /**
      * Tests onCreateCandidatesView() creates candidate view successfully.
      */
@@ -7405,6 +8560,48 @@ public class LIMEServiceTest {
         }
     }
 
+    @Test
+    public void test_5_13_1_7_MoveCaretByDispatchesDpadOnlyWhenNotComposing() throws Exception {
+        class TestableLIMEService extends LIMEService {
+            private final InputConnection inputConnection;
+
+            TestableLIMEService(InputConnection inputConnection) {
+                this.inputConnection = inputConnection;
+            }
+
+            @Override
+            public InputConnection getCurrentInputConnection() {
+                return inputConnection;
+            }
+        }
+
+        InputConnection inputConnection = mock(InputConnection.class);
+        when(inputConnection.sendKeyEvent(any(android.view.KeyEvent.class))).thenReturn(true);
+        TestableLIMEService limeService = new TestableLIMEService(inputConnection);
+
+        Field composingField = LIMEService.class.getDeclaredField("mComposing");
+        composingField.setAccessible(true);
+        StringBuilder composing = (StringBuilder) composingField.get(limeService);
+        composing.setLength(0);
+
+        limeService.moveCaretBy(-2);
+        limeService.moveCaretBy(3);
+        limeService.moveCaretBy(0);
+
+        verify(inputConnection, times(10)).sendKeyEvent(any(android.view.KeyEvent.class));
+        verify(inputConnection, atLeastOnce()).sendKeyEvent(argThat(event ->
+                event.getAction() == android.view.KeyEvent.ACTION_DOWN
+                        && event.getKeyCode() == android.view.KeyEvent.KEYCODE_DPAD_LEFT));
+        verify(inputConnection, atLeastOnce()).sendKeyEvent(argThat(event ->
+                event.getAction() == android.view.KeyEvent.ACTION_DOWN
+                        && event.getKeyCode() == android.view.KeyEvent.KEYCODE_DPAD_RIGHT));
+
+        composing.append("abc");
+        limeService.moveCaretBy(1);
+
+        verifyNoMoreInteractions(inputConnection);
+    }
+
     // ============================================================
     // 5.19 IM Switching (LIMEService)
     // ============================================================
@@ -7456,22 +8653,22 @@ public class LIMEServiceTest {
             java.lang.reflect.Method switchChiEngMethod = LIMEService.class.getDeclaredMethod("switchChiEng");
             switchChiEngMethod.setAccessible(true);
             
-            // Test switchChiEng with mEnglishOnly = false (line 3112-3115 branch - shows "English" toast)
+            // Test switchChiEng with mEnglishOnly = false
             java.lang.reflect.Field englishOnlyField = LIMEService.class.getDeclaredField("mEnglishOnly");
             englishOnlyField.setAccessible(true);
             englishOnlyField.setBoolean(limeService, false);
             try {
                 switchChiEngMethod.invoke(limeService);
             } catch (Exception e) {
-                // Expected - toggleChinese, Toast may fail
+                // Expected - toggleChinese may fail
             }
             
-            // Test switchChiEng with mEnglishOnly = true (line 3116-3118 branch - shows "Mixed" toast)
+            // Test switchChiEng with mEnglishOnly = true
             englishOnlyField.setBoolean(limeService, true);
             try {
                 switchChiEngMethod.invoke(limeService);
             } catch (Exception e) {
-                // Expected - toggleChinese, Toast may fail
+                // Expected - toggleChinese may fail
             }
             
             // Test switchChiEng with mComposing.length() > 0 (line 3103 clearComposing branch)
@@ -7620,6 +8817,66 @@ public class LIMEServiceTest {
             // Method might not exist in this build
             assertTrue("Voice intent configuration test skipped (method not found)", true);
         }
+    }
+
+    @Test
+    public void test_5_20_3_1_VoiceInputIntentFallsBackToZhTW() throws Exception {
+        LIMEService limeService = new LIMEService();
+
+        java.lang.reflect.Method getVoiceIntent = LIMEService.class.getDeclaredMethod("getVoiceIntent");
+        getVoiceIntent.setAccessible(true);
+
+        android.content.Intent voiceIntent = (android.content.Intent) getVoiceIntent.invoke(limeService);
+
+        assertEquals("RecognizerIntent fallback should default to zh-TW when locale is unavailable",
+                "zh-TW",
+                voiceIntent.getStringExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE));
+    }
+
+    @Test
+    public void test_5_20_3_2_VoiceInputLocaleResolutionNeverUsesZhCN() {
+        assertEquals("Explicit Taiwan Chinese should use zh-TW",
+                "zh-TW",
+                LIMEService.resolveVoiceRecognitionLanguageTag(java.util.Locale.forLanguageTag("zh-TW")));
+        assertEquals("Explicit Hong Kong Chinese should use zh-HK",
+                "zh-HK",
+                LIMEService.resolveVoiceRecognitionLanguageTag(java.util.Locale.forLanguageTag("zh-HK")));
+        assertEquals("Simplified Chinese locale should fall back to zh-TW",
+                "zh-TW",
+                LIMEService.resolveVoiceRecognitionLanguageTag(java.util.Locale.forLanguageTag("zh-CN")));
+        assertEquals("Ambiguous Chinese script-only locale should fall back to zh-TW",
+                "zh-TW",
+                LIMEService.resolveVoiceRecognitionLanguageTag(java.util.Locale.forLanguageTag("zh-Hans")));
+        assertEquals("Non-Chinese locale should fall back to zh-TW",
+                "zh-TW",
+                LIMEService.resolveVoiceRecognitionLanguageTag(java.util.Locale.US));
+    }
+
+    @Test
+    public void test_5_20_3_3_ModernVoiceImeIdsAreDetected() {
+        assertTrue("Legacy Google Voice Search IME should still be detected",
+                LIMEUtilities.isVoiceInputMethodId(
+                        "com.google.android.voicesearch/.ime.VoiceInputMethodService"));
+        assertTrue("Google Speech Services voice IME should be used as switch target",
+                LIMEUtilities.isVoiceInputMethodId(
+                        "com.google.android.tts/com.google.android.apps.speech.tts.googletts.settings.asr.voiceime.VoiceInputMethodService"));
+        assertTrue("Legacy Google voice IME should still be detected",
+                LIMEUtilities.isVoiceInputMethodId(
+                        "com.google.android.googlequicksearchbox/com.google.android.voicesearch.ime.VoiceInputMethodService"));
+        assertTrue("Gboard should be allowed as the last voice-capable IME fallback",
+                LIMEUtilities.isVoiceInputMethodId(
+                        "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME"));
+        assertTrue("Voice/speech IME IDs should be detected heuristically",
+                LIMEUtilities.isVoiceInputMethodId(
+                        "com.example.speech/.SpeechInputMethodService"));
+        assertTrue("Voice IME IDs should be detected heuristically",
+                LIMEUtilities.isVoiceInputMethodId(
+                        "com.example.voice/.InputMethodService"));
+        assertFalse("Unrelated IME IDs should not be treated as voice input",
+                LIMEUtilities.isVoiceInputMethodId(
+                        "com.example.keyboard/.InputMethodService"));
+        assertFalse("Null IME ID should not be treated as voice input",
+                LIMEUtilities.isVoiceInputMethodId(null));
     }
 
     /**
@@ -7993,18 +9250,18 @@ public class LIMEServiceTest {
 
     /**
      * Test settings menu item selection
-     * Tests launchSettings() opens LIMEPreference activity
+     * Tests launchPreference() opens LIMEPreference activity
      * Note: Requires full service lifecycle - expects exception in unit test context
      */
     @Test
     public void test_5_21_3_SettingsMenuItemSelection() throws Exception {
         LIMEService limeService = new LIMEService();
         try {
-            java.lang.reflect.Method launchSettings = LIMEService.class.getDeclaredMethod("launchSettings");
-            launchSettings.setAccessible(true);
+            java.lang.reflect.Method launchPreference = LIMEService.class.getDeclaredMethod("launchPreference");
+            launchPreference.setAccessible(true);
 
             try {
-                launchSettings.invoke(limeService);
+                launchPreference.invoke(limeService);
                 assertTrue("Settings launch invoked (may be stubbed)", true);
             } catch (java.lang.reflect.InvocationTargetException e) {
                 // Expected: requires Context to create Intent with setClass()
@@ -10342,6 +11599,49 @@ public class LIMEServiceTest {
         assertTrue("initOnStartInput code paths simulated", true);
     }
 
+    @Test
+    public void test_5_23_40_NumberAndDecimalInputsUsePhoneKeyboardRoute() {
+        assertEquals("Number input should use the phone-number keyboard route",
+                LIMEKeyboardSwitcher.MODE_PHONE,
+                LIMEService.getRestrictedFieldKeyboardMode(EditorInfo.TYPE_CLASS_NUMBER));
+        assertFalse("Number input should not use the symbol keyboard route",
+                LIMEService.getRestrictedFieldSymbolFlag(EditorInfo.TYPE_CLASS_NUMBER));
+
+        int decimalInputType = EditorInfo.TYPE_CLASS_NUMBER | EditorInfo.TYPE_NUMBER_FLAG_DECIMAL;
+        assertEquals("Decimal input should use the phone-number keyboard route",
+                LIMEKeyboardSwitcher.MODE_PHONE,
+                LIMEService.getRestrictedFieldKeyboardMode(decimalInputType));
+        assertFalse("Decimal input should not use the symbol keyboard route",
+                LIMEService.getRestrictedFieldSymbolFlag(decimalInputType));
+
+        assertEquals("Datetime input keeps the existing symbol route",
+                LIMEKeyboardSwitcher.MODE_TEXT,
+                LIMEService.getRestrictedFieldKeyboardMode(EditorInfo.TYPE_CLASS_DATETIME));
+        assertTrue("Datetime input keeps the existing symbol keyboard flag",
+                LIMEService.getRestrictedFieldSymbolFlag(EditorInfo.TYPE_CLASS_DATETIME));
+    }
+
+    @Test
+    public void test_5_23_40_UriAndSearchTextUsePersistedLanguageModeRoute() {
+        assertFalse("URI fields should follow normal text persisted-language routing",
+                LIMEService.isForcedEnglishTextVariation(EditorInfo.TYPE_TEXT_VARIATION_URI));
+        assertFalse("Web edit/search text should follow normal text persisted-language routing",
+                LIMEService.isForcedEnglishTextVariation(EditorInfo.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT));
+        assertFalse("Generic text should follow normal text persisted-language routing",
+                LIMEService.isForcedEnglishTextVariation(EditorInfo.TYPE_TEXT_VARIATION_NORMAL));
+
+        assertTrue("Email fields remain English-only",
+                LIMEService.isForcedEnglishTextVariation(EditorInfo.TYPE_TEXT_VARIATION_EMAIL_ADDRESS));
+        assertTrue("Web email fields remain English-only",
+                LIMEService.isForcedEnglishTextVariation(EditorInfo.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS));
+        assertTrue("Password fields remain English-only",
+                LIMEService.isForcedEnglishTextVariation(EditorInfo.TYPE_TEXT_VARIATION_PASSWORD));
+        assertTrue("Web password fields remain English-only",
+                LIMEService.isForcedEnglishTextVariation(EditorInfo.TYPE_TEXT_VARIATION_WEB_PASSWORD));
+        assertTrue("Visible password fields remain English-only",
+                LIMEService.isForcedEnglishTextVariation(EditorInfo.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD));
+    }
+
     /**
      * Tests translateKeyDown branches with mocks.
      * Targets lines 943-1082 (30% coverage)
@@ -11016,7 +12316,7 @@ public class LIMEServiceTest {
         helper.setField("mIMActivatedState", "");
         helper.setField("activeIM", "phonetic");
         
-        // State references index 50 which is out of bounds for LIME.IM_CODES (length 13)
+        // State references index 50 which is out of bounds for LIME.IM_CODES.
         try {
             Object mockPref = helper.getField("mLIMEPref");
             if (mockPref != null) {
@@ -11144,6 +12444,119 @@ public class LIMEServiceTest {
         assertNotNull("List should not be null after cache hit", resultList);
         
         assertTrue("Cache hit test completed", true);
+    }
+
+    @Test
+    public void test_8_7_EnglishAutoCapRecognizesNewlinesQuotesAndAbbreviations() {
+        assertTrue(LIMEService.shouldAutoCapitalizeEnglishText("Hello.\n"));
+        assertTrue(LIMEService.shouldAutoCapitalizeEnglishText("She said \"Hello.\" "));
+        assertTrue(LIMEService.shouldAutoCapitalizeEnglishText("Ready?) "));
+        assertFalse(LIMEService.shouldAutoCapitalizeEnglishText("e."));
+        assertFalse(LIMEService.shouldAutoCapitalizeEnglishText("Mr. "));
+        assertFalse(LIMEService.shouldAutoCapitalizeEnglishText("U.S. "));
+    }
+
+    @Test
+    public void test_8_7_EnglishDoubleSpacePeriodOnlyAfterWordLikeContext() {
+        assertTrue(LIMEService.shouldInsertPeriodForEnglishDoubleSpace("hello "));
+        assertTrue(LIMEService.shouldInsertPeriodForEnglishDoubleSpace("Go2 "));
+        assertTrue(LIMEService.shouldInsertPeriodForEnglishDoubleSpace("done) "));
+        assertFalse(LIMEService.shouldInsertPeriodForEnglishDoubleSpace("hello. "));
+        assertFalse(LIMEService.shouldInsertPeriodForEnglishDoubleSpace("http://lime-ime.github.io "));
+    }
+
+    // ENGLISH_KB.md #0 / §2a — pick-space punctuation swap (replicate LatinIME).
+    // commitEnglishPunctuationWithSwap(ic, char, wasPickedAutoSpace) returns true when it
+    // fully handled the commit (caller skips its own commit), false to commit normally.
+
+    private Method englishSwapMethod() throws Exception {
+        Method m = LIMEService.class.getDeclaredMethod(
+                "commitEnglishPunctuationWithSwap",
+                InputConnection.class, char.class, boolean.class);
+        m.setAccessible(true);
+        return m;
+    }
+
+    /** Build a mock InputConnection whose single char before cursor is `before`. */
+    private InputConnection mockIcWithCharBefore(String before) {
+        InputConnection ic = mock(InputConnection.class);
+        when(ic.commitText(any(), anyInt())).thenReturn(true);
+        when(ic.deleteSurroundingText(anyInt(), anyInt())).thenReturn(true);
+        when(ic.getTextBeforeCursor(1, 0)).thenReturn(before);
+        return ic;
+    }
+
+    @Test
+    public void englishSwap_followedBySpacePunct_swapsSpaceToAfter() throws Exception {
+        Method swap = englishSwapMethod();
+        // "word " + "," -> delete the space, commit ", "  => "word, "
+        for (char c : new char[]{'.', ',', ';', ':', '!', '?', ')', ']', '}'}) {
+            InputConnection ic = mockIcWithCharBefore(" ");
+            boolean handled = (Boolean) swap.invoke(new LIMEService(), ic, c, true);
+            assertTrue("swap should handle '" + c + "'", handled);
+            org.mockito.InOrder order = inOrder(ic);
+            order.verify(ic).deleteSurroundingText(1, 0);
+            order.verify(ic).commitText(c + " ", 1);
+            verify(ic, never()).commitText(String.valueOf(c), 1);
+        }
+    }
+
+    @Test
+    public void englishSwap_precededBySpacePunct_keepsSpaceAndCommitsNormally() throws Exception {
+        Method swap = englishSwapMethod();
+        // "word " + "(" -> keep the space, let caller commit  => "word ("
+        for (char c : new char[]{'(', '[', '{'}) {
+            InputConnection ic = mockIcWithCharBefore(" ");
+            boolean handled = (Boolean) swap.invoke(new LIMEService(), ic, c, true);
+            assertFalse("bracket '" + c + "' must not be handled (no swap)", handled);
+            verify(ic, never()).deleteSurroundingText(anyInt(), anyInt());
+            verify(ic, never()).commitText(any(), anyInt());
+        }
+    }
+
+    @Test
+    public void englishSwap_stripPunct_deletesSpaceAndCommitsBare() throws Exception {
+        Method swap = englishSwapMethod();
+        // "word " + "-" -> delete the space, commit bare  => "word-"
+        for (char c : new char[]{'-', '/', '@', '_', '\''}) {
+            InputConnection ic = mockIcWithCharBefore(" ");
+            boolean handled = (Boolean) swap.invoke(new LIMEService(), ic, c, true);
+            assertTrue("strip '" + c + "' should be handled", handled);
+            org.mockito.InOrder order = inOrder(ic);
+            order.verify(ic).deleteSurroundingText(1, 0);
+            order.verify(ic).commitText(String.valueOf(c), 1);
+            verify(ic, never()).commitText(c + " ", 1);
+        }
+    }
+
+    @Test
+    public void englishSwap_notArmed_doesNothing() throws Exception {
+        Method swap = englishSwapMethod();
+        // wasPickedAutoSpace == false: never swap, regardless of char or buffer.
+        InputConnection ic = mockIcWithCharBefore(" ");
+        assertFalse((Boolean) swap.invoke(new LIMEService(), ic, ',', false));
+        verify(ic, never()).deleteSurroundingText(anyInt(), anyInt());
+        verify(ic, never()).commitText(any(), anyInt());
+    }
+
+    @Test
+    public void englishSwap_armedButNoTrailingSpace_commitsNormally() throws Exception {
+        Method swap = englishSwapMethod();
+        // Cursor-move safety: armed, but the char before cursor is not a space.
+        InputConnection ic = mockIcWithCharBefore("d");
+        assertFalse((Boolean) swap.invoke(new LIMEService(), ic, ',', true));
+        verify(ic, never()).deleteSurroundingText(anyInt(), anyInt());
+        verify(ic, never()).commitText(any(), anyInt());
+    }
+
+    @Test
+    public void englishSwap_nonPunctChar_notHandled() throws Exception {
+        Method swap = englishSwapMethod();
+        // A letter is not in any swap class -> not handled (caller inserts it, space stays).
+        InputConnection ic = mockIcWithCharBefore(" ");
+        assertFalse((Boolean) swap.invoke(new LIMEService(), ic, 'a', true));
+        verify(ic, never()).deleteSurroundingText(anyInt(), anyInt());
+        verify(ic, never()).commitText(any(), anyInt());
     }
 
 }

@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -77,6 +77,34 @@ public class SearchServer {
     private static final int SCORE_ADJUSTMENT_INCREMENT = 50; // Score adjustment increment
     private static final int CODE_LENGTH_BONUS_MULTIPLIER = 30; // Multiplier for code length bonus calculation
 
+    private static int codePointLength(String text) {
+        return text == null ? 0 : text.codePointCount(0, text.length());
+    }
+
+    private static String codePointSubstring(String text, int beginCodePoint, int endCodePoint) {
+        int begin = text.offsetByCodePoints(0, beginCodePoint);
+        int end = text.offsetByCodePoints(0, endCodePoint);
+        return text.substring(begin, end);
+    }
+
+    private static String[] splitLeadingCodePoint(String text) {
+        if (text == null || text.isEmpty()) {
+            return new String[]{text, ""};
+        }
+        int end = text.offsetByCodePoints(0, 1);
+        return new String[]{text.substring(0, end), text.substring(end)};
+    }
+
+    private static String[] splitRelatedPhraseTail(String phrase, int cwordCodePointCount) {
+        int phraseCodePointLength = codePointLength(phrase);
+        int pwordStart = phraseCodePointLength - cwordCodePointCount - 1;
+        int cwordStart = phraseCodePointLength - cwordCodePointCount;
+        return new String[]{
+                codePointSubstring(phrase, pwordStart, cwordStart),
+                codePointSubstring(phrase, cwordStart, phraseCodePointLength)
+        };
+    }
+
     //Jeremy '12,5,1 shared single LIMEDB object
     //Jeremy '12,4,6 Combine updatedb and quierydb into db,
     //Jeremy '12,4,7 move db open/close back to LimeDB
@@ -140,7 +168,11 @@ public class SearchServer {
         // This prevents NullPointerException during object construction
         if (mContext != null) {
             mLIMEPref = new LIMEPreferenceManager(mContext.getApplicationContext());
-            if (dbadapter == null) dbadapter = new LimeDB(mContext);
+            if (dbadapter == null) {
+                dbadapter = new LimeDB(mContext);
+            } else {
+                dbadapter.openDBConnection(false);
+            }
         } else {
             // For null context (test scenarios), create a minimal preference manager
             // This allows the object to be constructed without crashing
@@ -219,6 +251,7 @@ public class SearchServer {
     }
 
     private static Thread prefetchThread;
+    private static Thread emojiPreloadThread;
 
     /**
      * Prefetches common mappings into the cache to improve initial response time.
@@ -290,15 +323,21 @@ public class SearchServer {
     public void getCodeListStringFromWord(final String word) {
 
         String result = dbadapter.getCodeListStringByWord(word);
-        if (result != null && !result.isEmpty()) {
+        if (isReverseLookupResult(result)) {
             LIMEUtilities.showNotification(
                     mContext, true, mContext.getText(R.string.ime_setting), result, new Intent(mContext, LIMESettings.class));
 
-            if(mLIMEPref.getReverseLookupNotify()){
+            if (mContext instanceof LIMEService) {
+                ((LIMEService) mContext).showReverseLookup(result);
+            } else {
                 Toast.makeText(mContext, result, Toast.LENGTH_SHORT).show();
             }
         }
 
+    }
+
+    private static boolean isReverseLookupResult(String result) {
+        return result != null && !result.trim().isEmpty() && result.contains("=");
     }
 
     /**
@@ -530,7 +569,7 @@ public class SearchServer {
                                 Mapping remainingCodeExactMatchMapping = resultList.get(0);
                                 Mapping previousMapping = p.first;
                                 String phrase = previousMapping.getWord() + remainingCodeExactMatchMapping.getWord();
-                                int phraseLen = phrase.length();
+                                int phraseLen = codePointLength(phrase);
                                 if (phraseLen < 2 || remainingCodeExactMatchMapping.getBasescore() < 2)
                                     continue;
                                 int remainingScore = remainingCodeExactMatchMapping.getBasescore();
@@ -551,8 +590,9 @@ public class SearchServer {
                                 // check up to four characters phrase 1-3, 1-2 , 1-1
                                 Mapping relatedMapping = null;
                                 for (int k = ((phraseLen < 4) ? phraseLen - 1 : 3); k > 0; k--) {
-                                    String pword = phrase.substring(phraseLen - k - 1, phraseLen - k);
-                                    String cword = phrase.substring(phraseLen - k, phraseLen);
+                                    String[] relatedWords = splitRelatedPhraseTail(phrase, k);
+                                    String pword = relatedWords[0];
+                                    String cword = relatedWords[1];
                                     relatedMapping = dbadapter.isRelatedPhraseExist(pword, cword);
                                     if (relatedMapping != null) break;
                                 }
@@ -798,24 +838,35 @@ public class SearchServer {
         }
 
         List<List<String>> pages = new ArrayList<>();
-        if (dbadapter == null) {
+        LimeDB db = dbadapter;
+        if (db == null) {
             return pages;
         }
         List<Mapping> recent = loadRecentEmoji(32);
         pages.add(mappingWords(recent));
-        pages.addAll(dbadapter.loadEmojiCategoryPages());
+        pages.addAll(db.loadEmojiCategoryPages());
         emojiCategoryPagesCache = copyEmojiCategoryPages(pages);
         return pages;
     }
 
+    public boolean hasEmojiCategoryPagesCache() {
+        return emojiCategoryPagesCache != null;
+    }
+
+    public boolean isEmojiCategoryPreloadRunning() {
+        return emojiPreloadThread != null && emojiPreloadThread.isAlive();
+    }
+
     public void preloadEmojiCategoryPages() {
-        new Thread(() -> {
+        if (isEmojiCategoryPreloadRunning()) return;
+        emojiPreloadThread = new Thread(() -> {
             try {
                 loadEmojiCategoryPages();
             } catch (Exception e) {
                 Log.e(TAG, "Error preloading emoji category pages", e);
             }
-        }, "emoji-category-preload").start();
+        }, "emoji-category-preload");
+        emojiPreloadThread.start();
     }
 
     private static List<String> mappingWords(List<Mapping> mappings) {
@@ -849,6 +900,16 @@ public class SearchServer {
             emojicache.clear();
         }
         emojiCategoryPagesCache = null;
+    }
+
+    /**
+     * Learn a picked English suggestion by incrementing its score in the scored dictionary.
+     * Delegates to LimeDB (UPDATE-only, +1). See docs/ENG_AUTO_COMPLETION.md "Learning".
+     */
+    public void recordEnglishUsage(String word) {
+        if (dbadapter != null) {
+            dbadapter.recordEnglishUsage(word);
+        }
     }
 
     /**
@@ -1014,10 +1075,13 @@ public class SearchServer {
                     averageScore = bestSuggestion.getBasescore() / bestSuggestionLength;
                 }
             }
+            boolean bestSuggestionDuplicatesResultList =
+                    bestSuggestion != null && mappingListContainsWord(resultlist, bestSuggestion.getWord());
 
             if (bestSuggestion != null    // the last element is run-time built suggestion from remaining code query
                     && !abandonPhraseSuggestion
                     && !bestSuggestion.isExactMatchToCodeRecord() //will be the first item of result list, dont' add duplicated item
+                    && !bestSuggestionDuplicatesResultList
                     && bestSuggestionLength > 1
                     && ( (englishSuggestion==null && averageScore  > MIN_SCORE_THRESHOLD) || (englishSuggestion!=null && averageScore > MAX_SCORE_THRESHOLD ))  ) {
                 result.add(self);
@@ -1063,6 +1127,16 @@ public class SearchServer {
 
     }
 
+    private static boolean mappingListContainsWord(List<Mapping> mappings, String word) {
+        if (mappings == null || word == null) return false;
+        for (Mapping mapping : mappings) {
+            if (mapping != null && word.equals(mapping.getWord())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 
 
 
@@ -1076,8 +1150,16 @@ public class SearchServer {
      * @return List of mappings.
 	 */
     private List<Mapping> getMappingByCodeFromCacheOrDB(String queryCode, Boolean getAllRecords) {
+        LimeDB db = dbadapter;
+        if (db == null) {
+            return new LinkedList<>();
+        }
+
         String cachedKey = cacheKey(queryCode);
         assert cachedKey != null;
+        if (cachedKey.isEmpty()) {
+            return new LinkedList<>();
+        }
         List<Mapping> cacheTemp = cache.get(cachedKey);
 
         if (DEBUG)
@@ -1087,7 +1169,7 @@ public class SearchServer {
             // 25/Jul/2011 by Art
             // Just ignore error when something wrong with the result set
             try {
-                cacheTemp = dbadapter.getMappingByCode(queryCode, !isPhysicalKeyboardPressed, getAllRecords);
+                cacheTemp = db.getMappingByCode(queryCode, !isPhysicalKeyboardPressed, getAllRecords);
                 if (cacheTemp != null) cache.put(cachedKey, cacheTemp);
                 //Jeremy '12,6,5 check if need to update code remap cache
                 if (cacheTemp != null
@@ -1188,7 +1270,9 @@ public class SearchServer {
         }
 
         // learn ld phrase if the select mapping is run-time suggestion
-        if (selectedMapping.isRuntimeBuiltPhraseRecord() && suggestionLoL != null && !suggestionLoL.isEmpty()) {
+        if (mLIMEPref != null && mLIMEPref.getLearnPhrase()
+                && selectedMapping.isRuntimeBuiltPhraseRecord()
+                && suggestionLoL != null && !suggestionLoL.isEmpty()) {
 
             final List<Pair<Mapping, String>> bestSuggestionList = new LinkedList<>(suggestionLoL.get(suggestionLoL.size() - 1));
             final String selectedWord = selectedMapping.getWord();
@@ -1446,7 +1530,7 @@ List<Mapping> scorelistSnapshot = null;
                     baseCode = unit1.getCode();
                     baseWord = unit1.getWord();
 
-                    if (baseWord.length() == 1) {
+                    if (codePointLength(baseWord) == 1) {
                         if (unit1.getId() == null //Jeremy '12,6,7 break if id is null (selected from related list)
                                 || unit1.isPartialMatchToCodeRecord() //Jeremy '15,6,3 new record identification
                                 || unit1.getCode() == null //Jeremy '12,6,7 break if code is null (selected from related phrase)
@@ -1464,10 +1548,11 @@ List<Mapping> scorelistSnapshot = null;
                             break;//abandon the phrase learning process;
 
                         //if word length >0, lookup all codes and rebuild basecode and QPCode
-                    } else if (baseWord.length() > 1 && baseWord.length() < 5) {
+                    } else if (codePointLength(baseWord) > 1 && codePointLength(baseWord) < 5) {
                         baseCode = "";
-                        for (int i = 0; i < baseWord.length(); i++) {
-                            String c = baseWord.substring(i, i + 1);
+                        int baseWordCodePointLength = codePointLength(baseWord);
+                        for (int i = 0; i < baseWordCodePointLength; i++) {
+                            String c = codePointSubstring(baseWord, i, i + 1);
                             List<Mapping> rMappingList = dbadapter.getMappingByWord(c, tablename);
                             if (!rMappingList.isEmpty()) {
                                 baseCode += rMappingList.get(0).getCode();
@@ -1494,7 +1579,7 @@ List<Mapping> scorelistSnapshot = null;
                             String code2 = unit2.getCode();
                             baseWord += word2;
 
-                            if (word2.length() == 1 && baseWord.length() < 5) { //limit the phrase size to 4
+                            if (codePointLength(word2) == 1 && codePointLength(baseWord) < 5) { //limit the phrase size to 4
                                 if (unit2.getId() == null //Jeremy '12,6,7 break if id is null (selected from related phrase)
                                         || unit2.isPartialMatchToCodeRecord() //Jeremy '15,6,3 new record identification
                                         || code2 == null //Jeremy '12,6,7 break if code is null (selected from relatedphrase)
@@ -1513,9 +1598,10 @@ List<Mapping> scorelistSnapshot = null;
                                     break; //abandon the phrase learning process;
 
                                 //if word length >0, lookup all codes and rebuild basecode and QPCode
-                            } else if (word2.length() > 1 && baseWord.length() < 5) {
-                                for (int j = 0; j < word2.length(); j++) {
-                                    String c = word2.substring(j, j + 1);
+                            } else if (codePointLength(word2) > 1 && codePointLength(baseWord) < 5) {
+                                int word2CodePointLength = codePointLength(word2);
+                                for (int j = 0; j < word2CodePointLength; j++) {
+                                    String c = codePointSubstring(word2, j, j + 1);
                                     List<Mapping> rMappingList = dbadapter.getMappingByWord(c, tablename);
                                     if (!rMappingList.isEmpty()) {
                                         baseCode += rMappingList.get(0).getCode();
@@ -1697,6 +1783,10 @@ List<Mapping> scorelistSnapshot = null;
      */
     public void addLDPhrase(Mapping mapping,//String id, String code, String word, int score,
                             boolean ending) {
+        if (mLIMEPref != null && !mLIMEPref.getLearnPhrase()) {
+            return;
+        }
+
         if (LDPhraseListArray == null)
             LDPhraseListArray = new ArrayList<>();
         if (LDPhraseList == null)
@@ -1944,7 +2034,7 @@ List<Mapping> scorelistSnapshot = null;
                             Mapping remainingCodeExactMatchMapping = resultList.get(0);
                             Mapping previousMapping = p.first;
                             String phrase = previousMapping.getWord() + remainingCodeExactMatchMapping.getWord();
-                            int phraseLen = phrase.length();
+                            int phraseLen = codePointLength(phrase);
                             if (phraseLen < 2 || remainingCodeExactMatchMapping.getBasescore() < 2)
                                 continue;
                             int remainingScore = remainingCodeExactMatchMapping.getBasescore();
@@ -1964,8 +2054,9 @@ List<Mapping> scorelistSnapshot = null;
                             // check up to four characters phrase 1-3, 1-2 , 1-1
                             Mapping relatedMapping = null;
                             for (int i = ((phraseLen < 4) ? phraseLen - 1 : 3); i > 0; i--) {
-                                String pword = phrase.substring(phraseLen - i - 1, phraseLen - i);
-                                String cword = phrase.substring(phraseLen - i, phraseLen);
+                                String[] relatedWords = splitRelatedPhraseTail(phrase, i);
+                                String pword = relatedWords[0];
+                                String cword = relatedWords[1];
                                 relatedMapping = dbadapter.isRelatedPhraseExist(pword, cword);
                                 if (relatedMapping != null) break;
                             }
@@ -2561,9 +2652,10 @@ List<Mapping> scorelistSnapshot = null;
         List<String> whereArgsList = new ArrayList<>();
         
         String cword = "";
-        if (pword != null && !pword.isEmpty() && pword.length() > 1) {
-            cword = pword.substring(1);
-            pword = pword.substring(0, 1);
+        if (pword != null && !pword.isEmpty() && codePointLength(pword) > 1) {
+            String[] relatedWords = splitLeadingCodePoint(pword);
+            pword = relatedWords[0];
+            cword = relatedWords[1];
         }
         
         if (pword != null && !pword.isEmpty()) {

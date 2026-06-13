@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -33,6 +33,8 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.view.ViewCompat;
@@ -42,13 +44,18 @@ import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceGroup;
+import androidx.preference.ListPreference;
 
 import net.toload.main.hd.R;
 import net.toload.main.hd.SearchServer;
+import net.toload.main.hd.data.ImConfig;
 import net.toload.main.hd.data.Keyboard;
 import net.toload.main.hd.global.LIME;
 import net.toload.main.hd.global.LIMEPreferenceManager;
+import net.toload.main.hd.ui.view.ScrollableTabHelper;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 
@@ -84,10 +91,41 @@ public class LIMEPreference extends AppCompatActivity {
 		androidx.appcompat.app.ActionBar actionBar = getSupportActionBar();
 		if (actionBar != null) {
 			actionBar.setDisplayShowTitleEnabled(true);
+			actionBar.setTitle(R.string.title_lime_preference);
+			actionBar.setDisplayHomeAsUpEnabled(false);
+			actionBar.setHomeButtonEnabled(false);
 		}
+		getSupportFragmentManager().addOnBackStackChangedListener(this::syncActionBarToBackStack);
 
 		// Handle window insets for edge-to-edge display
 		setupEdgeToEdge();
+	}
+
+	@Override
+	public boolean onSupportNavigateUp() {
+		if (getSupportFragmentManager().getBackStackEntryCount() > 0) {
+			getSupportFragmentManager().popBackStack();
+			return true;
+		}
+		finish();
+		return true;
+	}
+
+	private void syncActionBarToBackStack() {
+		ActionBar actionBar = getSupportActionBar();
+		if (actionBar == null) return;
+		boolean canGoBack = getSupportFragmentManager().getBackStackEntryCount() > 0;
+		actionBar.setDisplayHomeAsUpEnabled(canGoBack);
+		actionBar.setHomeButtonEnabled(canGoBack);
+
+		androidx.fragment.app.Fragment top =
+				getSupportFragmentManager().findFragmentById(android.R.id.content);
+		if (top instanceof PreferenceFragmentCompat) {
+			PreferenceFragmentCompat pf = (PreferenceFragmentCompat) top;
+			if (pf.getPreferenceScreen() != null && pf.getPreferenceScreen().getTitle() != null) {
+				actionBar.setTitle(pf.getPreferenceScreen().getTitle());
+			}
+		}
 	}
 
 	/**
@@ -155,6 +193,13 @@ public class LIMEPreference extends AppCompatActivity {
 		private Context ctx = null;
 		private SearchServer SearchSrv = null;
 		private LIMEPreferenceManager mLIMEPref = null;
+
+		@Override
+		public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
+			super.onViewCreated(view, savedInstanceState);
+			ScrollableTabHelper.applyToRecyclerView(getActivity(), getListView());
+		}
+
 		@Override
 		public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
 			// Load the preferences from an XML resource (scoped to rootKey for nested PreferenceScreen drill-down)
@@ -187,6 +232,7 @@ public class LIMEPreference extends AppCompatActivity {
 			}
 			mLIMEPref = new LIMEPreferenceManager(ctx);
 			SearchSrv = new SearchServer(ctx);
+			configureReverseLookupPreferenceEntries();
 
 			// On API 31+, vibration intensity is controlled by the system via performHapticFeedback.
 			// The vibrate_level duration preference has no effect, so hide it to avoid confusion.
@@ -244,11 +290,67 @@ public class LIMEPreference extends AppCompatActivity {
 			Bundle args = new Bundle();
 			args.putString(PreferenceFragmentCompat.ARG_PREFERENCE_ROOT, rootKey);
 			newFragment.setArguments(args);
+			int containerId = android.R.id.content;
+			View parent = (View) requireView().getParent();
+			if (parent != null && parent.getId() != View.NO_ID) {
+				containerId = parent.getId();
+			}
 			androidx.fragment.app.FragmentManager fm = getParentFragmentManager();
 			fm.beginTransaction()
-					.replace(net.toload.main.hd.R.id.lime_preference_host, newFragment)
+					.replace(containerId, newFragment)
 					.addToBackStack(null)
 					.commit();
+		}
+
+		private void configureReverseLookupPreferenceEntries() {
+			List<LIMEPreferenceManager.ReverseLookupOption> options = loadReverseLookupOptions();
+			String noneLabel = getString(R.string.reverse_lookup_none);
+			CharSequence[] labels = LIMEPreferenceManager.reverseLookupLabels(options, noneLabel);
+			CharSequence[] values = LIMEPreferenceManager.reverseLookupValues(options, noneLabel);
+			PreferenceGroup root = getPreferenceScreen();
+			applyReverseLookupEntries(root, labels, values);
+		}
+
+		private List<LIMEPreferenceManager.ReverseLookupOption> loadReverseLookupOptions() {
+			try {
+				if (SearchSrv != null) {
+					List<ImConfig> all = SearchSrv.getImConfigList(null, LIME.IM_FULL_NAME);
+					List<ImConfig> active = new ArrayList<>();
+					for (ImConfig im : all) {
+						if (im != null && !"emoji".equals(im.getCode()) && !im.isDisable()) {
+							active.add(im);
+						}
+					}
+					return LIMEPreferenceManager.buildReverseLookupOptions(active,
+							getString(R.string.reverse_lookup_none));
+				}
+			} catch (Exception e) {
+				Log.w(TAG, "loadReverseLookupOptions(): fallback to saved active IM state", e);
+			}
+			return mLIMEPref != null
+					? mLIMEPref.getReverseLookupOptions(getString(R.string.reverse_lookup_none))
+					: LIMEPreferenceManager.buildReverseLookupOptions((String) null,
+							getString(R.string.reverse_lookup_none));
+		}
+
+		private void applyReverseLookupEntries(PreferenceGroup group,
+				CharSequence[] labels, CharSequence[] values) {
+			if (group == null) return;
+			for (int i = 0; i < group.getPreferenceCount(); i++) {
+				Preference pref = group.getPreference(i);
+				if (pref instanceof ListPreference && isReverseLookupPreference(pref.getKey())) {
+					ListPreference listPreference = (ListPreference) pref;
+					listPreference.setEntries(labels);
+					listPreference.setEntryValues(values);
+				}
+				if (pref instanceof PreferenceGroup) {
+					applyReverseLookupEntries((PreferenceGroup) pref, labels, values);
+				}
+			}
+		}
+
+		private boolean isReverseLookupPreference(String key) {
+			return key != null && key.endsWith("_im_reverselookup");
 		}
 
 		@Override
@@ -256,7 +358,11 @@ public class LIMEPreference extends AppCompatActivity {
 			if(DEBUG)
 				Log.i(TAG,"onSharedPreferenceChanged(), key:" + key);
 
-			if(key.equals("phonetic_keyboard_type")){
+			if(mLIMEPref != null){
+				mLIMEPref.resetStartupConfigVersionIfStartupPreferenceChanged(key);
+			}
+
+			if("phonetic_keyboard_type".equals(key)){
 				String selectedPhoneticKeyboardType = mLIMEPref.getPhoneticKeyboardType();
 				//PreferenceManager.getDefaultSharedPreferences(ctx).getString("phonetic_keyboard_type", "");
 				try {

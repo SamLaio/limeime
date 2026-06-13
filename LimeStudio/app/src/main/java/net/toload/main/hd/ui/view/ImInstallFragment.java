@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -176,6 +176,7 @@ public class ImInstallFragment extends Fragment {
 
         recyclerView = rootView.findViewById(R.id.im_install_list);
         recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
+        ScrollableTabHelper.applyToRecyclerView(activity, recyclerView);
 
         // Load installed state async, then set adapter
         loadFamilyListAsync();
@@ -226,6 +227,7 @@ public class ImInstallFragment extends Fragment {
                 currentFamilies = families;
                 adapter = new ImFamilyAdapter(families);
                 rv.setAdapter(adapter);
+                ScrollableTabHelper.refreshRecyclerViewScrollbar(rv);
             });
         }).start();
     }
@@ -264,7 +266,7 @@ public class ImInstallFragment extends Fragment {
         txtLauncher.launch(intent);
     }
 
-    // -------- URI → File helper (verbatim from SetupImLoadDialog) --------
+    // -------- URI → File helper --------
 
     private File saveUriToFile(Uri uri, Activity act) {
         if (act == null) return null;
@@ -314,13 +316,13 @@ public class ImInstallFragment extends Fragment {
     // -------- Data model --------
 
     private static class CloudVariant {
-        final int labelResId;
+        final String label;
         final String count;
         final String fileSize;
         final String url;
 
-        CloudVariant(int labelResId, String count, String fileSize, String url) {
-            this.labelResId = labelResId;
+        CloudVariant(String label, String count, String fileSize, String url) {
+            this.label = label;
             this.count = count;
             this.fileSize = fileSize;
             this.url = url;
@@ -354,120 +356,127 @@ public class ImInstallFragment extends Fragment {
 
         // 注音
         List<CloudVariant> phonetic = new ArrayList<>();
-        phonetic.add(new CloudVariant(R.string.l3_im_download_from_phonetic_big5, "15,945", "370 KB",
-                LIME.DATABASE_CLOUD_IM_PHONETIC_BIG5));
-        phonetic.add(new CloudVariant(R.string.l3_im_download_from_phonetic, "34,838", "755 KB",
+        phonetic.add(new CloudVariant(getString(R.string.im_install_variant_openvanilla_phonetic), "34,838", "589 KB",
                 LIME.DATABASE_CLOUD_IM_PHONETIC));
-        phonetic.add(new CloudVariant(R.string.l3_im_download_from_phonetic_adv_big5, "76,122", "1.3 MB",
-                LIME.DATABASE_CLOUD_IM_PHONETICCOMPLETE_BIG5));
-        phonetic.add(new CloudVariant(R.string.l3_im_download_from_phonetic_adv, "95,029", "1.6 MB",
+        phonetic.add(new CloudVariant(getString(R.string.im_install_variant_openvanilla_phonetic_big5), "15,945", "465 KB",
+                LIME.DATABASE_CLOUD_IM_PHONETIC_BIG5));
+        phonetic.add(new CloudVariant(getString(R.string.im_install_variant_phonetic_complete), "95,029", "2.8 MB",
                 LIME.DATABASE_CLOUD_IM_PHONETICCOMPLETE));
+        phonetic.add(new CloudVariant(getString(R.string.im_install_variant_phonetic_complete_big5), "76,122", "2.3 MB",
+                LIME.DATABASE_CLOUD_IM_PHONETICCOMPLETE_BIG5));
         list.add(new ImFamily(LIME.DB_TABLE_PHONETIC, getString(R.string.im_install_family_phonetic), phonetic, true, false, false,
                 R.drawable.ic_keyboard_outline));
 
         // 倉頡
         List<CloudVariant> cj = new ArrayList<>();
-        cj.add(new CloudVariant(R.string.l3_im_download_from_cj_big5, "13,859", "506 KB",
-                LIME.DATABASE_CLOUD_IM_CJ_BIG5));
-        cj.add(new CloudVariant(R.string.l3_im_download_from_cj, "28,596", "830 KB",
+        cj.add(new CloudVariant(getString(R.string.im_install_variant_cj), "28,596", "830 KB",
                 LIME.DATABASE_CLOUD_IM_CJ));
-        cj.add(new CloudVariant(R.string.l3_im_download_from_cjk_hk_cj, "30,278", "884 KB",
+        cj.add(new CloudVariant(getString(R.string.im_install_variant_cj_big5), "13,859", "506 KB",
+                LIME.DATABASE_CLOUD_IM_CJ_BIG5));
+        cj.add(new CloudVariant(getString(R.string.im_install_variant_cj_hk), "30,278", "884 KB",
                 LIME.DATABASE_CLOUD_IM_CJHK));
         list.add(new ImFamily(LIME.DB_TABLE_CJ, getString(R.string.im_install_family_cj), cj, true, false, false,
-                R.drawable.ic_archivebox));
+                R.drawable.ic_grid_on_24));
+
+        // 四碼倉頡
+        List<CloudVariant> cj4 = new ArrayList<>();
+        cj4.add(new CloudVariant(getString(R.string.im_install_variant_cj4), "33,021", "598 KB",
+                LIME.DATABASE_CLOUD_IM_CJ4));
+        list.add(new ImFamily(LIME.DB_TABLE_CJ4, getString(R.string.im_install_family_cj4), cj4, true, false, false,
+                R.drawable.ic_grid_on_24));
 
         // 倉頡五代
         List<CloudVariant> cj5 = new ArrayList<>();
-        cj5.add(new CloudVariant(R.string.l3_im_download_from_cj5, "24,004", "491 KB",
+        cj5.add(new CloudVariant(getString(R.string.im_install_variant_cj5), "24,004", "491 KB",
                 LIME.DATABASE_CLOUD_IM_CJ5));
         list.add(new ImFamily(LIME.DB_TABLE_CJ5, getString(R.string.im_install_family_cj5), cj5, true, false, false,
-                R.drawable.ic_archivebox));
+                R.drawable.ic_grid_on_24));
 
-        // 速倉
+        // 快倉
         List<CloudVariant> scj = new ArrayList<>();
-        scj.add(new CloudVariant(R.string.l3_im_download_from_scj, "74,250", "1.2 MB",
+        scj.add(new CloudVariant(getString(R.string.im_install_variant_scj), "74,250", "1.4 MB",
                 LIME.DATABASE_CLOUD_IM_SCJ));
         list.add(new ImFamily(LIME.DB_TABLE_SCJ, getString(R.string.im_install_family_scj), scj, true, false, false,
-                R.drawable.ic_archivebox));
+                R.drawable.ic_grid_on_24));
 
-        // 英文倉頡
+        // 速成
         List<CloudVariant> ecj = new ArrayList<>();
-        ecj.add(new CloudVariant(R.string.l3_im_download_from_ecj, "13,119", "390 KB",
+        ecj.add(new CloudVariant(getString(R.string.im_install_variant_ecj), "13,119", "136 KB",
                 LIME.DATABASE_CLOUD_IM_ECJ));
-        ecj.add(new CloudVariant(R.string.l3_im_download_from_cjk_hk_ecj, "27,853", "625 KB",
+        ecj.add(new CloudVariant(getString(R.string.im_install_variant_ecj_hk), "27,853", "210 KB",
                 LIME.DATABASE_CLOUD_IM_ECJHK));
         list.add(new ImFamily(LIME.DB_TABLE_ECJ, getString(R.string.im_install_family_ecj), ecj, true, false, false,
-                R.drawable.ic_archivebox));
+                R.drawable.ic_grid_on_24));
 
         // 大易
         List<CloudVariant> dayi = new ArrayList<>();
-        dayi.add(new CloudVariant(R.string.setup_load_download_dayiuni, "27,198", "630 KB",
-                LIME.DATABASE_CLOUD_IM_DAYIUNI));
-        dayi.add(new CloudVariant(R.string.setup_load_download_dayiunip, "117,766", "2.1 MB",
-                LIME.DATABASE_CLOUD_IM_DAYIUNIP));
-        dayi.add(new CloudVariant(R.string.l3_im_download_from_dayi, "18,638", "465 KB",
+        dayi.add(new CloudVariant(getString(R.string.im_install_variant_openvanilla_dayi), "18,638", "486 KB",
                 LIME.DATABASE_CLOUD_IM_DAYI));
+        dayi.add(new CloudVariant(getString(R.string.im_install_variant_dayi_unicode_char), "27,198", "584 KB",
+                LIME.DATABASE_CLOUD_IM_DAYIUNI));
+        dayi.add(new CloudVariant(getString(R.string.im_install_variant_dayi_unicode_phrase), "117,766", "2.6 MB",
+                LIME.DATABASE_CLOUD_IM_DAYIUNIP));
         list.add(new ImFamily(LIME.DB_TABLE_DAYI, getString(R.string.im_install_family_dayi), dayi, true, false, false,
-                R.drawable.ic_keyboard_outline));
+                R.drawable.ic_textformat_alt));
 
         // 輕鬆
         List<CloudVariant> ez = new ArrayList<>();
-        ez.add(new CloudVariant(R.string.l3_im_download_from_ez, "14,422", "340 KB",
+        ez.add(new CloudVariant(getString(R.string.im_install_variant_ez), "14,422", "237 KB",
                 LIME.DATABASE_CLOUD_IM_EZ));
         list.add(new ImFamily(LIME.DB_TABLE_EZ, getString(R.string.im_install_family_ez), ez, true, false, false,
-                R.drawable.ic_keyboard_outline));
+                R.drawable.ic_hand_tap));
 
         // 行列
         List<CloudVariant> array = new ArrayList<>();
-        array.add(new CloudVariant(R.string.l3_im_download_from_array, "32,386", "680 KB",
+        array.add(new CloudVariant(getString(R.string.im_install_variant_array), "32,386", "524 KB",
                 LIME.DATABASE_CLOUD_IM_ARRAY));
         list.add(new ImFamily(LIME.DB_TABLE_ARRAY, getString(R.string.im_install_family_array), array, true, false, false,
-                R.drawable.ic_keyboard_outline));
+                R.drawable.ic_grid_on_24));
 
-        // 行列十
+        // 行列10
         List<CloudVariant> array10 = new ArrayList<>();
-        array10.add(new CloudVariant(R.string.l3_im_download_from_array10, "32,120", "670 KB",
+        array10.add(new CloudVariant(getString(R.string.im_install_variant_array10), "32,120", "558 KB",
                 LIME.DATABASE_CLOUD_IM_ARRAY10));
         list.add(new ImFamily(LIME.DB_TABLE_ARRAY10, getString(R.string.im_install_family_array10), array10, true, false, false,
-                R.drawable.ic_keyboard_outline));
+                R.drawable.ic_grid_on_24));
+
+        // 筆順
+        List<CloudVariant> wb = new ArrayList<>();
+        wb.add(new CloudVariant(getString(R.string.im_install_variant_wb), "26,378", "267 KB",
+                LIME.DATABASE_CLOUD_IM_WB));
+        list.add(new ImFamily(LIME.DB_TABLE_WB, getString(R.string.im_install_family_wb), wb, true, false, false,
+                R.drawable.ic_pencil_outline));
 
         // 華象
         List<CloudVariant> hs = new ArrayList<>();
-        hs.add(new CloudVariant(R.string.l3_im_download_from_hs, "183,659", "3.2 MB",
+        hs.add(new CloudVariant(getString(R.string.im_install_variant_hs_full), "183,659", "3.5 MB",
                 LIME.DATABASE_CLOUD_IM_HS));
-        hs.add(new CloudVariant(R.string.l3_im_download_from_hs_v1, "50,845", "1.1 MB",
+        hs.add(new CloudVariant(getString(R.string.im_install_variant_hs_v1), "50,845", "830 KB",
                 LIME.DATABASE_CLOUD_IM_HS_V1));
-        hs.add(new CloudVariant(R.string.l3_im_download_from_hs_v2, "50,838", "1.0 MB",
+        hs.add(new CloudVariant(getString(R.string.im_install_variant_hs_v2), "50,838", "834 KB",
                 LIME.DATABASE_CLOUD_IM_HS_V2));
-        hs.add(new CloudVariant(R.string.l3_im_download_from_hs_v3, "64,324", "1.2 MB",
+        hs.add(new CloudVariant(getString(R.string.im_install_variant_hs_v3), "64,324", "1000 KB",
                 LIME.DATABASE_CLOUD_IM_HS_V3));
         list.add(new ImFamily(LIME.DB_TABLE_HS, getString(R.string.im_install_family_hs), hs, true, false, false,
-                R.drawable.ic_keyboard_outline));
-
-        // 五筆
-        List<CloudVariant> wb = new ArrayList<>();
-        wb.add(new CloudVariant(R.string.l3_im_download_from_wb, "26,378", "590 KB",
-                LIME.DATABASE_CLOUD_IM_WB));
-        list.add(new ImFamily(LIME.DB_TABLE_WB, getString(R.string.im_install_family_wb), wb, true, false, false,
-                R.drawable.ic_keyboard_outline));
+                R.drawable.ic_wand_stars));
 
         // 拼音
         List<CloudVariant> pinyin = new ArrayList<>();
-        pinyin.add(new CloudVariant(R.string.l3_im_download_from_pinyin_big5, "34,753", "730 KB",
+        pinyin.add(new CloudVariant(getString(R.string.im_install_variant_pinyin), "34,753", "509 KB",
                 LIME.DATABASE_CLOUD_IM_PINYIN));
-        pinyin.add(new CloudVariant(R.string.l3_im_download_from_pinyin_big5, "34,753", "730 KB",
-                LIME.DATABASE_CLOUD_IM_PINYINGB)); // TODO §2.3 — confirm URL and label with product
+        pinyin.add(new CloudVariant(getString(R.string.im_install_variant_pinyin_gb), "34,753", "502 KB",
+                LIME.DATABASE_CLOUD_IM_PINYINGB));
         list.add(new ImFamily(LIME.DB_TABLE_PINYIN, getString(R.string.im_install_family_pinyin), pinyin, true, false, false,
-                R.drawable.ic_keyboard_outline));
+                R.drawable.ic_text_bubble));
 
         // 自建 (CUSTOM) — no restore switch, no cloud buttons
         // TODO §2.3 — seedCustomIM verification: ensure seedCustomIM is invoked after successful custom-IM import
         list.add(new ImFamily(LIME.DB_TABLE_CUSTOM, getString(R.string.im_install_family_custom), new ArrayList<>(), false, false, true,
-                R.drawable.ic_add));
+                R.drawable.ic_person_crop_rectangle));
 
         // 關聯字庫 (RELATED) — no restore switch, no cloud buttons, no txt import
         list.add(new ImFamily(LIME.DB_TABLE_RELATED, getString(R.string.im_install_family_related), new ArrayList<>(), false, true, false,
-                R.drawable.ic_list_bullet));
+                R.drawable.ic_text_bubble));
 
         return list;
     }
@@ -598,7 +607,7 @@ public class ImInstallFragment extends Fragment {
                     TextView tvMeta = row.findViewById(R.id.tv_variant_meta);
                     MaterialButton btnInstall = row.findViewById(R.id.btn_install);
 
-                    tvName.setText(getString(variant.labelResId));
+                    tvName.setText(variant.label);
                     tvMeta.setText(variant.count + " · " + variant.fileSize);
 
                     final String url = variant.url;
@@ -642,42 +651,21 @@ public class ImInstallFragment extends Fragment {
     // -------- Install-complete callback --------
 
     /**
-     * Called after any install path succeeds. Re-queries installed state for the given
-     * table, marks it installed, collapses its card, and refreshes just that item.
+     * Called after any install path succeeds. Marks the family installed immediately,
+     * collapses its card, and refreshes just that item.
      * Must be called on the main thread.
      */
     // TODO §2.3 — verify progress hookup: ensure ProgressManager show/hide is called around download and import operations
     private void onInstallComplete(String tableName) {
         if (!isAdded() || currentFamilies == null || adapter == null) return;
-        final ManageImController ctrl = manageImController;
-        if (ctrl == null) return;
-        new Thread(() -> {
-            // Same config-table check as buildFamilyList — record count alone misleads
-            boolean tmp = false;
-            java.util.List<net.toload.main.hd.data.ImConfig> cfgList = ctrl.getImConfigFullNameList();
-            if (cfgList != null) {
-                for (net.toload.main.hd.data.ImConfig cfg : cfgList) {
-                    if (cfg != null && tableName.equals(cfg.getCode())) {
-                        tmp = true;
-                        break;
-                    }
-                }
+        for (int i = 0; i < currentFamilies.size(); i++) {
+            if (tableName.equals(currentFamilies.get(i).tableName)) {
+                currentFamilies.get(i).isInstalled = true;
+                adapter.expanded[i] = false;
+                adapter.notifyItemChanged(i);
+                break;
             }
-            final boolean installed = tmp;
-            Activity act = activity;
-            if (act == null) return;
-            act.runOnUiThread(() -> {
-                if (!isAdded() || currentFamilies == null || adapter == null) return;
-                for (int i = 0; i < currentFamilies.size(); i++) {
-                    if (tableName.equals(currentFamilies.get(i).tableName)) {
-                        currentFamilies.get(i).isInstalled = installed;
-                        if (installed) adapter.expanded[i] = false;
-                        adapter.notifyItemChanged(i);
-                        break;
-                    }
-                }
-            });
-        }).start();
+        }
     }
 
     private void showDefaultRelatedConfirmDialog(Runnable onSuccess) {

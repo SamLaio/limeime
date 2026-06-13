@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -51,7 +51,7 @@ public class LIME {
 	
 	// Jeremy '25/12/20 Open Foundry service is closed.
 	//public static final String DATABASE_OPENFOUNDRY_URL_BASED = "https://www.openfoundry.org/websvn/filedetails.php?repname=limeime&path=%2F";
-	public static final String DATABASE_CLOUD_URL_BASED = "https://github.com/lime-ime/limeime/raw/master/Database/";
+	public static final String DATABASE_CLOUD_URL_BASED = "https://github.com/SamLaio/limeime/raw/master/Database/";
 
 	// Database Source File Names
 	public static final String DATABASE_SOURCE_DAYI = "dayi.cin";
@@ -107,6 +107,8 @@ public class LIME {
 	public static final String DATABASE_CLOUD_IM_SCJ_KEYBOARD = "limenum";
 	public static final String DATABASE_CLOUD_IM_CJ5 = DATABASE_CLOUD_URL_BASED + "cj5.zip";
 	public static final String DATABASE_CLOUD_IM_CJ5_KEYBOARD = "cj";
+	public static final String DATABASE_CLOUD_IM_CJ4 = DATABASE_CLOUD_URL_BASED + "cj4.limedb";
+	public static final String DATABASE_CLOUD_IM_CJ4_KEYBOARD = "cj";
 	public static final String DATABASE_CLOUD_IM_CJ_BIG5 = DATABASE_CLOUD_URL_BASED + "cjbig5.zip";
 	public static final String DATABASE_CLOUD_IM_CJ = DATABASE_CLOUD_URL_BASED + "cj.zip";
 	public static final String DATABASE_CLOUD_IM_CJ_KEYBOARD = "cj";
@@ -132,6 +134,7 @@ public class LIME {
 	public static final String DB_TABLE_ARRAY = "array";
 	public static final String DB_TABLE_ARRAY10 = "array10";
 	public static final String DB_TABLE_CJ = "cj";
+	public static final String DB_TABLE_CJ4 = "cj4";
 	public static final String DB_TABLE_CJ5 = "cj5";
 	public static final String DB_TABLE_CUSTOM = "custom";
 	public static final String DB_TABLE_DAYI = "dayi";
@@ -149,6 +152,7 @@ public class LIME {
 	public static final String IM_CJ_BIG5 = "cjbig5";
 	public static final String IM_CJ = "cj";
 	public static final String IM_CJHK = "cjhk";
+	public static final String IM_CJ4 = "cj4";
 	public static final String IM_CJ5 = "cj5";
 	public static final String IM_CUSTOM = "custom";
 	public static final String IM_DAYI = "dayi";
@@ -244,6 +248,7 @@ public class LIME {
 	public static final String IM_KEYBOARD = "keyboard";
 	public static final String IM_SELKEY = "selkey";
 	public static final String IM_ENDKEY = "endkey";
+	public static final String IM_LIME_ENDKEY = "limeendkey";
 	public static final String IM_SPACESTYLE = "spacestyle";
 	
 	// Database and IM Status
@@ -271,7 +276,7 @@ public class LIME {
 	
 	// News and Content
 	public static final String LIME_NEWS_CONTENT = "lime_news_content";
-	public static final String LIME_NEWS_CONTENT_URL = "https://github.com/lime-ime/limeime/raw/master/Resources/Message/content.html";
+	public static final String LIME_NEWS_CONTENT_URL = "https://github.com/SamLaio/limeime/raw/master/Resources/Message/content.html";
 	
 	// File System
 	public static final String separator = java.io.File.separator;
@@ -315,25 +320,25 @@ public class LIME {
 	
 	// ========== Input Method Arrays (for buildActivatedIMList) ==========
 	// These arrays correspond to the order used in IM activation state
-	// Index 0=custom, 1=cj, 2=scj, 3=cj5, 4=ecj, 5=dayi, 6=phonetic, 7=ez, 8=array, 9=array10, 10=wb, 11=hs, 12=pinyin
+	// Index 0=custom, 1=cj, 2=scj, 3=cj5, 4=ecj, 5=dayi, 6=phonetic, 7=ez, 8=array, 9=array10, 10=wb, 11=hs, 12=pinyin, 13=cj4
 	
 	/** Input method internal codes (matches keyboard_codes in strings_settings.xml) */
 	public static final String[] IM_CODES = {
 		"custom", "cj", "scj", "cj5", "ecj", "dayi", "phonetic", "ez", 
-		"array", "array10", "wb", "hs", "pinyin"
+		"array", "array10", "wb", "hs", "pinyin", "cj4"
 	};
 	
 	/** Input method full names in Traditional Chinese (matches keyboard in strings_settings.xml) */
 	public static final String[] IM_FULL_NAMES = {
 		"自建輸入法", "倉頡輸入法", "快倉輸入法", "倉頡五代輸入法", "速成輸入法",
 		"大易輸入法", "注音輸入法", "輕鬆輸入法", "行列輸入法", "行列10輸入法",
-		"筆順五碼輸入法", "華象直覺輸入法", "拼音輸入法"
+		"筆順五碼輸入法", "華象直覺輸入法", "拼音輸入法", "四碼倉頡輸入法"
 	};
 	
 	/** Input method short names in Traditional Chinese (matches keyboardShortname in strings_settings.xml) */
 	public static final String[] IM_SHORT_NAMES = {
 		"自建", "倉頡", "快倉", "倉頡五代", "速成", "大易", "注音", "輕鬆",
-		"行列", "行列10", "筆順五碼", "華象直覺", "拼音"
+		"行列", "行列10", "筆順五碼", "華象直覺", "拼音", "四碼倉頡"
 	};
 	
 	// Global Utility Methods

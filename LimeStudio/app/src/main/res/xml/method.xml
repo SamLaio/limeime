@@ -5,7 +5,7 @@
   ~  *
   ~  **    Copyright 2025, The LimeIME Open Source Project
   ~  **
-  ~  **    Project Url: http://github.com/lime-ime/limeime/
+  ~  **    Project Url: https://github.com/SamLaio/limeime/
   ~  **                 http://android.toload.net/
   ~  **
   ~  **    This program is free software: you can redistribute it and/or modify
@@ -28,6 +28,6 @@
 <!-- for the Search Manager. -->
 
 <input-method xmlns:android="http://schemas.android.com/apk/res/android" 
-        android:settingsActivity="net.toload.main.hd.ui.MainActivity"/>
+        android:settingsActivity="net.toload.main.hd.ui.LIMESettings"/>
 			  
 			  

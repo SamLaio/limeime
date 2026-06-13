@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,10 @@ import android.graphics.Paint;
 import android.graphics.Point;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
+import android.graphics.PixelFormat;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
@@ -50,8 +53,10 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewGroup.LayoutParams;
+import android.view.ViewParent;
 import android.view.WindowManager;
 import android.widget.ImageButton;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.ScrollView;
@@ -62,6 +67,7 @@ import net.toload.main.hd.R;
 import net.toload.main.hd.data.Mapping;
 import net.toload.main.hd.global.LIME;
 import net.toload.main.hd.global.LIMEPreferenceManager;
+import net.toload.main.hd.voice.DictationState;
 
 import java.lang.ref.WeakReference;
 import java.util.LinkedList;
@@ -130,6 +136,7 @@ public class CandidateView extends View implements View.OnClickListener {
 
     protected Drawable mDrawableSuggestHighlight;
     protected Drawable mDrawableVoiceInput;
+    protected Drawable mDrawableEmojiInput;
     protected Drawable mDrawableExpandDownButton;
     protected Drawable mDrawableExpandUpButton;
     protected Drawable mDrawableCloseButton;
@@ -169,13 +176,17 @@ public class CandidateView extends View implements View.OnClickListener {
     protected LIMEPreferenceManager mLIMEPref;
 
     private CandidateExpandedView mPopupCandidateView;
-    private int mCloseButtonHeight;
     private ScrollView mPopupScrollView;
     private boolean candidateExpanded = false;
+    private PopupWindow mLimeToastPopup;
+    private TextView mLimeToastTextView;
+    private int mPopupDismissButtonWidth;
 
     private boolean waitingForMoreRecords = false;
 
     private boolean mTransparentCandidateView = false;
+    private DictationState mDictationState = DictationState.IDLE;
+    private String mDictationText = "";
 
     //private Rect padding = null;
 
@@ -211,6 +222,8 @@ public class CandidateView extends View implements View.OnClickListener {
                         mDrawableSuggestHighlight = a.getDrawable(attr);
                 } else if (attr == R.styleable.LIMECandidateView_voiceInputIcon) {
                         mDrawableVoiceInput = a.getDrawable(attr);
+                } else if (attr == R.styleable.LIMECandidateView_emojiButtonIcon) {
+                        mDrawableEmojiInput = a.getDrawable(attr);
                 } else if (attr == R.styleable.LIMECandidateView_ExpandDownButtonIcon) {
                         mDrawableExpandDownButton = a.getDrawable(attr);
                 } else if (attr == R.styleable.LIMECandidateView_ExpandUpButtonIcon) {
@@ -311,7 +324,7 @@ public class CandidateView extends View implements View.OnClickListener {
                     sx -= (int) distanceX;
                 }
 
-                if (mLIMEPref.getParameterBoolean("candidate_switch", false)) {
+                if (mLIMEPref.getSelectDefaultOnSliding()) {
                     hasSlide = true;
                     mTargetScrollX = sx;
                     scrollTo(sx, getScrollY());
@@ -333,6 +346,29 @@ public class CandidateView extends View implements View.OnClickListener {
             }
         }, new Handler(Looper.getMainLooper()));
 
+    }
+
+    public void applyFollowSystemAccentColor(int accentColor, boolean darkTheme) {
+        if ((accentColor >>> 24) == 0) return;
+
+        mDrawableSuggestHighlight = createFollowSystemSuggestHighlight(accentColor, darkTheme);
+        mColorComposingCode = accentColor;
+        mColorSelKeyShifted = accentColor;
+        mColorNormalTextHighlight = darkTheme ? 0xFFFFFFFF : 0xFF000000;
+        invalidate();
+    }
+
+    private Drawable createFollowSystemSuggestHighlight(int accentColor, boolean darkTheme) {
+        final float density = getResources().getDisplayMetrics().density;
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.RECTANGLE);
+        drawable.setCornerRadius(4f * density);
+        drawable.setColor(withAlpha(accentColor, darkTheme ? 0x66 : 0x44));
+        return drawable;
+    }
+
+    private static int withAlpha(int color, int alpha) {
+        return (color & 0x00FFFFFF) | ((alpha & 0xFF) << 24);
     }
 
     /*
@@ -358,6 +394,8 @@ public class CandidateView extends View implements View.OnClickListener {
         private static final int MSG_SHOW_CANDIDATE_POPUP = 4;
         private static final int MSG_HIDE_CANDIDATE_POPUP = 5;
         private static final int MSG_SET_COMPOSING = 6;
+        private static final int MSG_SHOW_LIME_TOAST = 7;
+        private static final int MSG_HIDE_LIME_TOAST = 8;
 
         public UIHandler(CandidateView candiInstance) {
             super(Looper.getMainLooper());
@@ -397,6 +435,15 @@ public class CandidateView extends View implements View.OnClickListener {
                     mCandiInstance.doSetComposing(composingText);
                     break;
                 }
+                case MSG_SHOW_LIME_TOAST: {
+                    CharSequence text = (CharSequence) msg.obj;
+                    mCandiInstance.doShowLimeToast(text);
+                    break;
+                }
+                case MSG_HIDE_LIME_TOAST: {
+                    mCandiInstance.doHideLimeToast();
+                    break;
+                }
             }
         }
 
@@ -426,6 +473,24 @@ public class CandidateView extends View implements View.OnClickListener {
             sendMessageDelayed(obtainMessage(MSG_HIDE_CANDIDATE_POPUP, 0, 0, null), delay);
         }
 
+        public void showLimeToast(CharSequence text) {
+            removeMessages(MSG_SHOW_LIME_TOAST);
+            removeMessages(MSG_HIDE_LIME_TOAST);
+            sendMessage(obtainMessage(MSG_SHOW_LIME_TOAST, 0, 0, text));
+            sendMessageDelayed(obtainMessage(MSG_HIDE_LIME_TOAST, 0, 0, null), 1400);
+        }
+
+        public void showLimeToastUntilNextKey(CharSequence text) {
+            removeMessages(MSG_SHOW_LIME_TOAST);
+            removeMessages(MSG_HIDE_LIME_TOAST);
+            sendMessage(obtainMessage(MSG_SHOW_LIME_TOAST, 0, 0, text));
+        }
+
+        public void hideLimeToast() {
+            removeMessages(MSG_SHOW_LIME_TOAST);
+            removeMessages(MSG_HIDE_LIME_TOAST);
+            sendMessage(obtainMessage(MSG_HIDE_LIME_TOAST, 0, 0, null));
+        }
 
     }
 
@@ -493,6 +558,8 @@ public class CandidateView extends View implements View.OnClickListener {
         if (DEBUG)
             Log.i(TAG, "resetWidth() mHeight:" + mHeight);
         int candiWidth = mScreenWidth;
+        if (!isEmpty())
+            candiWidth -= mContext.getResources().getDimensionPixelSize(R.dimen.candidate_dismiss_button_width);
         if (mTotalWidth > mScreenWidth || isEmpty()) candiWidth -= mExpandButtonWidth;
         if (DEBUG)
             Log.i(TAG, "resetWidth() candiWidth:" + candiWidth);
@@ -511,6 +578,7 @@ public class CandidateView extends View implements View.OnClickListener {
 
         candidateExpanded = true;
         requestLayout();
+        doHideComposing();
 
         checkHasMoreRecords();
 
@@ -519,6 +587,10 @@ public class CandidateView extends View implements View.OnClickListener {
             mCandidatePopupWindow = new PopupWindow(mContext);
             // Allow popup to extend beyond window bounds when expanding upward
             mCandidatePopupWindow.setClippingEnabled(false);
+            mCandidatePopupWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                mCandidatePopupWindow.setElevation(0f);
+            }
             LayoutInflater inflater = (LayoutInflater) mContext.getSystemService(
                     Context.LAYOUT_INFLATER_SERVICE);
             mCandidatePopupContainer = inflater.inflate(R.layout.candidatepopup, (ViewGroup) this.getRootView(), false);
@@ -527,14 +599,34 @@ public class CandidateView extends View implements View.OnClickListener {
 
             mCandidatePopupWindow.setContentView(mCandidatePopupContainer);
 
-            ImageButton btnClose = mCandidatePopupContainer.findViewById(R.id.closeButton);
-            if (btnClose != null) {
-                btnClose.setOnClickListener(this);
-                btnClose.setImageDrawable(mDrawableCloseButton);
-                btnClose.setBackgroundColor(mColorBackground);
-                btnClose.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+            ImageButton popupDismiss = mCandidatePopupContainer.findViewById(R.id.candidate_dismiss);
+            if (popupDismiss != null) {
+                popupDismiss.setOnClickListener(this);
+                popupDismiss.setPadding(0, 0, 0, 0);
+                popupDismiss.setScaleType(ImageButton.ScaleType.CENTER);
+                popupDismiss.setMinimumWidth(0);
+                popupDismiss.setMinimumHeight(0);
+                popupDismiss.setImageDrawable(makeDismissButtonGlyph());
+                popupDismiss.setBackgroundColor(CandidateInInputViewContainer.dismissButtonBackgroundColor());
+                popupDismiss.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
                         MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
-                mCloseButtonHeight = btnClose.getMeasuredHeight();
+                storePopupDismissButtonWidth(popupDismiss);
+            }
+
+            ImageButton popupCollapse = mCandidatePopupContainer.findViewById(R.id.candidate_expand_collapse);
+            if (popupCollapse != null) {
+                popupCollapse.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        hideCandidatePopup();
+                    }
+                });
+                popupCollapse.setPadding(0, 0, 0, 0);
+                popupCollapse.setScaleType(ImageButton.ScaleType.CENTER);
+                popupCollapse.setMinimumWidth(0);
+                popupCollapse.setMinimumHeight(0);
+                popupCollapse.setImageDrawable(mDrawableExpandUpButton);
+                popupCollapse.setBackgroundColor(Color.TRANSPARENT);
             }
 
             mPopupScrollView = mCandidatePopupContainer.findViewById(R.id.sv);
@@ -560,9 +652,11 @@ public class CandidateView extends View implements View.OnClickListener {
         // Determine expansion direction based on keyboard visibility
         boolean expandUpward = (mService != null) && mService.isKeyboardViewHidden();
         int candidateViewHeight = getHeight();
+        configurePopupOverlayControls(candidateViewHeight);
         int availableSpaceAbove = offsetOnScreen[1];
         int availableSpaceBelow = mScreenHeight - offsetOnScreen[1] - candidateViewHeight;
 
+        int myHeight = getHeight();
         mPopupCandidateView.setSuggestions(mSuggestions);
         mPopupCandidateView.prepareLayout();
 
@@ -571,34 +665,15 @@ public class CandidateView extends View implements View.OnClickListener {
 
         int popHeight;
         int popupYOffset;
-        int myHeight = getHeight();
         if (expandUpward) {
-            // Expand upward: calculate height based on available space above
-            popHeight = availableSpaceAbove;
-            if (mPopupCandidateView.getMeasuredHeight() + mCloseButtonHeight < popHeight)
-                popHeight = mPopupCandidateView.getMeasuredHeight() + mCloseButtonHeight;
-            // Offset to align popup bottom with CandidateView bottom
-            popupYOffset = -(popHeight);
+            // Physical keyboard path: the soft keyboard is hidden and only the candidate bar remains.
+            popHeight = popupHeight(mScreenHeight, mPopupCandidateView.getMeasuredHeight(), true);
+            popupYOffset = popupYOffset(myHeight, popHeight, false);
         } else {
-            // Expand downward: original behavior
-            popHeight = availableSpaceBelow;
-            if (mPopupCandidateView.getMeasuredHeight() + mCloseButtonHeight < popHeight)
-                popHeight = mPopupCandidateView.getMeasuredHeight() + mCloseButtonHeight;
-            // Original offset: show above CandidateView
-            popupYOffset = -myHeight;
-        }
-
-        if (!hasRoomForExpanding(expandUpward)) {
-            popHeight = 3 * (configHeight + mVerticalPadding) + mCloseButtonHeight;
-
-            if (DEBUG)
-                Log.i(TAG, "doUpdateCandidatePopup(), " +
-                        "no enough room for expanded view, expand self first. newHeight:" + popHeight);
-
-            if (mPopupCandidateView.getMeasuredHeight() + mCloseButtonHeight < popHeight)
-                popHeight = mPopupCandidateView.getMeasuredHeight() + mCloseButtonHeight;
-            this.setLayoutParams(
-                    new LinearLayout.LayoutParams(mScreenWidth - mExpandButtonWidth, popHeight));
+            // Soft keyboard visible: cover the live candidate bar and keyboard view with one coherent popup.
+            popHeight = popupHeight(visibleKeyboardPopupHeight(availableSpaceBelow, candidateViewHeight),
+                    mPopupCandidateView.getMeasuredHeight(), false);
+            popupYOffset = popupYOffset(myHeight, popHeight, false);
         }
 
         if (DEBUG)
@@ -613,7 +688,6 @@ public class CandidateView extends View implements View.OnClickListener {
                             + ", popHeight = " + popHeight
                             + ", popupYOffset = " + popupYOffset
                             + ", CandidateExpandedView.measureHeight = " + mPopupCandidateView.getMeasuredHeight()
-                            + ", btnClose.getMeasuredHeight() = " + mCloseButtonHeight
             );
 
 
@@ -621,25 +695,23 @@ public class CandidateView extends View implements View.OnClickListener {
         if (mCandidatePopupWindow.isShowing()) {
             if (DEBUG)
                 Log.i(TAG, "doUpdateCandidatePopup(),mCandidatePopup.isShowing ");
-            // Update size only, position is controlled by showAsDropDown offsetY
-            // Update both size and y-offset (location) to reflect new popHeight
-            mCandidatePopupWindow.update(this, 0, popupYOffset, mScreenWidth, popHeight);
+            mCandidatePopupWindow.update(mScreenWidth, popHeight);
         } else {
             mCandidatePopupWindow.setWidth(mScreenWidth);
             mCandidatePopupWindow.setHeight(popHeight);
-            // Use offsetY to position popup: negative value shows above, aligns bottom when expanding upward
-            mCandidatePopupWindow.showAsDropDown(this, 0, popupYOffset);
+            // Bottom-positioned popup covers the soft keyboard when present and pins to screen bottom
+            // when physical key events hide the soft keyboard.
+            mCandidatePopupWindow.showAtLocation(getRootView(), Gravity.BOTTOM | Gravity.START, 0, 0);
             mPopupScrollView.scrollTo(0, 0);
         }
 
         //Jeremy '12,5,31 do update layoutparams after popupWindow update or creation.
         mPopupCandidateView.setLayoutParams(
                 new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT
-                        , popHeight - mCloseButtonHeight));
+                        , popupContentHeight(popHeight)));
 
         mPopupScrollView.setLayoutParams(
-                new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT
-                        , popHeight - mCloseButtonHeight));
+                popupFrameContentLayoutParams(popHeight));
 
 
     }
@@ -669,6 +741,9 @@ public class CandidateView extends View implements View.OnClickListener {
                         && (mComposingTextPopup.isShowing()) || mComposingTextView.getVisibility() == VISIBLE)) {
 
             mComposingTextView.setVisibility(INVISIBLE);
+            if (embeddedComposing == null && mComposingTextPopup != null && mComposingTextPopup.isShowing()) {
+                mComposingTextPopup.dismiss();
+            }
         }
     }
 
@@ -728,6 +803,13 @@ public class CandidateView extends View implements View.OnClickListener {
 
         mComposingTextView.invalidate();  //Jeremy '12,6,2 invalidate and measure so as to get correct height and width later. 
         mComposingTextView.setVisibility(VISIBLE);
+        if (candidateExpanded) {
+            mComposingTextView.setVisibility(INVISIBLE);
+            if (mComposingTextPopup != null && mComposingTextPopup.isShowing()) {
+                mComposingTextPopup.dismiss();
+            }
+            return;
+        }
 
         //Jeremy '15,6, 4 bypass updating popup when composing view is embedded in candidate container
 
@@ -745,6 +827,10 @@ public class CandidateView extends View implements View.OnClickListener {
             Log.i(TAG, "doUpdateComposing(): this.isShown()" + this.isShown() +
                     "; embeddedComposing is null:" + (embeddedComposing == null));
 
+        if (!shouldShowComposingPopup(candidateExpanded, this.isShown())) {
+            doHideComposing();
+            return;
+        }
 
         if (embeddedComposing != null)
             return; //Jeremy '15,6, 4 bypass updating popup when composing view is embedded in candidate container
@@ -767,7 +853,7 @@ public class CandidateView extends View implements View.OnClickListener {
         int[] offsetInWindow = new int[2];
         this.getLocationInWindow(offsetInWindow);
         int mPopupComposingY = offsetInWindow[1];
-        int mPopupComposingX = 0;
+        int mPopupComposingX = popupBaseXInWindow(offsetInWindow[0]);
 
         mPopupComposingY -= popupHeight;
 
@@ -802,7 +888,7 @@ public class CandidateView extends View implements View.OnClickListener {
             Log.i(TAG, "showComposing()");
         //jeremy '12,6,3 moved the creation of mComposingTextPopup and mComposingTextView from doUpdateComposing
         //Jeremy '12,4,8 to avoid fc when hard keyboard is engaged and candidateview is not shown
-        if (!this.isShown()) return;
+        if (!shouldShowComposingPopup(candidateExpanded, this.isShown())) return;
 
         final int composingShowDelayMs = 50; // Delay before showing composing text
         mHandler.updateComposing(composingShowDelayMs);
@@ -832,6 +918,303 @@ public class CandidateView extends View implements View.OnClickListener {
 
         mHandler.dismissCandidatePopup(0);
 
+    }
+
+    public void dismissComposingFromCandidate() {
+        hideCandidatePopup();
+        if (mService != null) {
+            mService.dismissCandidateComposing();
+        } else {
+            clear();
+        }
+    }
+
+    public Drawable makeDismissButtonBackground() {
+        GradientDrawable background = new GradientDrawable();
+        int color = mColorNormalText & 0x00ffffff;
+        background.setColor(color | 0x1a000000);
+        background.setCornerRadius(dpToPx(6));
+        return background;
+    }
+
+    public Drawable makeDismissButtonGlyph() {
+        return new DismissGlyphDrawable(mColorNormalText, dpToPx(14));
+    }
+
+    public void showLimeToast(CharSequence text) {
+        if (text == null || text.length() == 0) return;
+        mHandler.showLimeToast(text);
+    }
+
+    public void showLimeToastUntilNextKey(CharSequence text) {
+        if (text == null || text.length() == 0) return;
+        mHandler.showLimeToastUntilNextKey(text);
+    }
+
+    public void hideLimeToast() {
+        mHandler.hideLimeToast();
+    }
+
+    static boolean shouldShowLimeToast(boolean hasWindowToken, CharSequence text) {
+        return hasWindowToken && text != null && text.length() > 0;
+    }
+
+    static String dictationDisplayText(Resources resources, DictationState state, String text) {
+        if (state == null) {
+            return "";
+        }
+        switch (state) {
+            case LISTENING:
+                return resources != null ? resources.getString(R.string.dictation_status_listening) : "";
+            case PARTIAL:
+                return text != null && text.length() > 0 ? text
+                        : (resources != null ? resources.getString(R.string.dictation_status_partial) : "");
+            case FINALIZING:
+                return text != null && text.length() > 0 ? text
+                        : (resources != null ? resources.getString(R.string.dictation_status_finalizing) : "");
+            case ERROR:
+                return resources != null ? resources.getString(R.string.dictation_status_error) : "";
+            case CANCELLED:
+            case IDLE:
+            default:
+                return "";
+        }
+    }
+
+    private void doShowLimeToast(CharSequence text) {
+        if (!shouldShowLimeToast(getWindowToken() != null, text)) return;
+
+        if (mLimeToastTextView == null) {
+            mLimeToastTextView = new TextView(mContext);
+            mLimeToastTextView.setSingleLine(true);
+            int hPad = dpToPx(8);
+            int vPad = dpToPx(3);
+            mLimeToastTextView.setPadding(hPad, vPad, hPad, vPad);
+
+            GradientDrawable background = new GradientDrawable();
+            background.setColor(mColorComposingBackground);
+            background.setCornerRadius(dpToPx(6));
+            mLimeToastTextView.setBackground(background);
+            mLimeToastTextView.setTextColor(mColorComposingText);
+        }
+
+        float scaledTextSize =
+                mContext.getResources().getDimensionPixelSize(R.dimen.composing_text_size) * mLIMEPref.getFontSize();
+        mLimeToastTextView.setTextSize(TypedValue.COMPLEX_UNIT_PX, scaledTextSize);
+        mLimeToastTextView.setText(text);
+        mLimeToastTextView.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+
+        if (mLimeToastPopup == null) {
+            mLimeToastPopup = new PopupWindow(mContext);
+            mLimeToastPopup.setTouchable(false);
+            mLimeToastPopup.setClippingEnabled(false);
+            mLimeToastPopup.setContentView(mLimeToastTextView);
+            mLimeToastPopup.setBackgroundDrawable(null);
+        }
+
+        int toastWidth = mLimeToastTextView.getMeasuredWidth();
+        int toastHeight = mLimeToastTextView.getMeasuredHeight();
+        int[] offsetInWindow = new int[2];
+        getLocationInWindow(offsetInWindow);
+
+        int baseX = popupBaseXInWindow(offsetInWindow[0]);
+        int x = baseX;
+        int y = offsetInWindow[1] - toastHeight;
+        if (embeddedComposing != null && embeddedComposing.getVisibility() == VISIBLE) {
+            int[] composingOffset = new int[2];
+            embeddedComposing.getLocationInWindow(composingOffset);
+            x = composingOffset[0] + embeddedComposing.getWidth() + dpToPx(8);
+            y = composingOffset[1];
+        } else if (mComposingTextView != null && mComposingTextView.getVisibility() == VISIBLE) {
+            x = baseX + mComposingTextView.getWidth() + dpToPx(8);
+        }
+
+        int rightEdge = offsetInWindow[0] + Math.max(getWidth(), 0);
+        if (rightEdge > 0) {
+            x = Math.max(baseX, Math.min(x, rightEdge - toastWidth));
+        }
+
+        try {
+            if (mLimeToastPopup.isShowing()) {
+                mLimeToastPopup.update(x, y, toastWidth, toastHeight);
+            } else {
+                mLimeToastPopup.setWidth(toastWidth);
+                mLimeToastPopup.setHeight(toastHeight);
+                mLimeToastPopup.showAtLocation(this, Gravity.NO_GRAVITY, x, y);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error showing lime toast", e);
+        }
+    }
+
+    private void doHideLimeToast() {
+        if (mLimeToastPopup != null && mLimeToastPopup.isShowing()) {
+            mLimeToastPopup.dismiss();
+        }
+    }
+
+    private int dpToPx(int dp) {
+        return Math.round(dp * mContext.getResources().getDisplayMetrics().density);
+    }
+
+    public void storePopupDismissButtonWidth(View dismissButton) {
+        if (dismissButton == null || mPopupDismissButtonWidth > 0) return;
+
+        int width = dismissButton.getWidth();
+        if (width <= 0) width = dismissButton.getMeasuredWidth();
+        if (width <= 0 && dismissButton.getLayoutParams() != null) {
+            width = dismissButton.getLayoutParams().width;
+        }
+
+        if (width > 0) {
+            mPopupDismissButtonWidth = width;
+        } else {
+            dismissButton.post(() -> storePopupDismissButtonWidth(dismissButton));
+        }
+    }
+
+    private int popupBaseXInWindow(int candidateLeft) {
+        int rowLeft = candidateLeft;
+        ViewParent parent = getParent();
+        if (parent instanceof View) {
+            int[] parentOffset = new int[2];
+            ((View) parent).getLocationInWindow(parentOffset);
+            rowLeft = parentOffset[0];
+        }
+        return popupBaseX(rowLeft, mPopupDismissButtonWidth);
+    }
+
+    static int popupBaseX(int rowLeft, int dismissWidth) {
+        return rowLeft + dismissWidth;
+    }
+
+    static int popupContentHeight(int popHeight) {
+        return popHeight;
+    }
+
+    static int popupHeight(int availableSpace, int measuredContentHeight, boolean keyboardViewHidden) {
+        if (keyboardViewHidden && measuredContentHeight < availableSpace) {
+            return measuredContentHeight;
+        }
+        return availableSpace;
+    }
+
+    static int visibleKeyboardPopupHeight(int availableSpaceBelowCandidateBar, int candidateViewHeight) {
+        return availableSpaceBelowCandidateBar + candidateViewHeight;
+    }
+
+    static int popupYOffset(int candidateViewHeight, int popHeight, boolean keyboardViewHidden) {
+        return 0;
+    }
+
+    static int visibleKeyboardPopupY(int candidateTopOnScreen, int candidateViewHeight) {
+        return candidateTopOnScreen + candidateViewHeight;
+    }
+
+    static boolean shouldShowComposingPopup(boolean candidateExpanded, boolean viewShown) {
+        return viewShown && !candidateExpanded;
+    }
+
+    static float liveCandidateTextSize(float configuredTextSize) {
+        return configuredTextSize * 0.9f;
+    }
+
+    static boolean isExpandEdgeTap(int touchX, int viewWidth, int expandButtonWidth, int totalWidth) {
+        return false;
+    }
+
+    static FrameLayout.LayoutParams popupFrameContentLayoutParams(int popHeight) {
+        return new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
+                popupContentHeight(popHeight));
+    }
+
+    int popupDismissButtonWidth() {
+        if (mPopupDismissButtonWidth > 0) return mPopupDismissButtonWidth;
+        return mContext.getResources().getDimensionPixelSize(R.dimen.candidate_dismiss_button_width);
+    }
+
+    int popupExpandButtonWidth() {
+        return mExpandButtonWidth;
+    }
+
+    private void configurePopupOverlayControls(int rowHeight) {
+        if (mCandidatePopupContainer == null || rowHeight <= 0) return;
+        ImageButton popupDismiss = mCandidatePopupContainer.findViewById(R.id.candidate_dismiss);
+        configurePopupOverlayControl(popupDismiss, popupDismissButtonWidth(), rowHeight, Gravity.TOP | Gravity.START);
+
+        ImageButton popupCollapse = mCandidatePopupContainer.findViewById(R.id.candidate_expand_collapse);
+        configurePopupOverlayControl(popupCollapse, popupExpandButtonWidth(), rowHeight, Gravity.TOP | Gravity.END);
+    }
+
+    private void configurePopupOverlayControl(ImageButton button, int width, int height, int gravity) {
+        if (button == null || width <= 0 || height <= 0) return;
+        FrameLayout.LayoutParams params;
+        ViewGroup.LayoutParams current = button.getLayoutParams();
+        if (current instanceof FrameLayout.LayoutParams) {
+            params = (FrameLayout.LayoutParams) current;
+        } else {
+            params = new FrameLayout.LayoutParams(width, height);
+        }
+        params.width = width;
+        params.height = height;
+        params.gravity = gravity;
+        button.setLayoutParams(params);
+    }
+
+    private static class DismissGlyphDrawable extends Drawable {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int intrinsicSize;
+
+        DismissGlyphDrawable(int color, int intrinsicSize) {
+            this.intrinsicSize = intrinsicSize;
+            paint.setColor(color);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            paint.setStyle(Paint.Style.STROKE);
+        }
+
+        @Override
+        public void draw(@NonNull Canvas canvas) {
+            Rect bounds = getBounds();
+            float size = Math.min(bounds.width(), bounds.height());
+            if (size <= 0) return;
+
+            float half = Math.min(intrinsicSize, size) * 0.34f;
+            float centerX = bounds.exactCenterX();
+            float centerY = bounds.exactCenterY();
+            paint.setStrokeWidth(Math.max(2f, Math.min(intrinsicSize, size) * 0.12f));
+            canvas.drawLine(centerX - half, centerY - half,
+                    centerX + half, centerY + half, paint);
+            canvas.drawLine(centerX + half, centerY - half,
+                    centerX - half, centerY + half, paint);
+        }
+
+        @Override
+        public int getIntrinsicWidth() {
+            return intrinsicSize;
+        }
+
+        @Override
+        public int getIntrinsicHeight() {
+            return intrinsicSize;
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            paint.setAlpha(alpha);
+        }
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter colorFilter) {
+            paint.setColorFilter(colorFilter);
+        }
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public int getOpacity() {
+            return PixelFormat.TRANSLUCENT;
+        }
     }
 
 
@@ -912,6 +1295,10 @@ public class CandidateView extends View implements View.OnClickListener {
     private void doDraw(Canvas canvas) {
 
 
+        if (isShowingDictationStatus()) {
+            drawDictationStatus(canvas);
+            return;
+        }
         if (mSuggestions == null) return;
         if (DEBUG)
             Log.i(TAG, "CandidateView:doDraw():Suggestion mCount:" + mCount + " mSuggestions.size:" + mSuggestions.size());
@@ -1137,7 +1524,16 @@ public class CandidateView extends View implements View.OnClickListener {
 
     }
 
+    public void setSuggestionsWithoutHighlight(List<Mapping> suggestions, boolean showNumber, String displaySelkey) {
+        mDisplaySelkey = displaySelkey;
+        setSuggestions(suggestions, showNumber, false);
+    }
+
     public synchronized void setSuggestions(List<Mapping> suggestions, boolean showNumber) {
+        setSuggestions(suggestions, showNumber, true);
+    }
+
+    private synchronized void setSuggestions(List<Mapping> suggestions, boolean showNumber, boolean seedDefaultSelection) {
         //clear();
         //Jeremy '11,8,14 moved from clear();
         if (DEBUG)
@@ -1179,20 +1575,8 @@ public class CandidateView extends View implements View.OnClickListener {
                     Log.i(TAG, "setSuggestions():mSuggestions.size():" + mSuggestions.size()
                             + " mCount=" + mCount);
 
-                if (mCount > 1 && (mSuggestions.get(1).isExactMatchToCodeRecord() || mSuggestions.get(1).isPartialMatchToCodeRecord())) {
-                    mSelectedIndex = 1;
-                } else if (mCount > 0 && (mSuggestions.get(0).isComposingCodeRecord() || mSuggestions.get(0).isRuntimeBuiltPhraseRecord())) {
-/*
-                    int seloption = mLIMEPref.getSelkeyOption();
-                    if(seloption > 0 && suggestions.size() > seloption){
-                        mSelectedIndex = seloption;
-                    }else{*/
-                    mSelectedIndex = 0;
-                    //}
-
-                } else {
-                    // no default selection for related phrase, chinese punctuation symbols1 and English suggestions  Jeremy '15,6,4
-                    mSelectedIndex = -1;
+                if (seedDefaultSelection) {
+                    mSelectedIndex = LIMEService.defaultHighlightedCandidateIndex(mSuggestions, false);
                 }
             } else {
                 if (DEBUG)
@@ -1214,6 +1598,8 @@ public class CandidateView extends View implements View.OnClickListener {
 
     public void clear() {
         if (DEBUG) Log.i(TAG, "clear()");
+        mDictationState = DictationState.IDLE;
+        mDictationText = "";
         //mHeight =0; //Jeremy '12,5,6 hide candidate bar when candidateview is fixed.
         if (mSuggestions != null) mSuggestions.clear();
         mCount = 0;
@@ -1249,6 +1635,8 @@ public class CandidateView extends View implements View.OnClickListener {
         if (DEBUG)
             Log.i(TAG, "forceHide()");
         mHeight = 0;
+        mDictationState = DictationState.IDLE;
+        mDictationText = "";
         //clear();
         //resetWidth();// will cause wrong thread exception. clear() will call updateUI() and will do resetWidth
         mSuggestions = EMPTY_LIST;
@@ -1293,6 +1681,13 @@ public class CandidateView extends View implements View.OnClickListener {
             case MotionEvent.ACTION_UP:
                 if (DEBUG)
                     Log.i(TAG, "OnTouchEvent():MotionEvent.ACTION_UP, mScrolled=" + mScrolled + "; mSelectedIndex = " + mSelectedIndex);
+                if (!mScrolled && isExpandEdgeTap(x, getWidth(), mExpandButtonWidth, mTotalWidth)) {
+                    mSelectedIndex = -1;
+                    removeHighlight();
+                    showCandidatePopup();
+                    performClick();
+                    return true;
+                }
                 if (!mScrolled) {
                     if (mSelectedIndex >= 0) {
                         takeSelectedSuggestion(true);
@@ -1457,7 +1852,7 @@ public class CandidateView extends View implements View.OnClickListener {
         }
 
 
-        if (mSuggestions != null && index >= 0 && index <= mSuggestions.size()) {
+        if (mSuggestions != null && index >= 0 && index < mSuggestions.size()) {
             mService.pickCandidateManually(index);
             return true;  // Selection picked
         } else
@@ -1466,6 +1861,87 @@ public class CandidateView extends View implements View.OnClickListener {
 
     public boolean takeSelectedSuggestion() {
         return this.takeSelectedSuggestion(false);
+    }
+
+    public void showDictationStatus(DictationState state, String text) {
+        mDictationState = state == null ? DictationState.IDLE : state;
+        mDictationText = text == null ? "" : text;
+        if (mDictationState == DictationState.IDLE || mDictationState == DictationState.CANCELLED) {
+            clearDictationStatus();
+            return;
+        }
+        if (mSuggestions != null) {
+            mSuggestions.clear();
+        }
+        mCount = 0;
+        mTargetScrollX = 0;
+        prepareLayout();
+        mHandler.updateUI(0);
+    }
+
+    public void clearDictationStatus() {
+        mDictationState = DictationState.IDLE;
+        mDictationText = "";
+        mHandler.updateUI(0);
+    }
+
+    public boolean isShowingDictationStatus() {
+        return mDictationState != null
+                && mDictationState != DictationState.IDLE
+                && mDictationState != DictationState.CANCELLED;
+    }
+
+    private void drawDictationStatus(Canvas canvas) {
+        updateFontSize();
+        if (mBgPadding == null) {
+            mBgPadding = new Rect(0, 0, 0, 0);
+            if (getBackground() != null) {
+                getBackground().getPadding(mBgPadding);
+            }
+        }
+
+        String displayText = dictationDisplayText(getResources(), mDictationState, mDictationText);
+        if (displayText.length() == 0) {
+            mTotalWidth = 0;
+            return;
+        }
+
+        final Rect bgPadding = mBgPadding;
+        float base = mCandidatePaint.measureText("。");
+        float textWidth = mCandidatePaint.measureText(displayText);
+        if (textWidth < base) {
+            textWidth = base;
+        }
+        final int wordWidth = (int) textWidth + X_GAP * 2;
+        mWordX[0] = 0;
+        mWordWidth[0] = wordWidth;
+        mTotalWidth = wordWidth;
+        if (canvas == null) {
+            return;
+        }
+
+        if(mTransparentCandidateView){
+            canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR);
+
+            Paint backgroundPaint = new Paint();
+            backgroundPaint.setColor(ContextCompat.getColor(mContext, R.color.third_background_light));
+            backgroundPaint.setAlpha(33);
+            backgroundPaint.setStyle(Paint.Style.FILL);
+
+            canvas.drawRect(0.5f, bgPadding.top, mScreenWidth, mHeight, backgroundPaint);
+        }
+
+        mCandidatePaint.setColor(mColorNormalText);
+        int textBaseLine = (int) (((mHeight - mCandidatePaint.getTextSize()) / 2) - mCandidatePaint.ascent());
+        canvas.drawText(displayText, mWordX[0] + X_GAP, textBaseLine, mCandidatePaint);
+
+        mCandidatePaint.setColor(mColorSpacer);
+        canvas.drawLine(mWordX[0] + mWordWidth[0] + 0.5f,
+                bgPadding.top + ((float) mVerticalPadding / 2),
+                mWordX[0] + mWordWidth[0] + 0.5f,
+                mHeight - ((float) mVerticalPadding / 2),
+                mCandidatePaint);
+        mCandidatePaint.setFakeBoldText(false);
     }
 
     public boolean takeSelectedSuggestion(boolean vibrateSound) {
@@ -1510,10 +1986,10 @@ public class CandidateView extends View implements View.OnClickListener {
 
     @Override
     public void onClick(View v) {
-        //Jeremy '11,8.27 do vibrate and sound on candidateexpandedview close button pressed.
-        mService.doVibrateSound(0);
-
-        hideCandidatePopup();
+        if (mService != null) {
+            mService.doVibrateSound(0);
+        }
+        dismissComposingFromCandidate();
     }
 
 

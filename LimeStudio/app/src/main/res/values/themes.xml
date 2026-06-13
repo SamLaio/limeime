@@ -3,7 +3,7 @@
   ~ /*
   ~  **    Copyright 2025, The LimeIME Open Source Project
   ~  **
-  ~  **    Project Url: http://github.com/jrywu/limeime/
+  ~  **    Project Url: https://github.com/SamLaio/limeime/
   ~  **                 http://android.toload.net/
   ~  **
   ~  **    This program is free software: you can redistribute it and/or modify
@@ -33,7 +33,7 @@
     <!-- Action bar follows surface/background — not affected by colorPrimary -->
     <item name="actionBarStyle">@style/LIME.ActionBarStyle</item>
     <item name="actionBarTheme">@style/LIME.ToolbarContentTheme</item>
-    <!-- Blue active tabs + buttons; green switches — matches iOS LIME brand -->
+    <!-- Fallback accents; DynamicColors overrides these on supported devices. -->
     <item name="colorPrimary">@color/material_blue</item>
     <item name="colorPrimaryVariant">@color/material_blue</item>
     <item name="colorSecondary">@color/lime_green</item>
@@ -43,11 +43,15 @@
   <!-- Base application theme — follows system day/night. -->
   <style name="AppTheme" parent="Theme.MaterialComponents.DayNight">
     <item name="android:windowBackground">?android:attr/colorBackground</item>
+    <item name="android:windowDisablePreview">true</item>
+    <item name="android:windowSplashScreenAnimatedIcon">@color/color_transparent</item>
+    <item name="android:windowSplashScreenBackground">?android:attr/colorBackground</item>
+    <item name="android:windowSplashScreenIconBackgroundColor">@color/color_transparent</item>
     <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
     <!-- Action bar follows surface/background — not affected by colorPrimary -->
     <item name="actionBarStyle">@style/LIME.ActionBarStyle</item>
     <item name="actionBarTheme">@style/LIME.ToolbarContentTheme</item>
-    <!-- Blue active tabs + buttons; green switches — matches iOS LIME brand -->
+    <!-- Fallback accents; DynamicColors overrides these on supported devices. -->
     <item name="colorPrimary">@color/material_blue</item>
     <item name="colorPrimaryVariant">@color/material_blue</item>
     <item name="colorSecondary">@color/lime_green</item>

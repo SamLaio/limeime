@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -32,10 +32,25 @@ import androidx.preference.PreferenceManager;
 
 import net.toload.main.hd.data.ImConfig;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class LIMEPreferenceManager {
+
+	private static final String STARTUP_CONFIG_VERSION = "startup_config_version";
+
+	public static class ReverseLookupOption {
+		public final String label;
+		public final String value;
+
+		public ReverseLookupOption(String label, String value) {
+			this.label = label;
+			this.value = value;
+		}
+	}
 	
 	private final Context ctx;
 	
@@ -143,17 +158,161 @@ public class LIMEPreferenceManager {
 		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
 		String loadingStatus = englishOnly?"yes":"no";
 		
-		sp.edit().putString("language_mode",loadingStatus).apply();
+		putStringAndBumpStartupConfigVersionIfChanged(sp, "language_mode", loadingStatus);
 		
 	}
 
-	public String getRerverseLookupTable(String table){
-		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
-		if(table.equals(LIME.DB_TABLE_PHONETIC)){
-			return sp.getString("bpmf_im_reverselookup", "none");
-		}else{
-			return sp.getString(table + "_im_reverselookup", "none");
+	private String getReverseLookupPreferenceKey(String table) {
+		if (table == null || table.isEmpty()) {
+			table = LIME.DB_TABLE_PHONETIC;
 		}
+		if (table.equals(LIME.DB_TABLE_PHONETIC)) {
+			return "bpmf_im_reverselookup";
+		}
+		return table + "_im_reverselookup";
+	}
+
+	public String getReverseLookupTable(String table){
+		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
+		return sp.getString(getReverseLookupPreferenceKey(table), "none");
+	}
+
+	public String getRerverseLookupTable(String table){
+		return getReverseLookupTable(table);
+	}
+
+	public void setReverseLookupTable(String table, String lookupTable){
+		if (lookupTable == null || lookupTable.isEmpty()) {
+			lookupTable = "none";
+		}
+		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
+		sp.edit().putString(getReverseLookupPreferenceKey(table), lookupTable).apply();
+	}
+
+	public static List<ReverseLookupOption> buildReverseLookupOptions(List<ImConfig> imList, String noneLabel) {
+		List<String> codes = new ArrayList<>();
+		List<String> labels = new ArrayList<>();
+		if (imList != null) {
+			for (ImConfig im : imList) {
+				if (im == null || im.getCode() == null || im.isDisable()) continue;
+				String code = im.getCode();
+				if ("emoji".equals(code) || indexOfIMCode(code) < 0) continue;
+				codes.add(code);
+				String label = im.getDesc();
+				labels.add(label == null || label.isEmpty() ? fallbackIMLabel(code) : label);
+			}
+		}
+		return buildReverseLookupOptions(codes, labels, noneLabel);
+	}
+
+	public static List<ReverseLookupOption> buildReverseLookupOptions(List<String> codes,
+			List<String> labels, String noneLabel) {
+		List<ReverseLookupOption> options = new ArrayList<>();
+		Set<String> seen = new HashSet<>();
+		String safeNoneLabel = noneLabel == null || noneLabel.isEmpty() ? "none" : noneLabel;
+		options.add(new ReverseLookupOption(safeNoneLabel, "none"));
+		seen.add("none");
+		if (codes != null) {
+			for (int i = 0; i < codes.size(); i++) {
+				String code = codes.get(i);
+				if (code == null || code.isEmpty() || seen.contains(code) || indexOfIMCode(code) < 0) {
+					continue;
+				}
+				String label = labels != null && i < labels.size() ? labels.get(i) : null;
+				if (label == null || label.isEmpty()) {
+					label = fallbackIMLabel(code);
+				}
+				options.add(new ReverseLookupOption(label, code));
+				seen.add(code);
+			}
+		}
+		return options.size() > 1 ? options : fallbackReverseLookupOptions(safeNoneLabel);
+	}
+
+	public static List<ReverseLookupOption> buildReverseLookupOptions(String activeState, String noneLabel) {
+		List<String> codes = new ArrayList<>();
+		List<String> labels = new ArrayList<>();
+		if (activeState != null && !activeState.trim().isEmpty()) {
+			for (String raw : activeState.split(";")) {
+				if (raw == null || raw.isEmpty()) continue;
+				try {
+					int index = Integer.parseInt(raw);
+					if (index < 0 || index >= LIME.IM_CODES.length) continue;
+					codes.add(LIME.IM_CODES[index]);
+					labels.add(index < LIME.IM_FULL_NAMES.length ? LIME.IM_FULL_NAMES[index] : LIME.IM_SHORT_NAMES[index]);
+				} catch (NumberFormatException ignored) {
+				}
+			}
+		}
+		return buildReverseLookupOptions(codes, labels, noneLabel);
+	}
+
+	public List<ReverseLookupOption> getReverseLookupOptions() {
+		return getReverseLookupOptions("");
+	}
+
+	public List<ReverseLookupOption> getReverseLookupOptions(String noneLabel) {
+		return buildReverseLookupOptions(getIMActivatedState(), noneLabel);
+	}
+
+	public static String[] reverseLookupLabels(List<ReverseLookupOption> options) {
+		return reverseLookupLabels(options, "");
+	}
+
+	public static String[] reverseLookupLabels(List<ReverseLookupOption> options, String noneLabel) {
+		List<ReverseLookupOption> safeOptions = ensureOptions(options, noneLabel);
+		String[] labels = new String[safeOptions.size()];
+		for (int i = 0; i < safeOptions.size(); i++) {
+			labels[i] = safeOptions.get(i).label;
+		}
+		return labels;
+	}
+
+	public static String[] reverseLookupValues(List<ReverseLookupOption> options) {
+		return reverseLookupValues(options, "");
+	}
+
+	public static String[] reverseLookupValues(List<ReverseLookupOption> options, String noneLabel) {
+		List<ReverseLookupOption> safeOptions = ensureOptions(options, noneLabel);
+		String[] values = new String[safeOptions.size()];
+		for (int i = 0; i < safeOptions.size(); i++) {
+			values[i] = safeOptions.get(i).value;
+		}
+		return values;
+	}
+
+	private static List<ReverseLookupOption> ensureOptions(List<ReverseLookupOption> options, String noneLabel) {
+		return options == null || options.isEmpty() ? fallbackReverseLookupOptions(noneLabel) : options;
+	}
+
+	private static List<ReverseLookupOption> fallbackReverseLookupOptions(String noneLabel) {
+		List<ReverseLookupOption> options = new ArrayList<>();
+		options.add(new ReverseLookupOption(noneLabel, "none"));
+		for (int i = 0; i < LIME.IM_CODES.length && i < LIME.IM_FULL_NAMES.length; i++) {
+			options.add(new ReverseLookupOption(LIME.IM_FULL_NAMES[i], LIME.IM_CODES[i]));
+		}
+		return options;
+	}
+
+	private static String fallbackIMLabel(String code) {
+		int index = indexOfIMCode(code);
+		if (index >= 0 && index < LIME.IM_FULL_NAMES.length) {
+			return LIME.IM_FULL_NAMES[index];
+		}
+		if (index >= 0 && index < LIME.IM_SHORT_NAMES.length) {
+			return LIME.IM_SHORT_NAMES[index];
+		}
+		return code;
+	}
+
+	private static int indexOfIMCode(String code) {
+		if (code == null) return -1;
+		for (int i = 0; i < LIME.IM_CODES.length; i++) {
+			if (code.equals(LIME.IM_CODES[i])) {
+				return i;
+			}
+		}
+		return -1;
 	}
 	
 	
@@ -216,10 +375,14 @@ public class LIMEPreferenceManager {
 		return sp.getBoolean("similiar_enable", true);
 	}
 	
+	/**
+	 * Always returns {@code true}. The {@code candidate_switch} preference UI was
+	 * removed because free-scroll candidate selection is the only sensible behaviour
+	 * on modern Android; the paged alternative is unused. The stored value (if any)
+	 * is ignored.
+	 */
 	public boolean getSelectDefaultOnSliding(){
-		
-		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
-		return sp.getBoolean("candidate_switch", true);
+		return true;
 	}
 	
 	public boolean getVibrateOnKeyPressed(){
@@ -236,25 +399,16 @@ public class LIMEPreferenceManager {
 		return sp.getBoolean("sound_on_keypress", false);
 	}
 
-	public boolean getEmojiMode(){
-		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
-		//Jeremy '16,7,30 Emoji support is limited before API 16
-		return sp.getBoolean("enable_emoji", true);
-	}
-
-	public boolean getEmojiButtonEnabled(){
-		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
-		return sp.getBoolean("enable_emoji_button", true);
-	}
-
 	public Integer getEmojiDisplayPosition(){
 		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
-		return Integer.parseInt(sp.getString("enable_emoji_position", "3"));
-	}
-
-	public boolean getReverseLookupNotify(){
-		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
-		return sp.getBoolean("reverse_lookup_notify", true);
+		if (sp.contains("enable_emoji")) {
+			SharedPreferences.Editor editor = sp.edit().remove("enable_emoji");
+			if (!sp.getBoolean("enable_emoji", true)) {
+				editor.putString("enable_emoji_position", "0");
+			}
+			editor.apply();
+		}
+		return Integer.parseInt(sp.getString("enable_emoji_position", "5"));
 	}
 
 	public boolean getPersistentLanguageMode(){
@@ -271,6 +425,9 @@ public class LIMEPreferenceManager {
 		StringBuilder state = new StringBuilder();
 		HashMap<String, String> imMap = new HashMap<>();
 		for(ImConfig i :imlist){
+			if(i == null || i.isDisable()) {
+				continue;
+			}
 			imMap.put(i.getCode(), i.getCode());
 		}
 
@@ -336,7 +493,7 @@ public class LIMEPreferenceManager {
 	}
 	public void setIMActivatedState(String state){
 		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
-		sp.edit().putString( "keyboard_state", String.valueOf(state)).apply();	
+		putStringAndBumpStartupConfigVersionIfChanged(sp, "keyboard_state", String.valueOf(state));
 	}
 	
 	public String getActiveIM(){
@@ -347,7 +504,7 @@ public class LIMEPreferenceManager {
 	
 	public void setActiveIM(String activeIM){
 		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
-		sp.edit().putString( "keyboard_list", String.valueOf(activeIM)).apply();	
+		putStringAndBumpStartupConfigVersionIfChanged(sp, "keyboard_list", String.valueOf(activeIM));
 	}
 	
 	public boolean getThreerowRemapping(){
@@ -489,7 +646,7 @@ public class LIMEPreferenceManager {
 	
 	public void setShowArrowKeys(int mode){
 		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
-		sp.edit().putString("show_arrow_key", Integer.toString(mode)).apply();	
+		putStringAndBumpStartupConfigVersionIfChanged(sp, "show_arrow_key", Integer.toString(mode));
 		
 	}
 	
@@ -500,13 +657,77 @@ public class LIMEPreferenceManager {
 
 	public int getKeyboardTheme(){
 		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
-		return Integer.parseInt(sp.getString("keyboard_theme", "0"));
+		return Integer.parseInt(sp.getString("keyboard_theme", "6"));
 	}
 	
 	public void setSplitKeyboard(int mode){
 		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
-		sp.edit().putString("split_keyboard_mode", Integer.toString(mode)).apply();	
+		putStringAndBumpStartupConfigVersionIfChanged(sp, "split_keyboard_mode", Integer.toString(mode));
 		
+	}
+
+	public long getStartupConfigVersion(){
+		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
+		return sp.getLong(STARTUP_CONFIG_VERSION, 0L);
+	}
+
+	public long initializeStartupConfigVersion(){
+		long current = getStartupConfigVersion();
+		if(current > 0L) return current;
+		return bumpStartupConfigVersion();
+	}
+
+	public void resetStartupConfigVersion(){
+		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
+		sp.edit().putLong(STARTUP_CONFIG_VERSION, 0L).apply();
+	}
+
+	public boolean resetStartupConfigVersionIfStartupPreferenceChanged(String key){
+		if(!isStartupConfigPreferenceKey(key)) return false;
+		resetStartupConfigVersion();
+		return true;
+	}
+
+	private static boolean isStartupConfigPreferenceKey(String key){
+		if(key == null) return false;
+		switch(key){
+			case "keyboard_state":
+			case "keyboard_list":
+			case "show_arrow_key":
+			case "split_keyboard_mode":
+			case "keyboard_theme":
+			case "language_mode":
+			case "persistent_language_mode":
+			case "phonetic_keyboard_type":
+			case "number_row_in_english":
+				return true;
+			default:
+				return key.endsWith("_keyboard_type");
+		}
+	}
+
+	private void putStringAndBumpStartupConfigVersionIfChanged(SharedPreferences sp, String key, String value){
+		String current = sp.getString(key, null);
+		SharedPreferences.Editor editor = sp.edit().putString(key, value);
+		if(!value.equals(current)){
+			putNextStartupConfigVersion(sp, editor);
+		}
+		editor.apply();
+	}
+
+	private long bumpStartupConfigVersion(){
+		SharedPreferences sp = PreferenceManager.getDefaultSharedPreferences(ctx);
+		SharedPreferences.Editor editor = sp.edit();
+		long next = putNextStartupConfigVersion(sp, editor);
+		editor.apply();
+		return next;
+	}
+
+	private long putNextStartupConfigVersion(SharedPreferences sp, SharedPreferences.Editor editor){
+		long current = sp.getLong(STARTUP_CONFIG_VERSION, 0L);
+		long next = Math.max(System.currentTimeMillis(), current + 1L);
+		editor.putLong(STARTUP_CONFIG_VERSION, next);
+		return next;
 	}
 	
 	public boolean getResetCacheFlag(boolean defaultvalue){

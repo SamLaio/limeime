@@ -3,7 +3,7 @@
  *  *
  *  **    Copyright 2025, The LimeIME Open Source Project
  *  **
- *  **    Project Url: http://github.com/lime-ime/limeime/
+ *  **    Project Url: https://github.com/SamLaio/limeime/
  *  **                 http://android.toload.net/
  *  **
  *  **    This program is free software: you can redistribute it and/or modify
@@ -537,7 +537,7 @@ public class RegressionTest {
         // Get scorelist size before
         java.lang.reflect.Field scorelistField = SearchServer.class.getDeclaredField("scorelist");
         scorelistField.setAccessible(true);
-        java.util.List<Mapping> scorelist = (java.util.List<Mapping>) scorelistField.get(searchServer);
+        java.util.List<Mapping> scorelist = getScorelist(scorelistField, searchServer);
         int initialSize = (scorelist != null) ? scorelist.size() : 0;
 
         // Invoke learnRelatedPhraseAndUpdateScore
@@ -547,7 +547,7 @@ public class RegressionTest {
         int attempts = 0;
         do {
             Thread.sleep(200);
-            scorelist = (List<Mapping>) scorelistField.get(searchServer);
+            scorelist = getScorelist(scorelistField, searchServer);
             attempts++;
             if (scorelist != null && scorelist.size() > initialSize) {
                 break;
@@ -555,7 +555,7 @@ public class RegressionTest {
         } while (attempts < 15);
 
         // Verify mapping added to scorelist
-        scorelist = (List<Mapping>) scorelistField.get(searchServer);
+        scorelist = getScorelist(scorelistField, searchServer);
         assertNotNull("Scorelist should not be null", scorelist);
         assertTrue("Mapping should be added to scorelist (initial: " + initialSize + ", current: " + scorelist.size() + ")", scorelist.size() > initialSize);
 
@@ -579,7 +579,7 @@ public class RegressionTest {
         // Get scorelist before
         java.lang.reflect.Field scorelistField = SearchServer.class.getDeclaredField("scorelist");
         scorelistField.setAccessible(true);
-        java.util.List<Mapping> scorelistBefore = (java.util.List<Mapping>) scorelistField.get(searchServer);
+        java.util.List<Mapping> scorelistBefore = getScorelist(scorelistField, searchServer);
         int sizeBefore = (scorelistBefore != null) ? scorelistBefore.size() : 0;
 
         // Invoke with null - should not throw exception
@@ -590,7 +590,7 @@ public class RegressionTest {
         }
 
         // Verify scorelist remains valid
-        java.util.List<Mapping> scorelistAfter = (java.util.List<Mapping>) scorelistField.get(searchServer);
+        java.util.List<Mapping> scorelistAfter = getScorelist(scorelistField, searchServer);
         assertNotNull("Scorelist should remain valid", scorelistAfter);
         assertEquals("Scorelist size should not change with null", sizeBefore, scorelistAfter.size());
     }
@@ -625,7 +625,7 @@ public class RegressionTest {
         // Verify scorelist contains all mappings
         java.lang.reflect.Field scorelistField = SearchServer.class.getDeclaredField("scorelist");
         scorelistField.setAccessible(true);
-        java.util.List<Mapping> scorelist = (java.util.List<Mapping>) scorelistField.get(searchServer);
+        java.util.List<Mapping> scorelist = getScorelist(scorelistField, searchServer);
         assertNotNull("Scorelist should not be null", scorelist);
         assertTrue("Scorelist should contain mappings from all threads", scorelist.size() >= NUM_CALLS);
     }
@@ -651,7 +651,7 @@ public class RegressionTest {
         // Verify scorelist accumulated entries
         java.lang.reflect.Field scorelistField = SearchServer.class.getDeclaredField("scorelist");
         scorelistField.setAccessible(true);
-        java.util.List<Mapping> scorelist = (java.util.List<Mapping>) scorelistField.get(searchServer);
+        java.util.List<Mapping> scorelist = getScorelist(scorelistField, searchServer);
         assertNotNull("Scorelist should not be null", scorelist);
 
         // Count occurrences of "累積"
@@ -767,7 +767,7 @@ public class RegressionTest {
         // Verify scorelist has only 1 entry (no phrase learning triggered)
         java.lang.reflect.Field scorelistField = SearchServer.class.getDeclaredField("scorelist");
         scorelistField.setAccessible(true);
-        java.util.List<Mapping> scorelist = (java.util.List<Mapping>) scorelistField.get(searchServer);
+        java.util.List<Mapping> scorelist = getScorelist(scorelistField, searchServer);
 
         // With single word, no related phrase should be created
         assertTrue("Single word should not trigger phrase learning", true);
@@ -1227,7 +1227,7 @@ public class RegressionTest {
         // Verify scorelist was populated
         java.lang.reflect.Field scorelistField = SearchServer.class.getDeclaredField("scorelist");
         scorelistField.setAccessible(true);
-        java.util.List<Mapping> scorelist = (java.util.List<Mapping>) scorelistField.get(searchServer);
+        java.util.List<Mapping> scorelist = getScorelist(scorelistField, searchServer);
         assertNotNull("Scorelist should be populated", scorelist);
         // Note: Scorelist size depends on learning preferences which are read-only
         assertTrue("Scorelist accessible", scorelist != null);
@@ -1358,6 +1358,12 @@ public class RegressionTest {
 
         // Verify cumulative learning
         assertTrue("Learning persists across sessions", true);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Mapping> getScorelist(Field scorelistField, SearchServer searchServer)
+            throws IllegalAccessException {
+        return (List<Mapping>) scorelistField.get(searchServer);
     }
 
 }
