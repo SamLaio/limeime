@@ -4561,7 +4561,7 @@ public class SearchServerTest {
     // 3.5.10: getTablename
     @Test(timeout = 5000)
     public void test_3_5_10_1_getTablename_returns_current_table() throws Exception {
-        String result = searchServer.getTablename();
+        String result = searchServer.tablename;
         assertNotNull("getTablename returns current table name", result);
         assertTrue("getTablename returns non-empty string", result.length() > 0);
     }
@@ -4569,7 +4569,7 @@ public class SearchServerTest {
     // 3.4.5: setTableName/isValidTableName
     @Test(timeout = 5000)
     public void test_3_4_5_1_setTableName_null_or_empty_ignores() throws Exception {
-        String originalTable = searchServer.getTablename();
+        String originalTable = searchServer.tablename;
         try {
             // Attempt to set null table name - should throw IllegalArgumentException
             try {
@@ -4580,7 +4580,7 @@ public class SearchServerTest {
             }
             
             // Verify table name didn't change
-            assertEquals("Table name should remain unchanged after failed setTableName", originalTable, searchServer.getTablename());
+            assertEquals("Table name should remain unchanged after failed setTableName", originalTable, searchServer.tablename);
         } finally {
             // No need to restore, table name didn't change
         }
@@ -4588,12 +4588,12 @@ public class SearchServerTest {
 
     @Test(timeout = 5000)
     public void test_3_4_5_2_setTableName_valid_code_switches_table() throws Exception {
-        String originalTable = searchServer.getTablename();
+        String originalTable = searchServer.tablename;
         try {
             // Use a valid table (phonetic - should always be valid)
             String validTable = "phonetic";
             searchServer.setTableName(validTable, false, false);
-            assertEquals("setTableName should switch to new table", validTable, searchServer.getTablename());
+            assertEquals("setTableName should switch to new table", validTable, searchServer.tablename);
         } finally {
             // Restore original table
             searchServer.setTableName(originalTable, false, false);
@@ -4602,7 +4602,7 @@ public class SearchServerTest {
 
     @Test(timeout = 5000)
     public void test_3_4_5_3_setTableName_resets_cache_on_switch() throws Exception {
-        String originalTable = searchServer.getTablename();
+        String originalTable = searchServer.tablename;
         try {
             // Get a mapping to populate cache
             List<Mapping> beforeCache = searchServer.getMappingByCode("a", false, false);
@@ -4617,7 +4617,7 @@ public class SearchServerTest {
             assertNotNull("Cache lookup after switch should return mappings", afterCache);
             
             // Verify we switched tables
-            assertEquals("Should now be on new table", newTable, searchServer.getTablename());
+            assertEquals("Should now be on new table", newTable, searchServer.tablename);
         } finally {
             // Restore original table
             searchServer.setTableName(originalTable, false, false);
@@ -4626,17 +4626,17 @@ public class SearchServerTest {
 
     @Test(timeout = 5000)
     public void test_3_4_5_4_setTableName_boolean_flags_affect_behavior() throws Exception {
-        String originalTable = searchServer.getTablename();
+        String originalTable = searchServer.tablename;
         try {
             // Test with different flag combinations on a valid table
             searchServer.setTableName("phonetic", true, false);
-            assertEquals("setTableName with numberMapping=true should succeed", "phonetic", searchServer.getTablename());
+            assertEquals("setTableName with numberMapping=true should succeed", "phonetic", searchServer.tablename);
             
             searchServer.setTableName("phonetic", false, true);
-            assertEquals("setTableName with symbolMapping=true should succeed", "phonetic", searchServer.getTablename());
+            assertEquals("setTableName with symbolMapping=true should succeed", "phonetic", searchServer.tablename);
             
             searchServer.setTableName("phonetic", true, true);
-            assertEquals("setTableName with both flags=true should succeed", "phonetic", searchServer.getTablename());
+            assertEquals("setTableName with both flags=true should succeed", "phonetic", searchServer.tablename);
         } finally {
             // Restore original table
             searchServer.setTableName(originalTable, false, false);

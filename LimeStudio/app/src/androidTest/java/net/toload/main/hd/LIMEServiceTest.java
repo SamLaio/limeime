@@ -1383,7 +1383,7 @@ public class LIMEServiceTest {
         
         // Test that SearchServer has required methods
         try {
-            String tableName = searchServer.getTablename();
+            String tableName = searchServer.tablename;
             // tableName can be null, that's acceptable
             assertTrue("getTablename should be callable", true);
         } catch (Exception e) {
