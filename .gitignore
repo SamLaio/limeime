@@ -217,27 +217,36 @@ pip-log.txt
 #Translations
 *.mo
 
-#Mr Developer
+# Mr Developer
 .mr.developer.cfg
-*.iml
-LimeStudio/.idea/
-LimeStudio/.idea/misc.xml
-LimeStudio/app/app.iml
-LimeStudio/app/app.iml
-LimeStudio/app/app.iml
-LimeStudio/app/release/baselineProfiles
+
+#############
+## Android / Gradle
+#############
+
+*.apk
+*.ap_
+*.aab
 *.dm
-#output-metadata.json
+*.iml
+.gradle/
+build/
+captures/
+output-metadata.json
+local.properties
+LimeStudio/app/release/
 LimeStudio/gradle/gradle-daemon-jvm.properties
-/.claude
-/.omc
-/.Codex
-/.codex
+
+#############
+## Local agents / IDE state
+#############
+
+/.claude/
+/.Codex/
+/.codex/
 /.idea/
+/.omc/
 /AGENTS.md
-/LimeStudio/.idea
-/LimeStudio/.omc
-/LimeStudio/.omc/state
-/LimeStudio/.omc
-/LimeStudio/.idea
-/LimeStudio/.omc
+/LimeStudio/.idea/
+/LimeStudio/.omc/
+Resources/Limeicon/variants/
