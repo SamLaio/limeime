@@ -291,8 +291,25 @@
     <string name="nav_keepass">KeePass</string>
     <string name="title_keepass">KeePass</string>
     <string name="keepass_description">內建 KeePass 功能會在萊姆輸入法內實作，參考 KeePass2Android 的資料庫與解鎖流程，但不呼叫外部 App。</string>
-    <string name="keepass_internal_status_title">內建 KeePass 模組</string>
-    <string name="keepass_internal_status_message">此頁已接入主畫面導覽。後續的資料庫建立、匯入、解鎖與密碼填入流程會直接在 Lime app 內完成。</string>
+    <string name="keepass_enable_title">KeePass</string>
+    <string name="keepass_enable_summary">啟用 KeePass</string>
+    <string name="keepass_section_database">設定資料庫</string>
+    <string name="keepass_database_path">資料庫</string>
+    <string name="keepass_database_key">金鑰</string>
+    <string name="keepass_database_password">密碼</string>
+    <string name="keepass_section_sync">同步資料庫</string>
+    <string name="keepass_browse_database">瀏覽資料庫</string>
+    <string name="keepass_add_password">新增密碼</string>
+    <string name="keepass_add_password_hint">新增一組額外使用的密碼。</string>
+    <string name="keepass_section_security">安全設定</string>
+    <string name="keepass_fingerprint">設定指紋</string>
+    <string name="keepass_auto_lock_timeout">自動鎖定時間</string>
+    <string name="keepass_auto_lock_minutes">分鐘</string>
+    <string name="keepass_auto_lock_hint">最小時間為 5 分鐘</string>
+    <string name="keepass_setup_required">請先完成「資料庫、金鑰、密碼」設定</string>
+    <string name="keepass_fingerprint_unavailable">設備不支援指紋驗證，或尚未設定安全鎖屏與指紋</string>
+    <string name="keepass_password_empty">密碼不可為空</string>
+    <string name="keepass_password_saved">已新增密碼</string>
 
     <!-- Batch 5: edit sheet confirm dialogs -->
     <string name="dialog_update_title">確認更新</string>
