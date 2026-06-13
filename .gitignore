@@ -231,9 +231,10 @@ LimeStudio/app/release/baselineProfiles
 LimeStudio/gradle/gradle-daemon-jvm.properties
 /.claude
 /.omc
-/LimeIME-iOS/.omc
-/LimeIME-iOS/LimeKeyboard/Layouts/.omc
 /.Codex
+/.codex
+/.idea/
+/AGENTS.md
 /LimeStudio/.idea
 /LimeStudio/.omc
 /LimeStudio/.omc/state
