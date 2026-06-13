@@ -11,8 +11,6 @@ Sam 版本以 Android 21 至 36 相容性、萊姆輸入法核心穩定性、內
 ### 最新版本
 
 - 版本：v0.1
-- APK：LIMEHD2026-0.1.apk
-- 下載連結：https://github.com/SamLaio/limeime/releases/download/v0.1/LIMEHD2026-0.1.apk
 
 ## 版本與相容性
 
