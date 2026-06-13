@@ -309,6 +309,8 @@ public class LIMESettings extends AppCompatActivity implements LIMESettingsView 
             fragment = net.toload.main.hd.ui.view.TwoPaneHostFragment.newInstance();
         } else if (itemId == R.id.nav_prefs) {
             fragment = net.toload.main.hd.ui.view.LimePreferenceFragment.newInstance();
+        } else if (itemId == R.id.nav_keepass) {
+            fragment = net.toload.main.hd.ui.view.KeepassFragment.newInstance();
         } else if (itemId == R.id.nav_db) {
             fragment = net.toload.main.hd.ui.view.DbManagerFragment.newInstance();
         } else {

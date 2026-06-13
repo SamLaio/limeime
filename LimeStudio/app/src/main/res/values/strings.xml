@@ -296,6 +296,11 @@
     <string name="title_im_list">管理輸入法</string>
     <string name="title_db_manager">資料庫管理</string>
     <string name="title_lime_preference">鍵盤偏好設定</string>
+    <string name="nav_keepass">KeePass</string>
+    <string name="title_keepass">KeePass</string>
+    <string name="keepass_description">內建 KeePass 功能會在萊姆輸入法內實作，參考 KeePass2Android 的資料庫與解鎖流程，但不呼叫外部 App。</string>
+    <string name="keepass_internal_status_title">內建 KeePass 模組</string>
+    <string name="keepass_internal_status_message">此頁已接入主畫面導覽。後續的資料庫建立、匯入、解鎖與密碼填入流程會直接在 Lime app 內完成。</string>
 
     <!-- Batch 5: edit sheet confirm dialogs -->
     <string name="dialog_update_title">確認更新</string>
