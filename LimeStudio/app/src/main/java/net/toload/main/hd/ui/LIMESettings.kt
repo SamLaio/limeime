@@ -35,7 +35,6 @@ import net.toload.main.hd.ui.controller.SetupImController
 import net.toload.main.hd.ui.dialog.HelpDialog
 import net.toload.main.hd.ui.dialog.NewsDialog
 import net.toload.main.hd.ui.view.DbManagerFragment
-import net.toload.main.hd.ui.view.KeepassFragment
 import net.toload.main.hd.ui.view.LimePreferenceFragment
 import net.toload.main.hd.ui.view.LIMESettingsView
 import net.toload.main.hd.ui.view.SetupFragment
@@ -344,8 +343,6 @@ class LIMESettings : AppCompatActivity(), LIMESettingsView {
             fragment = TwoPaneHostFragment.newInstance()
         } else if (itemId == R.id.nav_prefs) {
             fragment = LimePreferenceFragment.newInstance()
-        } else if (itemId == R.id.nav_keepass) {
-            fragment = KeepassFragment.newInstance()
         } else if (itemId == R.id.nav_db) {
             fragment = DbManagerFragment.newInstance()
         } else {
