@@ -86,6 +86,9 @@ class LIMEKeyboard(
         }
 
         val key: Key = LIMEKey(context.resources, parent, x, y, parser)
+        if (key.codes.isEmpty()) {
+            return key
+        }
         when (key.codes[0]) {
             KEYCODE_ENTER -> {
                 mEnterKey = key

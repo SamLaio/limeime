@@ -25,6 +25,7 @@
 
 <resources>
     <dimen name="key_height">76dip</dimen>
+    <dimen name="english_number_key_height">61dip</dimen>
     <dimen name="key_preview_height">175dp</dimen>
     <dimen name="spacebar_preview_top_padding">15dip</dimen>
 

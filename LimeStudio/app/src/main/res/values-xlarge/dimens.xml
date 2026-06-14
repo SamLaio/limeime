@@ -27,6 +27,7 @@
 
     <dimen name="phone_key_height">80dip</dimen>
     <dimen name="key_height">84dip</dimen>
+    <dimen name="english_number_key_height">67dip</dimen>
     <dimen name="mini_keyboard_fling_vertical_correction">-84dip</dimen>
     <dimen name="key_preview_height">180dp</dimen>
     <dimen name="spacebar_vertical_correction">4dip</dimen>

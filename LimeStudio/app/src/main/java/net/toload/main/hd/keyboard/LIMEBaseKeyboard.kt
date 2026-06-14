@@ -46,6 +46,7 @@ import android.view.WindowMetrics
 import java.io.IOException
 import java.util.ArrayList
 import java.util.StringTokenizer
+import net.toload.main.hd.LIMEKeyboardSwitcher
 import net.toload.main.hd.global.LIME
 import net.toload.main.hd.R
 import org.xmlpull.v1.XmlPullParserException
@@ -497,7 +498,7 @@ open class LIMEBaseKeyboard(
             if (icon != null) {
                 icon!!.setBounds(0, 0, icon!!.getIntrinsicWidth(), icon!!.getIntrinsicHeight())
             }
-            if (codes == null && !TextUtils.isEmpty(label)) {
+            if (codes.isEmpty() && !TextUtils.isEmpty(label)) {
                 codes = intArrayOf(label!!.get(0).code)
             }
         }
@@ -600,7 +601,7 @@ open class LIMEBaseKeyboard(
                 }
                 label = a.getText(R.styleable.LIMEBaseKeyboard_Key_keyLabel)
                 text = a.getText(R.styleable.LIMEBaseKeyboard_Key_keyOutputText)
-                if (codes == null && !TextUtils.isEmpty(label)) {
+                if (codes.isEmpty() && !TextUtils.isEmpty(label)) {
                     codes = intArrayOf(label!!.get(0).code)
                 }
             }
@@ -1144,7 +1145,7 @@ open class LIMEBaseKeyboard(
                         x = 0
 
                         currentRow = createRowFromXml(res, parser)
-                        skipRow = currentRow.mode != 0 && currentRow.mode != mKeyboardMode
+                        skipRow = !matchesKeyboardMode(currentRow.mode)
                         if (skipRow) {
                             skipToEndOfRow(parser)
                             inRow = false
@@ -1283,6 +1284,17 @@ open class LIMEBaseKeyboard(
 
 
         if (DEBUG) Log.i(TAG, "loadKeyboard():mTotalHeight" + this.height)
+    }
+
+    private fun matchesKeyboardMode(rowMode: Int): Boolean {
+        if (rowMode == 0 || rowMode == mKeyboardMode) return true
+        return when (rowMode) {
+            R.id.mode_normal -> mKeyboardMode == LIMEKeyboardSwitcher.MODE_TEXT
+            R.id.mode_url -> mKeyboardMode == LIMEKeyboardSwitcher.MODE_URL
+            R.id.mode_email -> mKeyboardMode == LIMEKeyboardSwitcher.MODE_EMAIL
+            R.id.mode_im -> mKeyboardMode == LIMEKeyboardSwitcher.MODE_IM
+            else -> false
+        }
     }
 
     @Throws(XmlPullParserException::class, IOException::class)

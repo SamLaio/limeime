@@ -27,7 +27,7 @@
     limehd:keyWidth="10%p"
     limehd:horizontalGap="0px"
     limehd:verticalGap="0px"
-    limehd:keyHeight="@dimen/key_height"
+    limehd:keyHeight="@dimen/english_number_key_height"
     >
 	
 	<Row>

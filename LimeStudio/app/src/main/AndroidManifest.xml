@@ -26,6 +26,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-sdk tools:overrideLibrary="androidx.credentials" />
+
     <!-- Queries declaration for Android 11+ (API 30+) package visibility -->
     <!-- Required for querying activities that can handle Storage Access Framework intents -->
     <queries>
@@ -109,6 +111,30 @@
 
         </activity>
 
+        <activity
+            android:name=".keepass.LimeAutofillAuthActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:theme="@style/AppTheme" />
+
+        <activity
+            android:name=".keepass.LimeCredentialAuthActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:theme="@style/AppTheme" />
+
+        <activity
+            android:name=".keepass.LimeKeepassImeUnlockActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:theme="@style/AppTheme" />
+
+        <activity
+            android:name=".keepass.LimeKeepassImeSelectActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:theme="@style/AppTheme" />
+
         <!-- LIME Services -->
         <service
             android:name=".LIMEService"
@@ -122,6 +148,35 @@
             <meta-data
                 android:name="android.view.im"
                 android:resource="@xml/method" />
+        </service>
+
+        <service
+            android:name=".keepass.LimeAutofillService"
+            android:label="@string/keepass_autofill_service_label"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.autofill"
+                android:resource="@xml/keepass_autofill_service" />
+        </service>
+
+        <service
+            android:name=".keepass.LimeCredentialProviderService"
+            android:label="@string/keepass_autofill_service_label"
+            android:permission="android.permission.BIND_CREDENTIAL_PROVIDER_SERVICE"
+            android:exported="true"
+            tools:targetApi="34">
+            <intent-filter>
+                <action android:name="android.service.credentials.CredentialProviderService" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.credentials.provider"
+                android:resource="@xml/keepass_credential_provider" />
         </service>
 
         <!--

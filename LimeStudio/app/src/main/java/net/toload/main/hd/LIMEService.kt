@@ -73,6 +73,7 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.HorizontalScrollView
@@ -119,6 +120,9 @@ import net.toload.main.hd.keyboard.LIMEKeyboard
 import net.toload.main.hd.keyboard.LIMEKeyboardBaseView
 import net.toload.main.hd.keyboard.LIMEKeyboardView
 import net.toload.main.hd.keyboard.LIMEMetaKeyKeyListener
+import net.toload.main.hd.keepass.KeepassAutofillLock
+import net.toload.main.hd.keepass.LimeKeepassImeSelectActivity
+import net.toload.main.hd.keepass.LimeKeepassImeUnlockActivity
 import net.toload.main.hd.limedb.LimeDB
 import net.toload.main.hd.ui.LIMEPreference
 import net.toload.main.hd.voice.AndroidSpeechRecognizerAdapter
@@ -221,6 +225,15 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
     private var mLIMEId: String? = null
     private var mDictationController: LIMEDictationController? = null
     private var mVoiceInputReceiver: BroadcastReceiver? = null
+    private var mKeepassImeReceiver: BroadcastReceiver? = null
+    private var mKeepassPanel: View? = null
+    private var mKeepassSelectedTitle: String = ""
+    private var mKeepassSelectedUsername: String = ""
+    private var mKeepassSelectedPassword: String = ""
+    private var mKeepassSelectedUrl: String = ""
+    private var mKeepassSelectedNotes: String = ""
+    private var mKeepassDetachedKeyboardIndex = -1
+    private var mKeepassDetachedKeyboardLayoutParams: ViewGroup.LayoutParams? = null
 
     //private String mWordSeparators;
     //private String misMatched;  //Removed by Jeremy '13,1,10
@@ -390,6 +403,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
 
         // Register receiver for voice input results
         registerVoiceInputReceiver()
+        registerKeepassImeReceiver()
     }
 
 
@@ -2197,7 +2211,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
                 mComposing.toString(),
                 !hasPhysicalKeyPressed, false
             )
-            if (candidates == null || candidates.isEmpty()) {
+            if (candidates.isEmpty()) {
                 return null
             }
             mCandidateList = LinkedList<Mapping?>(candidates)
@@ -3841,12 +3855,26 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
             items[i] = activatedIMFullNameList!!.get(i)
             if (activeIM == activatedIMList!!.get(i)) curKB = i
         }
+        val showKeepass = isKeepassImeEnabled()
+        val displayItems =
+            if (showKeepass) {
+                arrayOfNulls<CharSequence>(items.size + 1).also {
+                    System.arraycopy(items, 0, it, 0, items.size)
+                    it[items.size] = getString(R.string.keepass_keyboard_mode)
+                }
+            } else {
+                items
+            }
 
         builder.setSingleChoiceItems(
-            items, curKB,
+            displayItems, curKB,
             DialogInterface.OnClickListener { di: DialogInterface?, position: Int ->
                 di!!.dismiss()
-                handleIMSelection(position)
+                if (showKeepass && position == items.size) {
+                    startKeepassImeFlow()
+                } else {
+                    handleIMSelection(position)
+                }
             })
 
         mOptionsDialog = builder.create()
@@ -3892,6 +3920,257 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         }
 
         showLimeToast(activeIMName)
+    }
+
+    private fun isKeepassImeEnabled(): Boolean {
+        return PreferenceManager.getDefaultSharedPreferences(this)
+            .getBoolean(KEY_KEEPASS_ENABLED, false)
+    }
+
+    private fun startKeepassImeFlow() {
+        if (!isKeepassImeEnabled()) {
+            return
+        }
+        if (KeepassAutofillLock.isUnlocked(this)) {
+            startKeepassSelection()
+        } else {
+            startKeepassUnlock()
+        }
+    }
+
+    private fun startKeepassUnlock() {
+        try {
+            startActivity(
+                Intent(this, LimeKeepassImeUnlockActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            )
+        } catch (e: ActivityNotFoundException) {
+            Log.e(TAG, "startKeepassUnlock(): unlock activity not found", e)
+            showLimeToast(getString(R.string.keepass_keyboard_locked))
+        }
+    }
+
+    private fun startKeepassSelection() {
+        try {
+            startActivity(
+                Intent(this, LimeKeepassImeSelectActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            )
+        } catch (e: ActivityNotFoundException) {
+            Log.e(TAG, "startKeepassSelection(): select activity not found", e)
+            showLimeToast(getString(R.string.keepass_open_database_failed, e.message.orEmpty()))
+        }
+    }
+
+    private fun showKeepassFieldPanel() {
+        val container = mCandidateInInputView ?: return
+        val context = mThemeContext ?: this
+        removeKeepassFieldPanel()
+        val insertIndex = detachKeyboardForKeepassPanel(container)
+
+        val panel =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12f), dp(6f), dp(12f), dp(6f))
+                setBackgroundColor(keyboardBackgroundColorForCurrentTheme)
+            }
+
+        TextView(context).apply {
+            text = mKeepassSelectedTitle.ifBlank { getString(R.string.keepass_entry_default_title) }
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextColor(keepassKeyboardTextColor())
+            setPadding(0, 0, 0, dp(4f))
+            panel.addView(this, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+
+        addKeepassFieldGrid(
+            panel,
+            listOf(
+                R.string.keepass_entry_username to mKeepassSelectedUsername,
+                R.string.keepass_entry_password to mKeepassSelectedPassword,
+                R.string.keepass_entry_url to mKeepassSelectedUrl,
+                R.string.keepass_entry_notes to mKeepassSelectedNotes
+            )
+        )
+
+        addKeepassControlRow(
+            panel,
+            listOf(
+                R.string.keepass_keyboard_switch_entry to {
+                    removeKeepassFieldPanel()
+                    restoreNormalKeyboardView()
+                    startKeepassImeFlow()
+                },
+                R.string.keepass_keyboard_next_field to {
+                    sendTabKey()
+                },
+                R.string.keepass_keyboard_backspace to {
+                    handleBackspace()
+                }
+            )
+        )
+        addKeepassControlRow(
+            panel,
+            listOf(
+                R.string.keepass_keyboard_return to {
+                    removeKeepassFieldPanel()
+                    restoreNormalKeyboardView()
+                },
+                R.string.keepass_keyboard_lock to {
+                    KeepassAutofillLock.lock(this@LIMEService)
+                    removeKeepassFieldPanel()
+                    restoreNormalKeyboardView()
+                },
+                R.string.keepass_keyboard_enter to {
+                    onKey(MY_KEYCODE_ENTER, null)
+                }
+            )
+        )
+
+        mKeepassPanel = panel
+        container.addView(
+            panel,
+            insertIndex.coerceIn(0, container.childCount),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        container.requestLayout()
+        container.updateCandidateViewWidthConstraint()
+    }
+
+    private fun detachKeyboardForKeepassPanel(container: ViewGroup): Int {
+        val keyboardView = mInputView ?: return container.childCount
+        keyboardView.setVisibility(View.GONE)
+        val parent = keyboardView.parent as? ViewGroup ?: return container.childCount
+        val index = parent.indexOfChild(keyboardView).takeIf { it >= 0 } ?: return container.childCount
+        mKeepassDetachedKeyboardIndex = index
+        mKeepassDetachedKeyboardLayoutParams = keyboardView.layoutParams
+        parent.removeView(keyboardView)
+        return index
+    }
+
+    private fun addKeepassFieldGrid(panel: LinearLayout, fields: List<Pair<Int, String>>) {
+        val nonEmptyFields = fields.filter { (_, value) -> value.isNotBlank() }
+        nonEmptyFields.chunked(KEEPASS_FIELD_BUTTONS_PER_ROW).forEach { rowFields ->
+            addKeepassControlRow(
+                panel,
+                rowFields.map { (labelRes, value) ->
+                    labelRes to {
+                        commitKeepassField(labelRes, value)
+                    }
+                }
+            )
+        }
+    }
+
+    private fun addKeepassControlRow(panel: LinearLayout, controls: List<Pair<Int, () -> Unit>>) {
+        val context = mThemeContext ?: this
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        controls.forEach { (labelRes, onClick) ->
+            row.addView(
+                createKeepassControlButton(labelRes, onClick),
+                LinearLayout.LayoutParams(0, keepassKeyboardButtonHeight(), 1f).apply {
+                    setMargins(dp(4f), dp(3f), dp(4f), dp(3f))
+                }
+            )
+        }
+        panel.addView(row, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun createKeepassControlButton(labelRes: Int, onClick: () -> Unit): Button {
+        return Button(mThemeContext ?: this).apply {
+            text = getString(labelRes)
+            isAllCaps = false
+            gravity = Gravity.CENTER
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextColor(keepassKeyboardTextColor())
+            background = ContextCompat.getDrawable(this@LIMEService, keepassKeyboardKeyBackgroundRes())
+            minHeight = keepassKeyboardButtonHeight()
+            minimumHeight = keepassKeyboardButtonHeight()
+            setPadding(dp(6f), 0, dp(6f), 0)
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun keepassKeyboardButtonHeight(): Int {
+        return resources.getDimensionPixelSize(R.dimen.key_height)
+    }
+
+    private fun keepassKeyboardKeyBackgroundRes(): Int {
+        val resolvedThemeIndex =
+            if (mKeyboardThemeIndex == 6) {
+                if (isEffectiveDarkTheme) 1 else 0
+            } else {
+                mKeyboardThemeIndex
+            }
+        return when (resolvedThemeIndex) {
+            1 -> R.drawable.btn_keyboard_key_dark
+            2 -> R.drawable.btn_keyboard_key_pink
+            3 -> R.drawable.btn_keyboard_key_tech_blue
+            4 -> R.drawable.btn_keyboard_key_fashion_purple
+            5 -> R.drawable.btn_keyboard_key_relax_green
+            else -> R.drawable.btn_keyboard_key_light
+        }
+    }
+
+    private fun keepassKeyboardTextColor(): Int {
+        val context = mThemeContext ?: this
+        val fallback =
+            if (isColorLight(keyboardBackgroundColorForCurrentTheme)) {
+                ContextCompat.getColor(this, R.color.foreground_light)
+            } else {
+                ContextCompat.getColor(this, R.color.foreground_dark)
+            }
+        return resolveThemeColor(context, R.attr.keyTextColorNormal, fallback)
+    }
+
+    private fun commitKeepassField(labelRes: Int, value: String) {
+        val ic = currentInputConnection ?: return
+        ic.commitText(value, 1)
+        sendTabKey()
+        showLimeToast(getString(R.string.keepass_entry_committed, getString(labelRes)))
+    }
+
+    private fun sendTabKey() {
+        keyDownUp(KeyEvent.KEYCODE_TAB, false)
+    }
+
+    private fun removeKeepassFieldPanel() {
+        val panel = mKeepassPanel ?: return
+        (panel.parent as? ViewGroup)?.removeView(panel)
+        mKeepassPanel = null
+    }
+
+    private fun restoreNormalKeyboardView() {
+        val container = mCandidateInInputView
+        val keyboardView = mInputView
+        if (container != null && keyboardView != null && keyboardView.parent == null) {
+            val params = mKeepassDetachedKeyboardLayoutParams
+                ?: LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            val index = mKeepassDetachedKeyboardIndex
+                .takeIf { it >= 0 }
+                ?.coerceAtMost(container.childCount)
+                ?: container.childCount
+            container.addView(keyboardView, index, params)
+        }
+        mKeepassDetachedKeyboardIndex = -1
+        mKeepassDetachedKeyboardLayoutParams = null
+        hasPhysicalKeyPressed = false
+        mInputView?.setVisibility(View.VISIBLE)
+        mInputView?.requestLayout()
+        mInputView?.invalidateAllKeys()
+        mCandidateInInputView?.requestLayout()
+        mCandidateInInputView?.updateCandidateViewWidthConstraint()
     }
 
     override fun onText(text: CharSequence?) {
@@ -4117,7 +4396,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
                     }
 
                     // Show composing window if keyToKeyname got different string. Revised by Jeremy '11,6,4
-                    if (SearchSrv != null && SearchSrv!!.tablename != null) {
+                    if (SearchSrv != null) {
                         val keynameString =
                             SearchSrv!!.keyToKeyname(finalKeyString) //.toLowerCase(Locale.US)); moved to LimeDB
                         if (mCandidateView != null && (keynameString.uppercase() != finalKeyString.uppercase()) && !keynameString.trim { it <= ' ' }
@@ -5758,6 +6037,8 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
             mDictationController!!.destroy()
             mDictationController = null
         }
+        unregisterKeepassImeReceiver()
+        unregisterVoiceInputReceiver()
 
         //jeremy 12,4,21 need to check again---
         //clearComposing(true); see no need to do this '12,4,21
@@ -6477,6 +6758,68 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         }
     }
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag", "RegisterReceiverFlag")
+    private fun registerKeepassImeReceiver() {
+        if (mKeepassImeReceiver != null) {
+            return
+        }
+
+        mKeepassImeReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent) {
+                when (intent.action) {
+                    LimeKeepassImeUnlockActivity.actionUnlockResult -> {
+                        if (intent.getBooleanExtra(LimeKeepassImeUnlockActivity.extraUnlocked, false)) {
+                            startKeepassSelection()
+                        }
+                    }
+                    LimeKeepassImeSelectActivity.actionSelectResult -> {
+                        if (!intent.getBooleanExtra(LimeKeepassImeSelectActivity.extraSelected, false)) {
+                            return
+                        }
+                        mKeepassSelectedTitle =
+                            intent.getStringExtra(LimeKeepassImeSelectActivity.extraTitle).orEmpty()
+                        mKeepassSelectedUsername =
+                            intent.getStringExtra(LimeKeepassImeSelectActivity.extraUsername).orEmpty()
+                        mKeepassSelectedPassword =
+                            intent.getStringExtra(LimeKeepassImeSelectActivity.extraPassword).orEmpty()
+                        mKeepassSelectedUrl =
+                            intent.getStringExtra(LimeKeepassImeSelectActivity.extraUrl).orEmpty()
+                        mKeepassSelectedNotes =
+                            intent.getStringExtra(LimeKeepassImeSelectActivity.extraNotes).orEmpty()
+                        showKeepassFieldPanel()
+                    }
+                }
+            }
+        }
+
+        val filter = IntentFilter().apply {
+            addAction(LimeKeepassImeUnlockActivity.actionUnlockResult)
+            addAction(LimeKeepassImeSelectActivity.actionSelectResult)
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(mKeepassImeReceiver, filter, RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(mKeepassImeReceiver, filter)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "registerKeepassImeReceiver(): Failed to register receiver", e)
+            mKeepassImeReceiver = null
+        }
+    }
+
+    private fun unregisterKeepassImeReceiver() {
+        if (mKeepassImeReceiver != null) {
+            try {
+                unregisterReceiver(mKeepassImeReceiver)
+            } catch (e: Exception) {
+                Log.w(TAG, "unregisterKeepassImeReceiver(): Failed to unregister", e)
+            } finally {
+                mKeepassImeReceiver = null
+            }
+        }
+    }
+
     private class KeyboardTheme(val mName: String?, val mThemeId: Int, val mStyleId: Int)
 
     private var mKeyboardThemeIndex = -1
@@ -6768,6 +7111,8 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         private const val EMOJI_PANEL_GLYPH_SIZE = 28
         private const val ACTION_VOICE_RESULT = "net.toload.main.hd.VOICE_INPUT_RESULT"
         private const val EXTRA_RECOGNIZED_TEXT = "recognized_text"
+        private const val KEY_KEEPASS_ENABLED = "enabled"
+        private const val KEEPASS_FIELD_BUTTONS_PER_ROW = 5
 
         private val FALLBACK_EMOJI_CATEGORIES = arrayOf<Array<String?>?>(
             arrayOf<String?>(

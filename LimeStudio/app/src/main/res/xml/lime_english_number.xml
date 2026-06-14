@@ -27,7 +27,7 @@
     limehd:keyWidth="10%p"
     limehd:horizontalGap="0px"
     limehd:verticalGap="0px"
-    limehd:keyHeight="@dimen/key_height"
+    limehd:keyHeight="@dimen/english_number_key_height"
     >
 	 <Row>
         <Key limehd:codes="49" limehd:keyLabel="1" limehd:keyEdgeFlags="left"/>
@@ -90,7 +90,6 @@
         <Key limehd:codes="103" limehd:keyLabel="g"
                  limehd:popupKeyboard="@xml/popup_template"
                 limehd:popupCharacters="@string/alternates_for_g"/>
-        />
         <Key limehd:codes="104" limehd:keyLabel="h"/>
         <Key limehd:codes="106" limehd:keyLabel="j"/>
         <Key limehd:codes="107" limehd:keyLabel="k"/>

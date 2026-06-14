@@ -247,6 +247,11 @@ LimeStudio/gradle/gradle-daemon-jvm.properties
 /.idea/
 /.omc/
 /AGENTS.md
+/TODO.md
+/RELEASE_NOTES_CURRENT.md
+/release_notes_current.md
+/RELEASE_NOTES.local.md
+/release_notes.local.md
 /LimeStudio/.idea/
 /LimeStudio/.omc/
 Resources/Limeicon/variants/

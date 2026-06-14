@@ -25,6 +25,7 @@
 
 <resources>
     <dimen name="key_height">36dip</dimen>
+    <dimen name="english_number_key_height">29dip</dimen>
     <dimen name="key_preview_height">95dp</dimen>
     <dimen name="mini_keyboard_fling_vertical_correction">-36dip</dimen>
     <dimen name="candidate_stripe_height">32sp</dimen>
