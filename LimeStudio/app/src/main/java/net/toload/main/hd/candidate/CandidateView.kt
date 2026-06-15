@@ -1039,9 +1039,11 @@ open class CandidateView @Suppress("deprecation") constructor(
 
         mLIMEPref = LIMEPreferenceManager(mContext)
 
-        mContext.getTheme().obtainStyledAttributes(
+        val styledAttributes = mContext.getTheme().obtainStyledAttributes(
             attrs, R.styleable.LIMECandidateView, defStyle, R.style.LIMECandidateView
-        ).use { a ->
+        )
+        try {
+            val a = styledAttributes
             val n = a.getIndexCount()
             for (i in 0..<n) {
                 val attr = a.getIndex(i)
@@ -1106,6 +1108,8 @@ open class CandidateView @Suppress("deprecation") constructor(
                     )
                 }
             }
+        } finally {
+            styledAttributes.recycle()
         }
         val r = mContext.getResources()
         val wm = mContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager

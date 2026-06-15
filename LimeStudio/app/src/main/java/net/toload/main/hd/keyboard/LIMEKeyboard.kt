@@ -58,12 +58,14 @@ class LIMEKeyboard(
     private fun loadThemedIcons(context: Context) {
         if (DEBUG) Log.i(TAG, "loadThemedIcons()")
 
-        context.theme.obtainStyledAttributes(
+        val styledAttributes = context.theme.obtainStyledAttributes(
             null,
             R.styleable.LIMEKeyboard,
             R.attr.LIMEKeyboardStyle,
             R.style.LIMEKeyboard
-        ).use { a ->
+        )
+        try {
+            val a = styledAttributes
             mSpaceKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_spaceKeyIcon)
             mSpaceKeyPreviewIcon = a.getDrawable(R.styleable.LIMEKeyboard_spaceKeyPreviewIcon)
             mEnterKeyIcon = a.getDrawable(R.styleable.LIMEKeyboard_enterKeyIcon)
@@ -74,6 +76,8 @@ class LIMEKeyboard(
             mShiftKeyShiftedIcon = a.getDrawable(R.styleable.LIMEKeyboard_shiftKeyShiftedIcon)
             mSpaceKeyVerticalCorrection =
                 a.getDimensionPixelSize(R.styleable.LIMEKeyboard_spaceKeyVerticalCorrection, 0)
+        } finally {
+            styledAttributes.recycle()
         }
     }
 
