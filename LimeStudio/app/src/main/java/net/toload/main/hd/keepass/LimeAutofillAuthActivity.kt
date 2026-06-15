@@ -134,6 +134,11 @@ class LimeAutofillAuthActivity : FragmentActivity() {
     }
 
     private fun finishWithEntry(entry: KeepassEntry) {
+        if (!KeepassAutofillLock.isUnlocked(this)) {
+            Toast.makeText(this, R.string.keepass_keyboard_locked, Toast.LENGTH_SHORT).show()
+            finishCanceled()
+            return
+        }
         val dataset = buildDataset(createRepository().unlockEntry(entry))
         if (dataset == null) {
             finishCanceled()

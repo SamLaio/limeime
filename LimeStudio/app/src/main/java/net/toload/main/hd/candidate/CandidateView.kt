@@ -44,7 +44,6 @@ import android.os.Message
 import android.util.AttributeSet
 import android.util.Log
 import android.util.TypedValue
-import android.view.Display
 import android.view.GestureDetector
 import android.view.GestureDetector.SimpleOnGestureListener
 import android.view.Gravity
@@ -70,6 +69,7 @@ import kotlin.math.max
 import kotlin.math.min
 import net.toload.main.hd.candidate.CandidateInInputViewContainer.Companion.dismissButtonBackgroundColor
 import net.toload.main.hd.data.Mapping
+import net.toload.main.hd.global.DiagnosticLog
 import net.toload.main.hd.global.LIME
 import net.toload.main.hd.global.LIMEPreferenceManager
 import net.toload.main.hd.LIMEService
@@ -786,6 +786,51 @@ open class CandidateView @Suppress("deprecation") constructor(
         mHandler.dismissCandidatePopup(0)
     }
 
+    private fun updateScreenSize(wm: WindowManager) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val metrics = wm.getCurrentWindowMetrics()
+                mScreenWidth = metrics.getBounds().width()
+                mScreenHeight = metrics.getBounds().height()
+                if (mScreenWidth > 0 && mScreenHeight > 0) {
+                    DiagnosticLog.record(
+                        mContext,
+                        TAG,
+                        "updateScreenSize() currentWindowMetrics=${mScreenWidth}x$mScreenHeight"
+                    )
+                    return
+                }
+                DiagnosticLog.record(
+                    mContext,
+                    TAG,
+                    "updateScreenSize() invalid currentWindowMetrics=${mScreenWidth}x$mScreenHeight"
+                )
+            } catch (t: Throwable) {
+                Log.w(TAG, "updateScreenSize() failed, falling back to defaultDisplay: $t")
+                DiagnosticLog.recordThrowable(
+                    mContext,
+                    "$TAG updateScreenSize() currentWindowMetrics failed",
+                    t
+                )
+            }
+        }
+
+        updateScreenSizeFromDefaultDisplay(wm)
+        DiagnosticLog.record(
+            mContext,
+            TAG,
+            "updateScreenSize() defaultDisplay=${mScreenWidth}x$mScreenHeight"
+        )
+    }
+
+    @Suppress("deprecation")
+    private fun updateScreenSizeFromDefaultDisplay(wm: WindowManager) {
+        val screenSize = Point()
+        wm.getDefaultDisplay().getSize(screenSize)
+        mScreenWidth = screenSize.x
+        mScreenHeight = screenSize.y
+    }
+
     fun dismissComposingFromCandidate() {
         hideCandidatePopup()
         if (mService != null) {
@@ -1039,9 +1084,11 @@ open class CandidateView @Suppress("deprecation") constructor(
 
         mLIMEPref = LIMEPreferenceManager(mContext)
 
-        mContext.getTheme().obtainStyledAttributes(
+        val styledAttributes = mContext.getTheme().obtainStyledAttributes(
             attrs, R.styleable.LIMECandidateView, defStyle, R.style.LIMECandidateView
-        ).use { a ->
+        )
+        try {
+            val a = styledAttributes
             val n = a.getIndexCount()
             for (i in 0..<n) {
                 val attr = a.getIndex(i)
@@ -1106,25 +1153,12 @@ open class CandidateView @Suppress("deprecation") constructor(
                     )
                 }
             }
+        } finally {
+            styledAttributes.recycle()
         }
         val r = mContext.getResources()
         val wm = mContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // API 30+ approach
-            val metrics = wm.getCurrentWindowMetrics()
-            mScreenWidth = metrics.getBounds().width()
-            mScreenHeight = metrics.getBounds().height()
-        } else {
-            // API < 30 approach - use deprecated APIs with proper suppression
-            // Both getDefaultDisplay() and getSize() are deprecated but necessary for API < 30
-            @Suppress("deprecation") val display = wm.getDefaultDisplay()
-            val screenSize = Point()
-            @Suppress("DEPRECATION")
-            display.getSize(screenSize)
-            mScreenWidth = screenSize.x
-            mScreenHeight = screenSize.y
-        }
+        updateScreenSize(wm)
 
         mVerticalPadding =
             (r.getDimensionPixelSize(R.dimen.candidate_vertical_padding) * mLIMEPref.getFontSize()).toInt()

@@ -55,6 +55,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
+        android:name=".LIMEApplication"
         android:allowBackup="true"
         android:backupAgent=".LIMEBackupAgent"
         android:icon="@drawable/logo"

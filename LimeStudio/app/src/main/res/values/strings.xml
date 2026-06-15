@@ -301,6 +301,7 @@
     <string name="keepass_autofill_settings_hint">請在系統設定中將自動填入服務設為 Lime-Sam KeePass。</string>
     <string name="keepass_autofill_settings_unavailable">無法開啟系統自動填入設定</string>
     <string name="keepass_keyboard_mode">KeePass</string>
+    <string name="keepass_current_input_method">目前輸入法</string>
     <string name="keepass_keyboard_search_hint">搜尋 KeePass 項目</string>
     <string name="keepass_keyboard_loading">正在讀取 KeePass 資料庫…</string>
     <string name="keepass_keyboard_locked">請先解鎖 KeePass</string>

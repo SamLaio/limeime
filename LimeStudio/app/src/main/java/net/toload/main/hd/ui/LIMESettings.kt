@@ -25,6 +25,7 @@ import com.google.android.material.color.DynamicColors
 import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.navigationrail.NavigationRailView
 import net.toload.main.hd.DBServer
+import net.toload.main.hd.global.DiagnosticLog
 import net.toload.main.hd.global.LIME
 import net.toload.main.hd.global.LIMEPreferenceManager
 import net.toload.main.hd.global.SystemAccentColor
@@ -180,14 +181,18 @@ class LIMESettings : AppCompatActivity(), LIMESettingsView {
      * supplied. If not provided, this value will be null.
      */
     override fun onCreate(savedInstanceState: Bundle?) {
+        DiagnosticLog.record(this, TAG, "onCreate() start before DynamicColors")
         DynamicColors.applyToActivityIfAvailable(this, SystemAccentColor.dynamicColorOptions(this))
+        DiagnosticLog.record(this, TAG, "onCreate() DynamicColors applied")
         super.onCreate(savedInstanceState)
+        DiagnosticLog.record(this, TAG, "onCreate() after super, savedInstanceState=${savedInstanceState != null}")
         // Register back gesture/press callback for AndroidX
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 finish()
             }
         })
+        DiagnosticLog.record(this, TAG, "onCreate() back callback registered")
 
         // Initialize controllers BEFORE setContentView() to prevent race conditions
         // when fragments are instantiated during layout inflation
@@ -199,14 +204,17 @@ class LIMESettings : AppCompatActivity(), LIMESettingsView {
             searchServer = null
             dbServer = DBServer.getInstance(this)
         } else {
+            DiagnosticLog.record(this, TAG, "onCreate() creating SearchServer and DBServer")
             searchServer = SearchServer(this)
             dbServer = DBServer.getInstance(this)
         }
         manageImController = ManageImController(searchServer)
         setupImController = SetupImController(this, dbServer, searchServer)
+        DiagnosticLog.record(this, TAG, "onCreate() controllers created")
 
         // NOW inflate layout - fragments will find initialized controllers via getters
         setContentView(R.layout.activity_main)
+        DiagnosticLog.record(this, TAG, "onCreate() content view set")
 
         // Hide the activity-level ActionBar so each fragment's MaterialToolbar
         // becomes the sole top bar (prevents double-bar stacking).
@@ -215,6 +223,7 @@ class LIMESettings : AppCompatActivity(), LIMESettingsView {
 
         // Setup edge-to-edge display
         setupEdgeToEdge()
+        DiagnosticLog.record(this, TAG, "onCreate() edge-to-edge setup complete")
 
 
         //ConnectivityManager connManager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
@@ -257,6 +266,7 @@ class LIMESettings : AppCompatActivity(), LIMESettingsView {
         // Skip initial navigation in test mode to prevent blocking startActivitySync()
         if (savedInstanceState == null && !this.isRunningInTestMode) {
             onTabSelected(R.id.nav_setup)
+            DiagnosticLog.record(this, TAG, "onCreate() initial setup tab selected")
         }
 
 
@@ -293,6 +303,8 @@ class LIMESettings : AppCompatActivity(), LIMESettingsView {
             }
             mLIMEPref.setParameter("current_version", versionStr)
         }
+        DiagnosticLog.record(this, TAG, "onCreate() complete version=$versionStr")
+        DiagnosticLog.exportToDownloadsAsync(this, "lime-settings-onCreate")
     }
 
     /**

@@ -51,6 +51,7 @@ import java.util.ArrayList
 import java.util.Objects
 import net.toload.main.hd.data.ImConfig
 import net.toload.main.hd.data.Keyboard
+import net.toload.main.hd.global.DiagnosticLog
 import net.toload.main.hd.global.LIME
 import net.toload.main.hd.global.LIMEPreferenceManager
 import net.toload.main.hd.global.LIMEPreferenceManager.ReverseLookupOption
@@ -69,18 +70,23 @@ class LIMEPreference : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        DiagnosticLog.record(this, "LIMEPreference", "onCreate() start")
         super.onCreate(savedInstanceState)
+        DiagnosticLog.record(this, "LIMEPreference", "onCreate() after super")
 
         // Enable edge-to-edge display for API 35+ (Android 15+)
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false)
+        DiagnosticLog.record(this, "LIMEPreference", "onCreate() decorFitsSystemWindows=false")
 
         this.SearchSrv = SearchServer(this)
+        DiagnosticLog.record(this, "LIMEPreference", "onCreate() SearchServer created")
 
         // Display the fragment as the main content.
         getSupportFragmentManager().beginTransaction().replace(
             android.R.id.content,
             PrefsFragment()
         ).commit()
+        DiagnosticLog.record(this, "LIMEPreference", "onCreate() PrefsFragment committed")
 
         // Ensure ActionBar title is displayed
         val actionBar = getSupportActionBar()
@@ -94,6 +100,8 @@ class LIMEPreference : AppCompatActivity() {
 
         // Handle window insets for edge-to-edge display
         setupEdgeToEdge()
+        DiagnosticLog.record(this, "LIMEPreference", "onCreate() setupEdgeToEdge complete")
+        DiagnosticLog.exportToDownloadsAsync(this, "lime-preference-onCreate")
     }
 
     override fun onSupportNavigateUp(): Boolean {

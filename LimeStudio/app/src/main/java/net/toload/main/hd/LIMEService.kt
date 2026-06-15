@@ -44,6 +44,7 @@ import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
 import android.os.Message
 import android.os.RemoteException
@@ -108,6 +109,7 @@ import net.toload.main.hd.data.ChineseSymbol.Companion.getSymbol
 import net.toload.main.hd.data.ImConfig
 import net.toload.main.hd.data.Keyboard
 import net.toload.main.hd.data.Mapping
+import net.toload.main.hd.global.DiagnosticLog
 import net.toload.main.hd.global.LIME
 import net.toload.main.hd.global.LIMEPreferenceManager
 import net.toload.main.hd.global.LIMEPreferenceManager.ReverseLookupOption
@@ -234,6 +236,14 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
     private var mKeepassSelectedNotes: String = ""
     private var mKeepassDetachedKeyboardIndex = -1
     private var mKeepassDetachedKeyboardLayoutParams: ViewGroup.LayoutParams? = null
+    private val mKeepassAutoLockHandler = Handler(Looper.getMainLooper())
+    private val mKeepassAutoLockRunnable = Runnable {
+        if (KeepassAutofillLock.isUnlocked(this)) {
+            scheduleKeepassAutoLock()
+        } else {
+            handleKeepassLocked(KeepassAutofillLock.lockReasonAuto)
+        }
+    }
 
     //private String mWordSeparators;
     //private String misMatched;  //Removed by Jeremy '13,1,10
@@ -344,8 +354,11 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
     override fun onCreate() {
         if (DEBUG) Log.i(TAG, "OnCreate()")
 
+        DiagnosticLog.record(this, TAG, "onCreate() start before super")
         super.onCreate()
+        DiagnosticLog.record(this, TAG, "onCreate() after super")
 
+        DiagnosticLog.record(this, TAG, "onCreate() creating SearchServer")
         SearchSrv = SearchServer(this)
         mEnglishOnly = false
         mEnglishFlagShift = false
@@ -353,18 +366,23 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         // Initialize default preferences from XML on first run
         // This must be called before creating LIMEPreferenceManager
         // PreferenceManager.setDefaultValues() loads XML defaults into SharedPreferences
+        DiagnosticLog.record(this, TAG, "onCreate() loading default preferences")
         PreferenceManager.setDefaultValues(this, R.xml.preference, false)
         Log.i(TAG, "onCreate() - Default preferences initialized from XML")
+        DiagnosticLog.record(this, TAG, "onCreate() default preferences loaded")
 
         // Construct Preference Access Tool
+        DiagnosticLog.record(this, TAG, "onCreate() creating preference and dictation controllers")
         mLIMEPref = LIMEPreferenceManager(this)
         mDictationController = LIMEDictationController(AndroidSpeechRecognizerAdapter(this), this)
 
         // Initialize hasVibration flag from preferences immediately (so it's available for first keypress)
         hasVibration = mLIMEPref!!.getVibrateOnKeyPressed()
         Log.i(TAG, "onCreate() - initialized hasVibration: " + hasVibration)
+        DiagnosticLog.record(this, TAG, "onCreate() hasVibration=$hasVibration")
 
         // Initialize vibrator for haptic feedback
+        DiagnosticLog.record(this, TAG, "onCreate() initializing vibrator")
         Log.i(
             TAG,
             "onCreate() - Initializing Vibrator service, API level: " + Build.VERSION.SDK_INT
@@ -380,6 +398,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
             mVibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator?
         }
         Log.i(TAG, "onCreate() - mVibrator = " + (if (mVibrator != null) "valid" else "null"))
+        DiagnosticLog.record(this, TAG, "onCreate() vibrator=${if (mVibrator != null) "valid" else "null"}")
 
         // Initialize AudioManager for sound feedback
         mAudioManager = getSystemService(AUDIO_SERVICE) as AudioManager?
@@ -387,6 +406,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
             TAG,
             "onCreate() - AudioManager obtained, mAudioManager = " + (if (mAudioManager != null) "valid" else "null")
         )
+        DiagnosticLog.record(this, TAG, "onCreate() audioManager=${if (mAudioManager != null) "valid" else "null"}")
 
         // mFixedCandidateViewOn is always true, so we can remove the variable
         // mFixedCandidateViewOn = mLIMEPref.getFixedCandidateViewDisplay();
@@ -399,11 +419,16 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         activatedIMList = ArrayList<String?>()
         activatedIMShortNameList = ArrayList<String?>()
         activeIM = mLIMEPref!!.getActiveIM()
+        DiagnosticLog.record(this, TAG, "onCreate() activeIM=$activeIM, building activated IM list")
         buildActivatedIMList()
+        DiagnosticLog.record(this, TAG, "onCreate() activatedIMList size=${activatedIMList?.size ?: -1}")
 
         // Register receiver for voice input results
+        DiagnosticLog.record(this, TAG, "onCreate() registering receivers")
         registerVoiceInputReceiver()
         registerKeepassImeReceiver()
+        DiagnosticLog.record(this, TAG, "onCreate() complete")
+        DiagnosticLog.exportToDownloadsAsync(this, "lime-service-onCreate")
     }
 
 
@@ -414,10 +439,15 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
     override fun onInitializeInterface() {
         if (DEBUG) Log.i(TAG, "onInitializeInterface()")
 
+        DiagnosticLog.record(this, TAG, "onInitializeInterface() start")
         initialViewAndSwitcher(false)
+        DiagnosticLog.record(this, TAG, "onInitializeInterface() initialViewAndSwitcher complete")
         initCandidateView() //Force the oncreatedcandidate to be called
+        DiagnosticLog.record(this, TAG, "onInitializeInterface() initCandidateView complete")
         mKeyboardSwitcher!!.resetKeyboards(true)
+        DiagnosticLog.record(this, TAG, "onInitializeInterface() resetKeyboards complete")
         super.onInitializeInterface()
+        DiagnosticLog.record(this, TAG, "onInitializeInterface() complete")
     }
 
     override fun onCancel() {
@@ -482,15 +512,18 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
     override fun onCreateInputView(): View? {
         if (DEBUG) Log.i(TAG, "OnCreateInputView()")
 
+        DiagnosticLog.record(this, TAG, "onCreateInputView() start")
 
         if (mInputView != null) mInputView = null
 
         initialViewAndSwitcher(true) //Jeremy '12,4,29.  will do buildactivekeyboardlist in init startInput
+        DiagnosticLog.record(this, TAG, "onCreateInputView() initialViewAndSwitcher complete")
 
         val inputView: View?
         // mFixedCandidateViewOn is always true
         if (DEBUG) Log.i(TAG, "Fixed candidateView in on, return nInputViewContainer ")
         inputView = mCandidateInInputView
+        DiagnosticLog.record(this, TAG, "onCreateInputView() inputView=${inputView?.javaClass?.simpleName ?: "null"}")
 
         // For API 35+, apply window insets to prevent overlap with system gesture navigation bar
         // Apply padding to the entire container to ensure both candidate view and keyboard view
@@ -523,6 +556,8 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
 
         // Issue #46: Tint nav bar to match active keyboard theme
         applyNavigationBarTheme()
+        DiagnosticLog.record(this, TAG, "onCreateInputView() applyNavigationBarTheme complete")
+        DiagnosticLog.exportToDownloadsAsync(this, "lime-service-input-view")
 
         return inputView
     }
@@ -3462,6 +3497,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         val hanConvert: CharSequence = getString(R.string.han_convert_option_list)
 
         val itemSwitchIM: CharSequence = getString(R.string.keyboard_list)
+        val itemKeepassKeyboard: CharSequence = getString(R.string.keepass_keyboard_mode)
         val itemSwitchSytemIM: CharSequence = getString(R.string.input_method)
 
         val dm = getResources().getDisplayMetrics()
@@ -3490,6 +3526,10 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         actions.add(ACTION_HANCONVERT)
         options.add(itemSwitchIM)
         actions.add(ACTION_KEYBOARD)
+        if (isKeepassImeEnabled()) {
+            options.add(itemKeepassKeyboard)
+            actions.add(ACTION_KEEPASS_KEYBOARD)
+        }
         options.add(itemSwitchSytemIM)
         actions.add(ACTION_METHOD)
         if (hasSplitOption) {
@@ -3509,11 +3549,11 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
                     ACTION_REVERSE_LOOKUP -> showReverseLookupPicker()
                     ACTION_HANCONVERT -> showHanConvertPicker()
                     ACTION_KEYBOARD -> showIMPicker()
-                    ACTION_METHOD -> (Objects.requireNonNull<Any?>(
-                        getSystemService(
-                            INPUT_METHOD_SERVICE
-                        )
-                    ) as InputMethodManager).showInputMethodPicker()
+                    ACTION_KEEPASS_KEYBOARD -> {
+                        DiagnosticLog.record(this, TAG, "handleOptions() selected KeePass")
+                        startKeepassImeFlow()
+                    }
+                    ACTION_METHOD -> showSystemInputMethodPicker("options-menu")
 
                     ACTION_SPLIT_KEYBOARD -> {
                         if (mSplitKeyboard == LIMEBaseKeyboard.SPLIT_KEYBOARD_NEVER) {
@@ -3537,13 +3577,14 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
             })
 
         mOptionsDialog = builder.create()
-        val window: Window? = checkNotNull(mOptionsDialog!!.getWindow())
-        val lp = window!!.getAttributes()
-        lp.token = mInputView!!.getWindowToken()
-        lp.type = WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG
-        window.setAttributes(lp)
-        window.addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
-        mOptionsDialog!!.show()
+        configureImeAttachedDialogWindow(mOptionsDialog!!, "handleOptions")
+        try {
+            mOptionsDialog!!.show()
+            DiagnosticLog.record(this, TAG, "handleOptions() dialog shown")
+        } catch (e: RuntimeException) {
+            Log.e(TAG, "handleOptions(): failed to show dialog", e)
+            DiagnosticLog.recordThrowable(this, "$TAG handleOptions() failed", e)
+        }
     }
 
     private val activeReverseLookupOptions: MutableList<ReverseLookupOption?>
@@ -3828,17 +3869,70 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         mLIMEPref!!.setHanCovertOption(position)
     }
 
+    private fun configureImeAttachedDialogWindow(dialog: AlertDialog, source: String) {
+        val window = dialog.getWindow()
+        if (window == null) {
+            DiagnosticLog.record(this, TAG, "$source dialog window is null before show()")
+            return
+        }
+        val lp = window.getAttributes()
+        val token = currentImeDialogToken()
+        DiagnosticLog.record(
+            this,
+            TAG,
+            "$source dialog token=${if (token != null) "available" else "null"}, " +
+                    "inputView=${mInputView?.javaClass?.simpleName ?: "null"}, " +
+                    "container=${mCandidateInInputView?.javaClass?.simpleName ?: "null"}"
+        )
+        if (token != null) {
+            lp.token = token
+        }
+        lp.type = WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG
+        window.setAttributes(lp)
+        window.addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+    }
+
+    private fun currentImeDialogToken(): IBinder? {
+        val inputViewToken = mInputView?.getWindowToken()
+        if (inputViewToken != null) return inputViewToken
+        val containerToken = mCandidateInInputView?.getWindowToken()
+        if (containerToken != null) return containerToken
+        return getWindow()?.getWindow()?.getDecorView()?.getWindowToken()
+    }
+
+    private fun showSystemInputMethodPicker(source: String) {
+        try {
+            DiagnosticLog.record(this, TAG, "showSystemInputMethodPicker($source)")
+            (Objects.requireNonNull<Any?>(
+                getSystemService(
+                    INPUT_METHOD_SERVICE
+                )
+            ) as InputMethodManager).showInputMethodPicker()
+        } catch (e: RuntimeException) {
+            Log.e(TAG, "showSystemInputMethodPicker($source) failed", e)
+            DiagnosticLog.recordThrowable(this, "$TAG showSystemInputMethodPicker($source) failed", e)
+        }
+    }
+
     /**
      * Add by Jeremy '10, 3, 24 for IM picker menu in options menu
      * renamed to showIMPicker from showKeybaordPicer to avoid confusion '12,3,40
      */
     private fun showIMPicker() {
         if (DEBUG) Log.i(TAG, "showIMPicker()")
+        DiagnosticLog.record(this, TAG, "showIMPicker() start")
         buildActivatedIMList()
-        if (activatedIMFullNameList!!.isEmpty()) {
+        val showKeepass = isKeepassImeEnabled()
+        val limeItemCount = activatedIMFullNameList!!.size
+        DiagnosticLog.record(
+            this,
+            TAG,
+            "showIMPicker() limeItemCount=$limeItemCount, keepassEnabled=$showKeepass, activeIM=$activeIM"
+        )
+        if (limeItemCount == 0 && !showKeepass) {
+            DiagnosticLog.record(this, TAG, "showIMPicker() no LIME/KeePass items; ignoring")
             return
         }
-
         val builder: AlertDialog.Builder?
 
         builder = createDialogBuilder()
@@ -3848,14 +3942,19 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         builder.setNegativeButton(android.R.string.cancel, null)
         builder.setTitle(getResources().getString(R.string.keyboard_list))
 
-        val items = arrayOfNulls<CharSequence>(activatedIMFullNameList!!.size) // =
+        val hasCurrentFallback = showKeepass && limeItemCount == 0
+        val items = arrayOfNulls<CharSequence>(if (hasCurrentFallback) 1 else limeItemCount) // =
         // getResources().getStringArray(R.array.keyboard);
-        var curKB = 0
-        for (i in activatedIMFullNameList!!.indices) {
-            items[i] = activatedIMFullNameList!!.get(i)
-            if (activeIM == activatedIMList!!.get(i)) curKB = i
+        var curKB = -1
+        if (hasCurrentFallback) {
+            items[0] = getString(R.string.keepass_current_input_method)
+            curKB = 0
+        } else {
+            for (i in activatedIMFullNameList!!.indices) {
+                items[i] = activatedIMFullNameList!!.get(i)
+                if (activeIM == activatedIMList!!.get(i)) curKB = i
+            }
         }
-        val showKeepass = isKeepassImeEnabled()
         val displayItems =
             if (showKeepass) {
                 arrayOfNulls<CharSequence>(items.size + 1).also {
@@ -3871,25 +3970,29 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
             DialogInterface.OnClickListener { di: DialogInterface?, position: Int ->
                 di!!.dismiss()
                 if (showKeepass && position == items.size) {
+                    DiagnosticLog.record(this, TAG, "showIMPicker() selected KeePass")
                     startKeepassImeFlow()
-                } else {
+                } else if (hasCurrentFallback && position == 0) {
+                    DiagnosticLog.record(this, TAG, "showIMPicker() selected current input method fallback")
+                } else if (position in items.indices) {
+                    DiagnosticLog.record(this, TAG, "showIMPicker() selected LIME item index=$position")
                     handleIMSelection(position)
+                } else {
+                    DiagnosticLog.record(this, TAG, "showIMPicker() ignored invalid index=$position")
                 }
             })
 
         mOptionsDialog = builder.create()
-        val window = mOptionsDialog!!.getWindow()
-        // Jeremy '10, 4, 12
-        // The IM is not initialialized. do nothing here if window=null.
-        if (window != null) {
-            val lp = window.getAttributes()
-            // Jeremy '11,8,28 Use candidate instead of mInputview because mInputView may not present when using physical keyboard
-            lp.token = mInputView!!.getWindowToken() //always there Jeremy '12,5,4
-            lp.type = WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG
-            window.setAttributes(lp)
-            window.addFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+        configureImeAttachedDialogWindow(mOptionsDialog!!, "showIMPicker")
+        try {
+            mOptionsDialog!!.show()
+            DiagnosticLog.record(this, TAG, "showIMPicker() dialog shown")
+            DiagnosticLog.exportToDownloadsAsync(this, "lime-service-show-im-picker")
+        } catch (e: RuntimeException) {
+            Log.e(TAG, "showIMPicker(): failed to show dialog", e)
+            DiagnosticLog.recordThrowable(this, "$TAG showIMPicker() failed", e)
+            showSystemInputMethodPicker("showIMPicker-exception")
         }
-        mOptionsDialog!!.show()
     }
 
     private fun handleIMSelection(position: Int) {
@@ -3929,8 +4032,10 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
 
     private fun startKeepassImeFlow() {
         if (!isKeepassImeEnabled()) {
+            DiagnosticLog.record(this, TAG, "startKeepassImeFlow() ignored; KeePass disabled")
             return
         }
+        DiagnosticLog.record(this, TAG, "startKeepassImeFlow() unlocked=${KeepassAutofillLock.isUnlocked(this)}")
         if (KeepassAutofillLock.isUnlocked(this)) {
             startKeepassSelection()
         } else {
@@ -3940,6 +4045,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
 
     private fun startKeepassUnlock() {
         try {
+            DiagnosticLog.record(this, TAG, "startKeepassUnlock() launching activity")
             startActivity(
                 Intent(this, LimeKeepassImeUnlockActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -3947,12 +4053,14 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
             )
         } catch (e: ActivityNotFoundException) {
             Log.e(TAG, "startKeepassUnlock(): unlock activity not found", e)
+            DiagnosticLog.recordThrowable(this, "$TAG startKeepassUnlock() failed", e)
             showLimeToast(getString(R.string.keepass_keyboard_locked))
         }
     }
 
     private fun startKeepassSelection() {
         try {
+            DiagnosticLog.record(this, TAG, "startKeepassSelection() launching activity")
             startActivity(
                 Intent(this, LimeKeepassImeSelectActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -3960,11 +4068,17 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
             )
         } catch (e: ActivityNotFoundException) {
             Log.e(TAG, "startKeepassSelection(): select activity not found", e)
+            DiagnosticLog.recordThrowable(this, "$TAG startKeepassSelection() failed", e)
             showLimeToast(getString(R.string.keepass_open_database_failed, e.message.orEmpty()))
         }
     }
 
     private fun showKeepassFieldPanel() {
+        if (!KeepassAutofillLock.isUnlocked(this)) {
+            handleKeepassLocked(KeepassAutofillLock.lockReasonAuto)
+            showLimeToast(getString(R.string.keepass_keyboard_locked))
+            return
+        }
         val container = mCandidateInInputView ?: return
         val context = mThemeContext ?: this
         removeKeepassFieldPanel()
@@ -4001,6 +4115,8 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
                 R.string.keepass_keyboard_switch_entry to {
                     removeKeepassFieldPanel()
                     restoreNormalKeyboardView()
+                    clearKeepassSelection()
+                    cancelKeepassAutoLock()
                     startKeepassImeFlow()
                 },
                 R.string.keepass_keyboard_next_field to {
@@ -4017,11 +4133,12 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
                 R.string.keepass_keyboard_return to {
                     removeKeepassFieldPanel()
                     restoreNormalKeyboardView()
+                    clearKeepassSelection()
+                    cancelKeepassAutoLock()
                 },
                 R.string.keepass_keyboard_lock to {
                     KeepassAutofillLock.lock(this@LIMEService)
-                    removeKeepassFieldPanel()
-                    restoreNormalKeyboardView()
+                    handleKeepassLocked(KeepassAutofillLock.lockReasonManual)
                 },
                 R.string.keepass_keyboard_enter to {
                     onKey(MY_KEYCODE_ENTER, null)
@@ -4040,6 +4157,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         )
         container.requestLayout()
         container.updateCandidateViewWidthConstraint()
+        scheduleKeepassAutoLock()
     }
 
     private fun detachKeyboardForKeepassPanel(container: ViewGroup): Int {
@@ -4132,6 +4250,11 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
     }
 
     private fun commitKeepassField(labelRes: Int, value: String) {
+        if (!KeepassAutofillLock.isUnlocked(this)) {
+            handleKeepassLocked(KeepassAutofillLock.lockReasonAuto)
+            showLimeToast(getString(R.string.keepass_keyboard_locked))
+            return
+        }
         val ic = currentInputConnection ?: return
         ic.commitText(value, 1)
         sendTabKey()
@@ -4146,6 +4269,36 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         val panel = mKeepassPanel ?: return
         (panel.parent as? ViewGroup)?.removeView(panel)
         mKeepassPanel = null
+    }
+
+    private fun scheduleKeepassAutoLock() {
+        mKeepassAutoLockHandler.removeCallbacks(mKeepassAutoLockRunnable)
+        val remainingMillis = KeepassAutofillLock.remainingUnlockedMillis(this)
+        if (remainingMillis <= 0L) {
+            handleKeepassLocked(KeepassAutofillLock.lockReasonAuto)
+            return
+        }
+        mKeepassAutoLockHandler.postDelayed(mKeepassAutoLockRunnable, remainingMillis + 250L)
+    }
+
+    private fun cancelKeepassAutoLock() {
+        mKeepassAutoLockHandler.removeCallbacks(mKeepassAutoLockRunnable)
+    }
+
+    private fun handleKeepassLocked(reason: String) {
+        cancelKeepassAutoLock()
+        clearKeepassSelection()
+        removeKeepassFieldPanel()
+        restoreNormalKeyboardView()
+        DiagnosticLog.record(this, TAG, "handleKeepassLocked() reason=$reason")
+    }
+
+    private fun clearKeepassSelection() {
+        mKeepassSelectedTitle = ""
+        mKeepassSelectedUsername = ""
+        mKeepassSelectedPassword = ""
+        mKeepassSelectedUrl = ""
+        mKeepassSelectedNotes = ""
     }
 
     private fun restoreNormalKeyboardView() {
@@ -6037,6 +6190,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
             mDictationController!!.destroy()
             mDictationController = null
         }
+        cancelKeepassAutoLock()
         unregisterKeepassImeReceiver()
         unregisterVoiceInputReceiver()
 
@@ -6788,6 +6942,12 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
                             intent.getStringExtra(LimeKeepassImeSelectActivity.extraNotes).orEmpty()
                         showKeepassFieldPanel()
                     }
+                    KeepassAutofillLock.actionLocked -> {
+                        handleKeepassLocked(
+                            intent.getStringExtra(KeepassAutofillLock.extraLockReason)
+                                ?: KeepassAutofillLock.lockReasonManual
+                        )
+                    }
                 }
             }
         }
@@ -6795,6 +6955,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         val filter = IntentFilter().apply {
             addAction(LimeKeepassImeUnlockActivity.actionUnlockResult)
             addAction(LimeKeepassImeSelectActivity.actionSelectResult)
+            addAction(KeepassAutofillLock.actionLocked)
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -7467,6 +7628,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         private const val ACTION_METHOD = 4
         private const val ACTION_SPLIT_KEYBOARD = 5
         private const val ACTION_VOICEINPUT = 6
+        private const val ACTION_KEEPASS_KEYBOARD = 7
 
 
         @JvmStatic

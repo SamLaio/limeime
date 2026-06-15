@@ -119,6 +119,11 @@ class LimeCredentialAuthActivity : FragmentActivity() {
     }
 
     private fun finishWithEntry(entry: KeepassEntry) {
+        if (!KeepassAutofillLock.isUnlocked(this)) {
+            Toast.makeText(this, R.string.keepass_keyboard_locked, Toast.LENGTH_SHORT).show()
+            finishCanceled()
+            return
+        }
         val request = PendingIntentHandler.retrieveProviderGetCredentialRequest(intent)
         if (request == null) {
             finishCanceled()

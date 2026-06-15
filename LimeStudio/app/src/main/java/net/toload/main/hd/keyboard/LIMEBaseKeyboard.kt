@@ -244,10 +244,12 @@ open class LIMEBaseKeyboard(
 
         constructor(res: Resources, parent: LIMEBaseKeyboard, parser: XmlResourceParser?) {
             this.parent = parent
-            res.obtainAttributes(
+            val keyboardAttributes = res.obtainAttributes(
                 Xml.asAttributeSet(parser),
                 R.styleable.LIMEBaseKeyboard
-            ).use { a ->
+            )
+            try {
+                val a = keyboardAttributes
                 defaultWidth = getDimensionOrFraction(
                     a,
                     R.styleable.LIMEBaseKeyboard_keyWidth,
@@ -268,13 +270,19 @@ open class LIMEBaseKeyboard(
                     R.styleable.LIMEBaseKeyboard_verticalGap,  //Jeremy '11,9,4
                     parent.mDisplayHeight, parent.verticalGap, keySizeScale
                 )
+            } finally {
+                keyboardAttributes.recycle()
             }
-            res.obtainAttributes(
+            val rowAttributes = res.obtainAttributes(
                 Xml.asAttributeSet(parser),
                 R.styleable.LIMEBaseKeyboard_Row
-            ).use { a ->
+            )
+            try {
+                val a = rowAttributes
                 rowEdgeFlags = a.getInt(R.styleable.LIMEBaseKeyboard_Row_rowEdgeFlags, 0)
                 mode = a.getResourceId(R.styleable.LIMEBaseKeyboard_Row_keyboardMode, 0)
+            } finally {
+                rowAttributes.recycle()
             }
         }
     }
@@ -527,10 +535,12 @@ open class LIMEBaseKeyboard(
                 "Key(): key.mSeperatedKeyboard = " + mSplitKeyboard + ". keyWidthScale = " + keyWidthScale
             )
 
-            res.obtainAttributes(
+            val keyboardAttributes = res.obtainAttributes(
                 Xml.asAttributeSet(parser),
                 R.styleable.LIMEBaseKeyboard
-            ).use { a ->
+            )
+            try {
+                val a = keyboardAttributes
                 width = getDimensionOrFraction(
                     a,
                     R.styleable.LIMEBaseKeyboard_keyWidth,
@@ -548,13 +558,17 @@ open class LIMEBaseKeyboard(
                     R.styleable.LIMEBaseKeyboard_horizontalGap,
                     keyboard.mDisplayWidth, parent.defaultHorizontalGap
                 )
+            } finally {
+                keyboardAttributes.recycle()
             }
             this.x += gap
 
-            res.obtainAttributes(
+            val keyAttributes = res.obtainAttributes(
                 Xml.asAttributeSet(parser),
                 R.styleable.LIMEBaseKeyboard_Key
-            ).use { a ->
+            )
+            try {
+                val a = keyAttributes
                 val codesValue = TypedValue()
                 a.getValue(
                     R.styleable.LIMEBaseKeyboard_Key_codes,
@@ -604,6 +618,8 @@ open class LIMEBaseKeyboard(
                 if (codes.isEmpty() && !TextUtils.isEmpty(label)) {
                     codes = intArrayOf(label!!.get(0).code)
                 }
+            } finally {
+                keyAttributes.recycle()
             }
         }
 
@@ -985,16 +1001,20 @@ open class LIMEBaseKeyboard(
 
         val mLandScape = mDisplayWidth > mDisplayHeight
 
-        context.getTheme().obtainStyledAttributes(
+        val styledAttributes = context.getTheme().obtainStyledAttributes(
             null,
             R.styleable.LIMEBaseKeyboard,
             R.attr.LIMEBaseKeyboardStyle,
             R.style.LIMEBaseKeyboard
-        ).use { a ->
+        )
+        try {
+            val a = styledAttributes
             mDrawableArrowUp = a.getDrawable(R.styleable.LIMEBaseKeyboard_drawableArrowUp)
             mDrawableArrowDown = a.getDrawable(R.styleable.LIMEBaseKeyboard_drawableArrowDown)
             mDrawableArrowLeft = a.getDrawable(R.styleable.LIMEBaseKeyboard_drawableArrowLeft)
             mDrawableArrowRight = a.getDrawable((R.styleable.LIMEBaseKeyboard_drawableArrowRight))
+        } finally {
+            styledAttributes.recycle()
         }
         //Jeremy '12,5,26 reserve  columns in the middle for arrow keys in landscape mode.
         //Jeremy '12,5,27 read splitkeyboard setting from preference. 
@@ -1310,10 +1330,12 @@ open class LIMEBaseKeyboard(
     }
 
     private fun parseKeyboardAttributes(res: Resources, parser: XmlResourceParser?) {
-        res.obtainAttributes(
+        val keyboardAttributes = res.obtainAttributes(
             Xml.asAttributeSet(parser),
             R.styleable.LIMEBaseKeyboard
-        ).use { a ->
+        )
+        try {
+            val a = keyboardAttributes
             this.keyWidth = getDimensionOrFraction(
                 a,
                 R.styleable.LIMEBaseKeyboard_keyWidth,
@@ -1334,6 +1356,8 @@ open class LIMEBaseKeyboard(
                 R.styleable.LIMEBaseKeyboard_verticalGap,  //Jeremy '11,9,4
                 mDisplayHeight, 0, keySizeScale
             )
+        } finally {
+            keyboardAttributes.recycle()
         }
         /*
          * Number of key widths from current touch point to search for nearest keys.

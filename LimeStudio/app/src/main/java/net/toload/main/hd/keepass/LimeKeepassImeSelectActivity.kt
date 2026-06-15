@@ -239,6 +239,16 @@ class LimeKeepassImeSelectActivity : FragmentActivity() {
 
     private fun finishWithEntry(entry: KeepassEntry?) {
         finishedWithResult = true
+        if (entry != null && !KeepassAutofillLock.isUnlocked(this)) {
+            Toast.makeText(this, R.string.keepass_keyboard_locked, Toast.LENGTH_SHORT).show()
+            sendBroadcast(
+                Intent(actionSelectResult)
+                    .setPackage(packageName)
+                    .putExtra(extraSelected, false),
+            )
+            super.finish()
+            return
+        }
         val unlockedEntry = entry?.let { createRepository().unlockEntry(it) }
         val intent =
             Intent(actionSelectResult)

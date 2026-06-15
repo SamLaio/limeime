@@ -587,9 +587,11 @@ open class LIMEKeyboardBaseView(context: Context, attrs: AttributeSet?, defStyle
         var previewLayout = 0
         val keyTextSize = 0
 
-        context.getTheme().obtainStyledAttributes(
+        val styledAttributes = context.getTheme().obtainStyledAttributes(
             attrs, R.styleable.LIMEKeyboardBaseView, defStyle, R.style.LIMEBaseKeyboard
-        ).use { a ->
+        )
+        try {
+            val a = styledAttributes
             val n = a.getIndexCount()
             for (i in 0..<n) {
                 val attr = a.getIndex(i)
@@ -651,6 +653,8 @@ open class LIMEKeyboardBaseView(context: Context, attrs: AttributeSet?, defStyle
                     }
                 }
             }
+        } finally {
+            styledAttributes.recycle()
         }
         val res = getResources()
 
