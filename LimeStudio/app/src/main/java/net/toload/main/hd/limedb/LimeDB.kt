@@ -53,7 +53,6 @@ import java.util.HashSet
 import java.util.LinkedList
 import java.util.Locale
 import java.util.Objects
-import java.util.Set
 import kotlin.math.min
 import net.toload.main.hd.data.ChineseSymbol
 import net.toload.main.hd.data.ImConfig
@@ -3317,13 +3316,13 @@ open class LimeDB(private val mContext: Context) :
                     }
 
                     if (hasCustom) {
-                        db!!.execSQL("insert into " + tableName + " select * from sourceDB." + LIME.DB_TABLE_CUSTOM)
+                        importMappingRowsFromAttachedSource(db!!, tableName, LIME.DB_TABLE_CUSTOM)
                     } else {
                         Log.d(
                             TAG,
                             "importDb(): sourceDB.custom not found, using sourceDB." + tableName
                         )
-                        db!!.execSQL("insert into " + tableName + " select * from sourceDB." + tableName)
+                        importMappingRowsFromAttachedSource(db!!, tableName, tableName)
                     }
                 }
 
@@ -3404,6 +3403,89 @@ open class LimeDB(private val mContext: Context) :
      */
     fun importDbRelated(sourcedbfile: File?) {
         importDb(sourcedbfile, null, true, true)
+    }
+
+    private fun importMappingRowsFromAttachedSource(
+        database: SQLiteDatabase,
+        targetTable: String,
+        sourceTable: String
+    ) {
+        val targetColumns = tableColumns(database, targetTable)
+        val sourceColumns = tableColumns(database, "sourceDB.$sourceTable")
+        if (!targetColumns.contains(LIME.DB_COLUMN_CODE) ||
+            !targetColumns.contains(LIME.DB_COLUMN_WORD) ||
+            !sourceColumns.contains(LIME.DB_COLUMN_CODE) ||
+            !sourceColumns.contains(LIME.DB_COLUMN_WORD)
+        ) {
+            throw SQLiteException("Mapping import requires code and word columns")
+        }
+
+        val insertColumns = ArrayList<String>()
+        val selectExpressions = ArrayList<String>()
+        addMappingImportColumn(
+            insertColumns, selectExpressions, targetColumns, sourceColumns,
+            LIME.DB_COLUMN_CODE, LIME.DB_COLUMN_CODE, null
+        )
+        addMappingImportColumn(
+            insertColumns, selectExpressions, targetColumns, sourceColumns,
+            LIME.DB_COLUMN_WORD, LIME.DB_COLUMN_WORD, null
+        )
+        addMappingImportColumn(
+            insertColumns, selectExpressions, targetColumns, sourceColumns,
+            LIME.DB_COLUMN_SCORE, "COALESCE(${LIME.DB_COLUMN_SCORE}, 0)", "0"
+        )
+        addMappingImportColumn(
+            insertColumns, selectExpressions, targetColumns, sourceColumns,
+            LIME.DB_COLUMN_BASESCORE, "COALESCE(${LIME.DB_COLUMN_BASESCORE}, 0)", "0"
+        )
+        addMappingImportColumn(
+            insertColumns, selectExpressions, targetColumns, sourceColumns,
+            FIELD_NO_TONE_CODE, FIELD_NO_TONE_CODE, null
+        )
+        addMappingImportColumn(
+            insertColumns, selectExpressions, targetColumns, sourceColumns,
+            LIME.DB_COLUMN_RELATED, LIME.DB_COLUMN_RELATED, null
+        )
+
+        database.execSQL(
+            "insert into $targetTable (${insertColumns.joinToString(", ")}) " +
+                    "select ${selectExpressions.joinToString(", ")} " +
+                    "from sourceDB.$sourceTable " +
+                    "where ${LIME.DB_COLUMN_CODE} is not null and ${LIME.DB_COLUMN_WORD} is not null"
+        )
+    }
+
+    private fun addMappingImportColumn(
+        insertColumns: MutableList<String>,
+        selectExpressions: MutableList<String>,
+        targetColumns: Set<String>,
+        sourceColumns: Set<String>,
+        columnName: String,
+        sourceExpression: String,
+        defaultExpression: String?
+    ) {
+        if (!targetColumns.contains(columnName)) return
+        if (sourceColumns.contains(columnName)) {
+            insertColumns.add(columnName)
+            selectExpressions.add(sourceExpression)
+        } else if (defaultExpression != null) {
+            insertColumns.add(columnName)
+            selectExpressions.add(defaultExpression)
+        }
+    }
+
+    private fun tableColumns(database: SQLiteDatabase, tableExpression: String): Set<String> {
+        val columns = HashSet<String>()
+        var cursor: Cursor? = null
+        try {
+            cursor = database.rawQuery("select * from $tableExpression limit 0", null)
+            for (column in cursor.columnNames) {
+                columns.add(column)
+            }
+        } finally {
+            cursor?.close()
+        }
+        return columns
     }
 
 

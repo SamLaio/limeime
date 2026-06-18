@@ -48,7 +48,6 @@ import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceGroup
 import androidx.preference.PreferenceScreen
 import java.util.ArrayList
-import java.util.Objects
 import net.toload.main.hd.data.ImConfig
 import net.toload.main.hd.data.Keyboard
 import net.toload.main.hd.global.LIME
@@ -241,16 +240,16 @@ class LIMEPreference : AppCompatActivity() {
             super.onResume()
 
             // Set up a listener whenever a key changes
-            Objects.requireNonNull<SharedPreferences?>(getPreferenceScreen().getSharedPreferences())
-                .registerOnSharedPreferenceChangeListener(this)
+            getPreferenceScreen().getSharedPreferences()
+                ?.registerOnSharedPreferenceChangeListener(this)
         }
 
         override fun onPause() {
             super.onPause()
 
             // Unregister the listener whenever a key changes
-            Objects.requireNonNull<SharedPreferences?>(getPreferenceScreen().getSharedPreferences())
-                .unregisterOnSharedPreferenceChangeListener(this)
+            getPreferenceScreen().getSharedPreferences()
+                ?.unregisterOnSharedPreferenceChangeListener(this)
         }
 
 
@@ -268,7 +267,9 @@ class LIMEPreference : AppCompatActivity() {
             group.setIconSpaceReserved(false)
             for (i in 0..<group.getPreferenceCount()) {
                 val p = group.getPreference(i)
-                p.setIconSpaceReserved(false)
+                if (p.getIcon() == null) {
+                    p.setIconSpaceReserved(false)
+                }
                 if (p is PreferenceGroup) {
                     disableIconSpaceReserved(p)
                 }

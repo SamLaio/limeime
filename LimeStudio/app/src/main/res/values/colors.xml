@@ -125,4 +125,14 @@
     <!-- Lime green for switches and secondary accents — matches iOS LIME brand color -->
     <color name="lime_green">#FF4CAF50</color>
 
+    <color name="im_badge_background">#FF8E8E93</color>
+    <color name="im_badge_foreground">#FFFFFFFF</color>
+
+    <color name="status_tint_green">#1F2E7D32</color>
+    <color name="status_tint_yellow">#1FEF6C00</color>
+    <color name="status_tint_red">#1FC62828</color>
+
+    <color name="button_tint_green">#1F009444</color>
+    <color name="button_tint_red">#1FFF3B30</color>
+
 </resources>

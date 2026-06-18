@@ -130,7 +130,7 @@ class LIME {
 	val DATABASE_CLOUD_IM_CJ5: String = DATABASE_CLOUD_URL_BASED + "cj5.zip"
     const val DATABASE_CLOUD_IM_CJ5_KEYBOARD: String = "cj"
     @JvmField
-	val DATABASE_CLOUD_IM_CJ4: String = DATABASE_CLOUD_URL_BASED + "cj4.limedb"
+	val DATABASE_CLOUD_IM_CJ4: String = DATABASE_CLOUD_URL_BASED + "hahacj.limedb"
     const val DATABASE_CLOUD_IM_CJ4_KEYBOARD: String = "cj"
     @JvmField
 	val DATABASE_CLOUD_IM_CJ_BIG5: String = DATABASE_CLOUD_URL_BASED + "cjbig5.zip"
