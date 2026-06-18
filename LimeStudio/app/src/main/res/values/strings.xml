@@ -276,7 +276,7 @@
 
     <!-- String formatting templates -->
     <string name="download_button_with_count">%1$s (%2$s)</string>
-    <string name="app_display_version">v0.2</string>
+    <string name="app_display_version">v0.4</string>
     <string name="source_version_value">v6.1.18</string>
     <string name="version_format">v%1$s - %2$d</string>
     <string name="related_word_format">%1$s%2$s</string>
@@ -597,6 +597,13 @@
         <item>繁轉簡</item>
         <item>簡轉繁</item>
     </string-array>
+    <string name="han_convert_none">無</string>
+    <string name="han_convert_t2s">繁→簡</string>
+    <string name="han_convert_s2t">簡→繁</string>
+    <string name="han_convert_footer">套用於所有輸入法的候選字輸出。</string>
+    <string name="split_keyboard_off">關閉</string>
+    <string name="split_keyboard_on">開啟</string>
+    <string name="split_keyboard_landscape">僅橫向</string>
 
     <string-array name="emoji_display_position_title">
         <item>不顯示 Emoji 候選字</item>

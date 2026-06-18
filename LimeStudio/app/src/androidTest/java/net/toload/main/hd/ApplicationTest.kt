@@ -34,7 +34,7 @@ open class ApplicationTest {
     fun testPackageName() {
         var appContext: Context = InstrumentationRegistry.getInstrumentation().getTargetContext()
         var packageName: String = appContext.getPackageName()
-        assertEquals("net.toload.main.hd2026", packageName)
+        assertEquals("tw.idv.sam.lime", packageName)
     }
     @Test
     fun testApplicationInfo() {
