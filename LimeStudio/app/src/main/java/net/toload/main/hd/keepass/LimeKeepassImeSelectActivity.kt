@@ -262,6 +262,14 @@ class LimeKeepassImeSelectActivity : FragmentActivity() {
                 .putExtra(extraPassword, unlockedEntry.password)
                 .putExtra(extraUrl, unlockedEntry.url)
                 .putExtra(extraNotes, unlockedEntry.notes)
+                .putStringArrayListExtra(
+                    extraImeFieldLabels,
+                    ArrayList(unlockedEntry.imeFields.map { field -> field.label }),
+                )
+                .putStringArrayListExtra(
+                    extraImeFieldValues,
+                    ArrayList(unlockedEntry.imeFields.map { field -> field.value }),
+                )
         }
         sendBroadcast(intent)
         super.finish()
@@ -272,7 +280,8 @@ class LimeKeepassImeSelectActivity : FragmentActivity() {
             username.isNotBlank() ||
             hasPassword ||
             url.isNotBlank() ||
-            notes.isNotBlank()
+            notes.isNotBlank() ||
+            imeFields.any { field -> field.value.isNotBlank() || field.encryptedValue.isNotBlank() }
     }
 
     private fun KeepassEntry.imeLabel(): String {
@@ -321,6 +330,8 @@ class LimeKeepassImeSelectActivity : FragmentActivity() {
         const val extraPassword = "net.toload.main.hd.keepass.extra.PASSWORD"
         const val extraUrl = "net.toload.main.hd.keepass.extra.URL"
         const val extraNotes = "net.toload.main.hd.keepass.extra.NOTES"
+        const val extraImeFieldLabels = "net.toload.main.hd.keepass.extra.IME_FIELD_LABELS"
+        const val extraImeFieldValues = "net.toload.main.hd.keepass.extra.IME_FIELD_VALUES"
 
         private const val keyDatabasePath = "database_path"
         private const val keyDatabaseKey = "database_key"

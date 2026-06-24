@@ -234,6 +234,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
     private var mKeepassSelectedPassword: String = ""
     private var mKeepassSelectedUrl: String = ""
     private var mKeepassSelectedNotes: String = ""
+    private var mKeepassSelectedImeFields: List<Pair<String, String>> = emptyList()
     private var mKeepassDetachedKeyboardIndex = -1
     private var mKeepassDetachedKeyboardLayoutParams: ViewGroup.LayoutParams? = null
     private val mKeepassAutoLockHandler = Handler(Looper.getMainLooper())
@@ -4102,27 +4103,27 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         addKeepassFieldGrid(
             panel,
             listOf(
-                R.string.keepass_entry_username to mKeepassSelectedUsername,
-                R.string.keepass_entry_password to mKeepassSelectedPassword,
-                R.string.keepass_entry_url to mKeepassSelectedUrl,
-                R.string.keepass_entry_notes to mKeepassSelectedNotes
-            )
+                getString(R.string.keepass_entry_username) to mKeepassSelectedUsername,
+                getString(R.string.keepass_entry_password) to mKeepassSelectedPassword,
+                getString(R.string.keepass_entry_url) to mKeepassSelectedUrl,
+                getString(R.string.keepass_entry_notes) to mKeepassSelectedNotes
+            ) + mKeepassSelectedImeFields
         )
 
         addKeepassControlRow(
             panel,
             listOf(
-                R.string.keepass_keyboard_switch_entry to {
+                getString(R.string.keepass_keyboard_switch_entry) to {
                     removeKeepassFieldPanel()
                     restoreNormalKeyboardView()
                     clearKeepassSelection()
                     cancelKeepassAutoLock()
                     startKeepassImeFlow()
                 },
-                R.string.keepass_keyboard_next_field to {
+                getString(R.string.keepass_keyboard_next_field) to {
                     sendTabKey()
                 },
-                R.string.keepass_keyboard_backspace to {
+                getString(R.string.keepass_keyboard_backspace) to {
                     handleBackspace()
                 }
             )
@@ -4130,17 +4131,17 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         addKeepassControlRow(
             panel,
             listOf(
-                R.string.keepass_keyboard_return to {
+                getString(R.string.keepass_keyboard_return) to {
                     removeKeepassFieldPanel()
                     restoreNormalKeyboardView()
                     clearKeepassSelection()
                     cancelKeepassAutoLock()
                 },
-                R.string.keepass_keyboard_lock to {
+                getString(R.string.keepass_keyboard_lock) to {
                     KeepassAutofillLock.lock(this@LIMEService)
                     handleKeepassLocked(KeepassAutofillLock.lockReasonManual)
                 },
-                R.string.keepass_keyboard_enter to {
+                getString(R.string.keepass_keyboard_enter) to {
                     onKey(MY_KEYCODE_ENTER, null)
                 }
             )
@@ -4171,29 +4172,29 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         return index
     }
 
-    private fun addKeepassFieldGrid(panel: LinearLayout, fields: List<Pair<Int, String>>) {
+    private fun addKeepassFieldGrid(panel: LinearLayout, fields: List<Pair<String, String>>) {
         val nonEmptyFields = fields.filter { (_, value) -> value.isNotBlank() }
         nonEmptyFields.chunked(KEEPASS_FIELD_BUTTONS_PER_ROW).forEach { rowFields ->
             addKeepassControlRow(
                 panel,
-                rowFields.map { (labelRes, value) ->
-                    labelRes to {
-                        commitKeepassField(labelRes, value)
+                rowFields.map { (label, value) ->
+                    label to {
+                        commitKeepassField(label, value)
                     }
                 }
             )
         }
     }
 
-    private fun addKeepassControlRow(panel: LinearLayout, controls: List<Pair<Int, () -> Unit>>) {
+    private fun addKeepassControlRow(panel: LinearLayout, controls: List<Pair<String, () -> Unit>>) {
         val context = mThemeContext ?: this
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        controls.forEach { (labelRes, onClick) ->
+        controls.forEach { (label, onClick) ->
             row.addView(
-                createKeepassControlButton(labelRes, onClick),
+                createKeepassControlButton(label, onClick),
                 LinearLayout.LayoutParams(0, keepassKeyboardButtonHeight(), 1f).apply {
                     setMargins(dp(4f), dp(3f), dp(4f), dp(3f))
                 }
@@ -4202,9 +4203,9 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         panel.addView(row, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
     }
 
-    private fun createKeepassControlButton(labelRes: Int, onClick: () -> Unit): Button {
+    private fun createKeepassControlButton(label: String, onClick: () -> Unit): Button {
         return Button(mThemeContext ?: this).apply {
-            text = getString(labelRes)
+            text = label
             isAllCaps = false
             gravity = Gravity.CENTER
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
@@ -4249,7 +4250,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         return resolveThemeColor(context, R.attr.keyTextColorNormal, fallback)
     }
 
-    private fun commitKeepassField(labelRes: Int, value: String) {
+    private fun commitKeepassField(label: String, value: String) {
         if (!KeepassAutofillLock.isUnlocked(this)) {
             handleKeepassLocked(KeepassAutofillLock.lockReasonAuto)
             showLimeToast(getString(R.string.keepass_keyboard_locked))
@@ -4258,7 +4259,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         val ic = currentInputConnection ?: return
         ic.commitText(value, 1)
         sendTabKey()
-        showLimeToast(getString(R.string.keepass_entry_committed, getString(labelRes)))
+        showLimeToast(getString(R.string.keepass_entry_committed, label))
     }
 
     private fun sendTabKey() {
@@ -4299,6 +4300,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         mKeepassSelectedPassword = ""
         mKeepassSelectedUrl = ""
         mKeepassSelectedNotes = ""
+        mKeepassSelectedImeFields = emptyList()
     }
 
     private fun restoreNormalKeyboardView() {
@@ -6940,6 +6942,15 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
                             intent.getStringExtra(LimeKeepassImeSelectActivity.extraUrl).orEmpty()
                         mKeepassSelectedNotes =
                             intent.getStringExtra(LimeKeepassImeSelectActivity.extraNotes).orEmpty()
+                        val imeFieldLabels =
+                            intent.getStringArrayListExtra(LimeKeepassImeSelectActivity.extraImeFieldLabels)
+                                .orEmpty()
+                        val imeFieldValues =
+                            intent.getStringArrayListExtra(LimeKeepassImeSelectActivity.extraImeFieldValues)
+                                .orEmpty()
+                        mKeepassSelectedImeFields =
+                            imeFieldLabels.zip(imeFieldValues)
+                                .filter { (label, value) -> label.isNotBlank() && value.isNotBlank() }
                         showKeepassFieldPanel()
                     }
                     KeepassAutofillLock.actionLocked -> {

@@ -276,7 +276,7 @@
 
     <!-- String formatting templates -->
     <string name="download_button_with_count">%1$s (%2$s)</string>
-    <string name="app_display_version">v0.4</string>
+    <string name="app_display_version">v0.4.1</string>
     <string name="source_version_value">v6.1.18</string>
     <string name="version_format">v%1$s - %2$d</string>
     <string name="related_word_format">%1$s%2$s</string>
@@ -339,9 +339,10 @@
     <string name="keepass_ftp_password">密碼</string>
     <string name="keepass_ftp_url_required">請輸入 FTP 連結</string>
     <string name="keepass_sync_database">同步資料庫</string>
+    <string name="keepass_sync_running">正在同步資料庫…</string>
     <string name="keepass_sync_prompt_title">同步資料庫</string>
     <string name="keepass_sync_prompt_message">資料庫有未同步變更，是否現在同步？</string>
-    <string name="keepass_sync_local_ready">本機資料庫已是目前選取來源</string>
+    <string name="keepass_sync_local_ready">本機資料庫不需要遠端同步</string>
     <string name="keepass_sync_remote_pending">遠端同步會在接入 WebDav/FTP storage 後執行</string>
     <string name="keepass_opening_database">正在開啟 KeePass 資料庫…</string>
     <string name="keepass_open_database_failed">無法開啟 KeePass 資料庫：%1$s</string>

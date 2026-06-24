@@ -50,9 +50,15 @@ class KeepassStorageClient(
                 "remote-missing"
             }
         } else {
-            directFile(path)?.let { file ->
-                if (file.exists()) "${file.lastModified()}:${file.length()}" else "missing"
-            } ?: "content:${path.hashCode()}"
+            when {
+                path.startsWith("content://") ->
+                    runCatching { "content:${readContentUri(path).sha256Hex()}" }
+                        .getOrElse { "content:${path.hashCode()}" }
+                else ->
+                    directFile(path)?.let { file ->
+                        if (file.exists()) "${file.lastModified()}:${file.length()}" else "missing"
+                    } ?: "content:${path.hashCode()}"
+            }
         }
     }
 

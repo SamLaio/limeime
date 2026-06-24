@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import org.json.JSONArray
+import org.json.JSONObject
 import java.util.UUID
 
 internal class KeepassEntryCacheDb(context: Context) :
@@ -31,6 +32,7 @@ internal class KeepassEntryCacheDb(context: Context) :
                 $columnNotes TEXT NOT NULL,
                 $columnAdditionalUrls TEXT NOT NULL,
                 $columnExtraSearchValues TEXT NOT NULL,
+                $columnImeFields TEXT NOT NULL,
                 PRIMARY KEY ($columnCacheKey, $columnEntryId)
             )
             """.trimIndent(),
@@ -61,6 +63,7 @@ internal class KeepassEntryCacheDb(context: Context) :
                 columnNotes,
                 columnAdditionalUrls,
                 columnExtraSearchValues,
+                columnImeFields,
             ),
             "$columnCacheKey = ?",
             arrayOf(cacheKey),
@@ -80,6 +83,7 @@ internal class KeepassEntryCacheDb(context: Context) :
                         notes = cursor.getString(5),
                         additionalUrls = cursor.getString(6).jsonArrayToList(),
                         extraSearchValues = cursor.getString(7).jsonArrayToList(),
+                        imeFields = cursor.getString(8).jsonArrayToImeFields(),
                         encryptedPassword = cursor.getString(3),
                     ),
                 )
@@ -117,6 +121,7 @@ internal class KeepassEntryCacheDb(context: Context) :
                         put(columnNotes, entry.notes)
                         put(columnAdditionalUrls, entry.additionalUrls.toJsonArrayString())
                         put(columnExtraSearchValues, entry.extraSearchValues.toJsonArrayString())
+                        put(columnImeFields, entry.imeFields.toEncryptedJsonArrayString(crypto))
                     },
                     SQLiteDatabase.CONFLICT_REPLACE,
                 )
@@ -187,9 +192,37 @@ internal class KeepassEntryCacheDb(context: Context) :
         }.getOrDefault(emptyList())
     }
 
+    private fun List<KeepassImeField>.toEncryptedJsonArrayString(crypto: KeepassCacheCrypto): String {
+        val array = JSONArray()
+        forEach { field ->
+            if (field.label.isNotBlank() && field.value.isNotBlank()) {
+                array.put(
+                    JSONObject()
+                        .put("label", field.label)
+                        .put("value", crypto.encrypt(field.value)),
+                )
+            }
+        }
+        return array.toString()
+    }
+
+    private fun String.jsonArrayToImeFields(): List<KeepassImeField> {
+        return runCatching {
+            val array = JSONArray(this)
+            buildList {
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index) ?: continue
+                    val label = item.optString("label").takeIf { value -> value.isNotBlank() } ?: continue
+                    val encryptedValue = item.optString("value").takeIf { value -> value.isNotBlank() } ?: continue
+                    add(KeepassImeField(label = label, encryptedValue = encryptedValue))
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
     private companion object {
         private const val databaseName = "keepass_entry_cache.db"
-        private const val databaseVersion = 2
+        private const val databaseVersion = 3
         private const val tableMeta = "cache_meta"
         private const val tableEntries = "entries"
         private const val columnCacheKey = "cache_key"
@@ -203,5 +236,6 @@ internal class KeepassEntryCacheDb(context: Context) :
         private const val columnNotes = "notes"
         private const val columnAdditionalUrls = "additional_urls"
         private const val columnExtraSearchValues = "extra_search_values"
+        private const val columnImeFields = "ime_fields"
     }
 }

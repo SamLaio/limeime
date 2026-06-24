@@ -11,11 +11,18 @@ data class KeepassEntry(
     val notes: String,
     val additionalUrls: List<String> = emptyList(),
     val extraSearchValues: List<String> = emptyList(),
+    val imeFields: List<KeepassImeField> = emptyList(),
     val encryptedPassword: String = "",
 ) {
     val hasPassword: Boolean
         get() = password.isNotBlank() || encryptedPassword.isNotBlank()
 }
+
+data class KeepassImeField(
+    val label: String,
+    val value: String = "",
+    val encryptedValue: String = "",
+)
 
 data class KeepassEntryInput(
     val title: String,

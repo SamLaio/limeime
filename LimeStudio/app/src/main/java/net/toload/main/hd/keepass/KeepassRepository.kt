@@ -44,7 +44,7 @@ class KeepassRepository(
         val database = openDatabase()
         val entries = database.content.group.collectEntries()
         entryCacheDb.write(cacheKey, entries, createCacheCrypto())
-        val cachedEntries = entryCacheDb.read(cacheKey) ?: entries.withLockedPasswords()
+        val cachedEntries = entryCacheDb.read(cacheKey) ?: entries.withLockedSecrets()
         synchronized(entriesCacheLock) {
             entriesCache = EntriesCache(cacheKey, cachedEntries)
         }
@@ -56,11 +56,19 @@ class KeepassRepository(
     }
 
     fun unlockEntry(entry: KeepassEntry): KeepassEntry {
-        if (entry.encryptedPassword.isBlank()) {
-            return entry
-        }
         return entry.copy(
-            password = createCacheCrypto().decrypt(entry.encryptedPassword),
+            password = entry.encryptedPassword
+                .takeIf { it.isNotBlank() }
+                ?.let { encrypted -> createCacheCrypto().decrypt(encrypted) }
+                ?: entry.password,
+            imeFields = entry.imeFields.map { field ->
+                field.encryptedValue
+                    .takeIf { it.isNotBlank() }
+                    ?.let { encrypted ->
+                        field.copy(value = createCacheCrypto().decrypt(encrypted), encryptedValue = "")
+                    }
+                    ?: field
+            },
             encryptedPassword = "",
         )
     }
@@ -98,7 +106,8 @@ class KeepassRepository(
         val output = ByteArrayOutputStream()
         updatedDatabase.encode(output)
         storageClient.write(databasePath, output.toByteArray())
-        invalidateEntriesCache()
+        rebuildEncryptedEntryCacheFromLocalDatabase()
+        clearInMemoryEntriesCache()
     }
 
     fun deleteEntry(id: UUID) {
@@ -106,7 +115,8 @@ class KeepassRepository(
         val database = openDatabase()
         val updatedDatabase = database.removeEntry(id)
         storageClient.write(databasePath, encodeDatabase(updatedDatabase))
-        invalidateEntriesCache()
+        rebuildEncryptedEntryCacheFromLocalDatabase()
+        clearInMemoryEntriesCache()
     }
 
     private fun entriesCacheKey(): String {
@@ -161,14 +171,19 @@ class KeepassRepository(
         return KeepassCacheCrypto(password = password, keyFileBytes = keyBytes)
     }
 
-    private fun List<KeepassEntry>.withLockedPasswords(): List<KeepassEntry> {
+    private fun List<KeepassEntry>.withLockedSecrets(): List<KeepassEntry> {
         val crypto = createCacheCrypto()
         return map { entry ->
-            if (entry.password.isBlank()) {
-                entry
-            } else {
-                entry.copy(password = "", encryptedPassword = crypto.encrypt(entry.password))
-            }
+            entry.copy(
+                password = "",
+                encryptedPassword = entry.password.takeIf { it.isNotBlank() }?.let { crypto.encrypt(it) }.orEmpty(),
+                imeFields = entry.imeFields.map { field ->
+                    field.copy(
+                        value = "",
+                        encryptedValue = field.value.takeIf { it.isNotBlank() }?.let { crypto.encrypt(it) }.orEmpty(),
+                    )
+                },
+            )
         }
     }
 
@@ -187,6 +202,8 @@ class KeepassRepository(
             .flatMap { value -> parseKprpcJson(value) }
             .distinct()
         val additionalUrls = kprpcValues.filter { value -> value.looksLikeUrl() }
+        val imeFields = keepassImeFields(customFields)
+        val imeFieldNames = keepassImeFieldNames()
         return KeepassEntry(
             id = uuid,
             title = fields.title.contentOrEmpty(),
@@ -195,8 +212,26 @@ class KeepassRepository(
             url = fields.url.contentOrEmpty(),
             notes = fields.notes.contentOrEmpty(),
             additionalUrls = additionalUrls,
-            extraSearchValues = (customFields.values + kprpcValues).filter { value -> value.isNotBlank() }.distinct(),
+            extraSearchValues = (
+                customFields
+                    .filterKeys { key -> key !in imeFieldNames }
+                    .values +
+                    kprpcValues
+                ).filter { value -> value.isNotBlank() }.distinct(),
+            imeFields = imeFields,
         )
+    }
+
+    private fun keepassImeFields(customFields: Map<String, String>): List<KeepassImeField> {
+        return keepassImeFieldLabels.mapNotNull { (sourceName, keyboardLabel) ->
+            customFields[sourceName]
+                ?.takeIf { value -> value.isNotBlank() }
+                ?.let { value -> KeepassImeField(label = keyboardLabel, value = value) }
+        }
+    }
+
+    private fun keepassImeFieldNames(): Set<String> {
+        return keepassImeFieldLabels.keys
     }
 
     private fun EntryValue?.contentOrEmpty(): String {
@@ -297,6 +332,13 @@ class KeepassRepository(
 
     companion object {
         private const val kprpcJsonField = "KPRPC JSON"
+        private val keepassImeFieldLabels =
+            linkedMapOf(
+                "持卡人" to "持卡人",
+                "號碼" to "號碼",
+                "exp_date" to "過期",
+                "CVV" to "CVV",
+            )
         private val entriesCacheLock = Any()
         private var entriesCache: EntriesCache? = null
         private val basicFieldKeys = setOf(

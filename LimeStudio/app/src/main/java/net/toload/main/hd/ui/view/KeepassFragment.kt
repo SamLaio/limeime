@@ -92,6 +92,7 @@ class KeepassFragment : Fragment() {
     private var selectedKeyPath: String = ""
     private var updatingFingerprintSwitch = false
     private var syncPromptShowing = false
+    private var syncInProgress = false
     private var lastPromptedPendingSyncKey: String? = null
     private val storageOptions = listOf(
         StorageOption(R.string.keepass_storage_local_file, android.R.drawable.sym_def_app_icon, StorageKind.SystemPicker),
@@ -722,24 +723,43 @@ class KeepassFragment : Fragment() {
     }
 
     private fun synchronizeDatabase() {
+        if (syncInProgress) {
+            return
+        }
         if (selectedDatabasePath.isBlank()) {
             Toast.makeText(requireContext(), R.string.keepass_database_not_selected, Toast.LENGTH_SHORT).show()
             return
         }
+        if (!isRemotePath(selectedDatabasePath)) {
+            Toast.makeText(requireContext(), R.string.keepass_sync_local_ready, Toast.LENGTH_SHORT).show()
+            return
+        }
         saveDatabaseFields()
         val repository = createKeepassRepository()
-        Toast.makeText(requireContext(), R.string.keepass_opening_database, Toast.LENGTH_SHORT).show()
+        setSyncInProgress(true)
+        Toast.makeText(requireContext(), R.string.keepass_sync_running, Toast.LENGTH_SHORT).show()
         Thread {
             try {
                 val result = repository.synchronizeDatabase()
                 runOnUiThreadIfAdded {
                     lastPromptedPendingSyncKey = null
+                    setSyncInProgress(false)
                     Toast.makeText(requireContext(), result.message, Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
+                runOnUiThreadIfAdded {
+                    setSyncInProgress(false)
+                }
                 showKeepassError(R.string.keepass_sync_failed, e)
             }
         }.start()
+    }
+
+    private fun setSyncInProgress(inProgress: Boolean) {
+        syncInProgress = inProgress
+        btnSyncDatabase.isEnabled = !inProgress
+        btnSyncDatabase.text =
+            getString(if (inProgress) R.string.keepass_sync_running else R.string.keepass_sync_database)
     }
 
     private fun promptSyncIfDatabaseChanged() {
