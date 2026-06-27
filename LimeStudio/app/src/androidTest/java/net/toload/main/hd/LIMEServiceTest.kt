@@ -12,6 +12,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import androidx.core.os.ConfigurationCompat
+import androidx.preference.PreferenceManager
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import net.toload.main.hd.candidate.CandidateView
@@ -4483,6 +4484,33 @@ open class LIMEServiceTest {
         assertNotNull("Composing buffer should be initialized for first physical key", getPrivateField(service, "mComposing"))
         assertTrue("Prediction state should be enabled for text fields", (getPrivateField(service, "mPredictionOn") as Boolean))
         assertFalse("Physical-key startup path should not render full emoji content", service.isEmojiContentRenderedForTesting)
+    }
+    @Test
+    fun onStartInputRecreatesThemeWithoutExistingKeyboardView() {
+        var service: LIMEService = LIMEService()
+        attachTargetContext(service)
+        runOnMainAndRethrow({ service.onCreate() })
+        runOnMainAndRethrow({ service.onInitializeInterface() })
+        var prefManager: LIMEPreferenceManager = (getPrivateField(service, "mLIMEPref") as LIMEPreferenceManager)
+        var currentTheme: Int = prefManager.getKeyboardTheme()
+        var nextTheme: Int = if (currentTheme == 0) 1 else 0
+        PreferenceManager.getDefaultSharedPreferences(service)
+            .edit()
+            .putString("keyboard_theme", nextTheme.toString())
+            .commit()
+        try {
+            setPrivateField(service, "mInputView", null)
+            var editorInfo: EditorInfo = EditorInfo()
+            editorInfo.inputType = EditorInfo.TYPE_CLASS_TEXT
+            runOnMainAndRethrow({ service.onStartInput(editorInfo, false) })
+            assertNotNull("Theme refresh during onStartInput should recreate the keyboard view", getPrivateField(service, "mInputView"))
+            assertEquals("Theme refresh should apply the latest keyboard theme", nextTheme, getPrivateField(service, "mKeyboardThemeIndex"))
+        } finally {
+            PreferenceManager.getDefaultSharedPreferences(service)
+                .edit()
+                .putString("keyboard_theme", currentTheme.toString())
+                .commit()
+        }
     }
     @Test
     fun visibleStartupReturnsEmbeddedCandidateInputViewWithoutEagerEmojiContent() {

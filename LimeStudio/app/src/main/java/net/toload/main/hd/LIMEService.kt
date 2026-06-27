@@ -838,7 +838,7 @@ open class LIMEService : InputMethodService(), LIMEKeyboardBaseView.OnKeyboardAc
         // mFixedCandidateViewOn is always true, so mFixedCandidateViewOn != fixedCandidateMode is always false
         if (mKeyboardThemeIndex != mLIMEPref!!.getKeyboardTheme()) {
             requestHideSelf(0)
-            mInputView!!.closing()
+            mInputView?.closing()
             initialViewAndSwitcher(true)
 
             // mFixedCandidateViewOn is always true
